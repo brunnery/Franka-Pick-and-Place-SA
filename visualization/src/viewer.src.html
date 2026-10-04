@@ -1,0 +1,574 @@
+<title>Franka Pick &amp; Place</title>
+<meta name="description" content="3D-Ablauf: Franka FR3 mit Iris-Greifer nimmt eine M6-Mutter auf und schraubt sie auf die Schraube.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen lab console. Viewport left, process + joint readout right, transport bar under the viewport. */
+:root {
+  --bg: #e9ecef;
+  --panel: #f8f9fa;
+  --line: #d3d8dd;
+  --fg: #1a1f24;
+  --muted: #5d6771;
+  --accent: #c8561a;
+  --accent-soft: rgba(200, 86, 26, .12);
+  --stage-top: #f4f6f7;
+  --stage-bot: #d9dee2;
+  --table: #c9ced3;
+  --ok: #2f7d4f;
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171a; --panel: #1b1f23; --line: #2c3238; --fg: #e3e6e9; --muted: #95a0aa;
+    --accent: #ee8547; --accent-soft: rgba(238, 133, 71, .14);
+    --stage-top: #23282d; --stage-bot: #131619; --table: #50575e; --ok: #5cbf86;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171a; --panel: #1b1f23; --line: #2c3238; --fg: #e3e6e9; --muted: #95a0aa;
+  --accent: #ee8547; --accent-soft: rgba(238, 133, 71, .14);
+  --stage-top: #23282d; --stage-bot: #131619; --table: #50575e; --ok: #5cbf86;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; }
+* { box-sizing: border-box; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "head head" "stage side" "transport side";
+}
+header {
+  grid-area: head; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px 24px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: -.01em; text-wrap: balance; }
+.brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.stage { grid-area: stage; position: relative; min-height: 0; background: linear-gradient(var(--stage-top), var(--stage-bot)); overflow: hidden; }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: absolute; pointer-events: none; font-family: var(--font-mono); font-size: 12px; }
+.hud-phase { top: 14px; left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.hud-phase .num { color: var(--accent); font-weight: 500; letter-spacing: .08em; }
+.hud-phase .name { font-family: var(--font-display); font-weight: 600; font-size: 22px; letter-spacing: -.01em; }
+.hud-phase .detail { color: var(--muted); }
+.hud-tcp { left: 16px; bottom: 12px; display: grid; grid-template-columns: auto auto; gap: 2px 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hud-tcp b { color: var(--fg); font-weight: 500; text-align: right; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+
+.transport {
+  grid-area: transport; display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+  border-top: 1px solid var(--line); background: var(--panel);
+}
+.play { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; display: grid; place-items: center; cursor: pointer; flex: none; }
+.play svg { width: 16px; height: 16px; fill: currentColor; }
+.time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); flex: none; min-width: 84px; }
+.track { position: relative; flex: 1; min-width: 0; height: 38px; cursor: pointer; touch-action: none; }
+.track .segs { position: absolute; left: 0; right: 0; top: 13px; height: 12px; display: flex; gap: 2px; }
+.track .segs span { height: 100%; background: var(--line); border-radius: 2px; }
+.track .segs span.done { background: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.track .segs span.cur { background: var(--accent); }
+.track .head { position: absolute; top: 6px; width: 2px; height: 26px; background: var(--fg); transform: translateX(-1px); }
+.speed { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 6px; font-size: 13px; flex: none; }
+
+aside { grid-area: side; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; min-height: 0; }
+aside section { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+aside h2 { margin: 0 0 10px; font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.steps button { width: 100%; display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: baseline; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.steps button:hover { background: var(--accent-soft); }
+.steps .n { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.steps .t { font-family: var(--font-mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.steps li.cur button { background: var(--accent-soft); }
+.steps li.cur .n, .steps li.cur .lbl { color: var(--accent); font-weight: 600; }
+.joints { display: flex; flex-direction: column; gap: 7px; font-family: var(--font-mono); font-size: 12px; }
+.jrow { display: grid; grid-template-columns: 22px 1fr 58px; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
+.jrow .val { text-align: right; }
+.jbar { position: relative; height: 8px; border-radius: 4px; background: var(--line); }
+.jbar i { position: absolute; top: -3px; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); transform: translateX(-1.5px); }
+.jbar.warn i { background: #c0392b; }
+.toggles { display: flex; flex-direction: column; gap: 8px; }
+.toggles label { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.toggles input { accent-color: var(--accent); width: 15px; height: 15px; }
+.note { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; max-width: 65ch; }
+.note + .note { margin-top: 8px; }
+.note b { color: var(--fg); font-weight: 600; }
+
+@media (max-width: 860px) {
+  .app { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 58vh auto auto; grid-template-areas: "head" "stage" "transport" "side"; }
+  aside { border-left: 0; overflow: visible; }
+  header { padding: 10px 16px; }
+  .hud-phase .name { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <h1>Franka Pick &amp; Place</h1>
+      <p>FR3 mit Iris-Greifer · M6-Mutter aufnehmen und auf die Schraube drehen</p>
+    </div>
+    <div class="seg" role="group" aria-label="Kamera">
+      <button id="cam-overview" aria-pressed="true">Übersicht</button>
+      <button id="cam-follow" aria-pressed="false">Greifer folgen</button>
+      <button id="cam-side" aria-pressed="false">Seite</button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="loading" id="loading">Modelle werden geladen …</div>
+    <div class="hud hud-phase">
+      <span class="num" id="hud-num">01 / 12</span>
+      <span class="name" id="hud-name">Startpose</span>
+      <span class="detail" id="hud-detail">&nbsp;</span>
+    </div>
+    <div class="hud hud-tcp" aria-label="TCP-Position">
+      <span>TCP x</span><b id="tcp-x">0.0</b>
+      <span>TCP y</span><b id="tcp-y">0.0</b>
+      <span>TCP z</span><b id="tcp-z">0.0</b>
+      <span>&nbsp;</span><span>mm, Plattenkoordinaten</span>
+    </div>
+  </main>
+
+  <div class="transport">
+    <button class="play" id="play" aria-label="Pause">
+      <svg viewBox="0 0 16 16" id="play-icon"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
+    </button>
+    <span class="time" id="time">0.0 / 26.0 s</span>
+    <div class="track" id="track" role="slider" aria-label="Zeit" tabindex="0" aria-valuemin="0" aria-valuemax="26" aria-valuenow="0">
+      <div class="segs" id="segs"></div>
+      <div class="head" id="head"></div>
+    </div>
+    <select class="speed" id="speed" aria-label="Geschwindigkeit">
+      <option value="0.25">0.25×</option>
+      <option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option>
+      <option value="2">2×</option>
+    </select>
+  </div>
+
+  <aside>
+    <section>
+      <h2>Ablauf</h2>
+      <ol class="steps" id="steps"></ol>
+    </section>
+    <section>
+      <h2>Gelenkwinkel</h2>
+      <div class="joints" id="joints"></div>
+    </section>
+    <section>
+      <h2>Ansicht</h2>
+      <div class="toggles">
+        <label><input type="checkbox" id="opt-glass"> Greifergehäuse transparent</label>
+        <label><input type="checkbox" id="opt-path" checked> TCP-Bahn anzeigen</label>
+        <label><input type="checkbox" id="opt-ghost"> Platzhalterarm aus Setup.step</label>
+      </div>
+    </section>
+    <section>
+      <h2>Modell</h2>
+      <p class="note"><b>Setup, Greifer, Mutter und Schraube</b> kommen aus <span style="font-family:var(--font-mono)">cad/export</span> (Setup.step, Iris_wheel_gripper.step), massstabsgetreu in mm.</p>
+      <p class="note"><b>Iris:</b> Die sechs Lamellen drehen um ihre Stifte, bei 20.5° liegen sie an den Schlüsselflächen der Mutter (SW 10) an. Beim Aufschrauben dreht die ganze Iris mit der Mutter, angetrieben über die beiden Räder.</p>
+      <p class="note"><b>Roboterbasis bei x = −200 mm</b> statt bei +50 mm wie der Platzhalterarm. Mit 156 mm Greiferlänge liegen Mutter und Schraube sonst zu nah an der Basis und sind mit senkrechtem Greifer nicht erreichbar.</p>
+      <p class="note"><b>Bewegung:</b> inverse Kinematik mit den FR3-Parametern und Gelenkgrenzen, Greifer immer senkrecht. Aufschrauben mit 15 Umdrehungen bei 1 mm Steigung (M6), der Arm folgt 15 mm nach unten.</p>
+      <p class="note">FR3-Meshes: franka_description, Franka Robotics GmbH, Apache-2.0.</p>
+    </section>
+  </aside>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script>
+/*KIN*/
+</script>
+<script>
+/*ASSETS*/
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+const $ = id => document.getElementById(id);
+
+// ---------------- world layout (metres, z up, origin = corner of base plate in Setup.step) -------------
+const BASE = [-0.200, 0.250, 0.000];
+const NUT0 = [0.2890, 0.1490, 0.0275];            // nut centre on its fixture
+const SCREW = [0.2472, 0.3540];                   // screw axis
+const SCREW_TOP = 0.050, SEAT = 0.035, NUT_H = 0.005, PITCH = 0.001;
+const ABOVE = 0.1275;
+const P = {
+  aboveNut: [NUT0[0], NUT0[1], ABOVE],
+  nut: NUT0,
+  aboveScrew: [SCREW[0], SCREW[1], ABOVE],
+  screwStart: [SCREW[0], SCREW[1], SCREW_TOP + NUT_H / 2],
+  screwEnd: [SCREW[0], SCREW[1], SEAT + NUT_H / 2],
+};
+const TURNS = Math.round((SCREW_TOP - SEAT) / PITCH);
+const YAW = Math.PI / 2;  // camera side of the gripper faces +x, away from the robot base
+
+const PHASES = [
+  { name: 'Startpose',            t0: 0,    t1: 1,    kind: 'hold' },
+  { name: 'Anfahrt über Mutter',  t0: 1,    t1: 4,    kind: 'ptp', to: 'aboveNut', detail: 'PTP-Bewegung, Gelenkraum' },
+  { name: 'Absenken auf Mutter',  t0: 4,    t1: 6,    kind: 'lin', to: 'nut', detail: 'LIN, 100 mm senkrecht' },
+  { name: 'Iris schliessen',      t0: 6,    t1: 7,    kind: 'hold', detail: 'Mutter wird im Greifer gehalten' },
+  { name: 'Anheben',              t0: 7,    t1: 8.5,  kind: 'lin', to: 'aboveNut', detail: 'LIN, 100 mm senkrecht' },
+  { name: 'Transfer zur Schraube',t0: 8.5,  t1: 12,   kind: 'lin', to: 'aboveScrew', detail: 'LIN auf konstanter Höhe' },
+  { name: 'Absenken auf Gewinde', t0: 12,   t1: 14,   kind: 'lin', to: 'screwStart', detail: 'Mutter sitzt auf dem Gewindeanfang' },
+  { name: 'Aufschrauben',         t0: 14,   t1: 19,   kind: 'screw', to: 'screwEnd', detail: '' },
+  { name: 'Iris öffnen',          t0: 19,   t1: 20,   kind: 'hold', detail: 'Mutter bleibt auf der Schraube' },
+  { name: 'Rückzug',              t0: 20,   t1: 21.5, kind: 'lin', to: 'aboveScrew', detail: 'LIN, senkrecht nach oben' },
+  { name: 'Zurück in Startpose',  t0: 21.5, t1: 25,   kind: 'ptp', to: 'home', detail: 'PTP-Bewegung, Gelenkraum' },
+  { name: 'Ende',                 t0: 25,   t1: 26,   kind: 'hold', detail: 'Ablauf beginnt von vorn' },
+];
+const T_END = PHASES[PHASES.length - 1].t1;
+const T_GRIP = 6.5, T_RELEASE = 19.5;
+const T_SCREW0 = 14, T_SCREW1 = 19;
+const ease = s => s * s * s * (s * (6 * s - 15) + 10);
+
+// ---------------- precompute joint trajectory -----------------
+const baseM = mrpy(0, 0, 0, BASE);
+const DT = 0.02, N = Math.round(T_END / DT) + 1;
+const QS = new Float32Array(N * 7), TCPS = new Float32Array(N * 3);
+(function precompute() {
+  let q = Q_HOME.slice();
+  let qStart = q.slice(), pStart = null, qEnd = null, curPhase = -1;
+  for (let n = 0; n < N; n++) {
+    const t = Math.min(n * DT, T_END);
+    let pi = PHASES.findIndex(ph => t < ph.t1); if (pi < 0) pi = PHASES.length - 1;
+    const ph = PHASES[pi];
+    if (pi !== curPhase) {
+      curPhase = pi; qStart = q.slice();
+      const fr = fkAll(qStart, baseM); pStart = [fr[7][3], fr[7][7], fr[7][11]];
+      if (ph.kind === 'ptp') qEnd = ph.to === 'home' ? Q_HOME.slice() : ik(qStart, baseM, P[ph.to], YAW, 300).q;
+    }
+    const s = Math.min(1, Math.max(0, (t - ph.t0) / (ph.t1 - ph.t0)));
+    if (ph.kind === 'ptp') { const e = ease(s); q = qStart.map((v, k) => v + (qEnd[k] - v) * e); }
+    else if (ph.kind === 'lin' || ph.kind === 'screw') {
+      const e = ph.kind === 'screw' ? s : ease(s), tgt = P[ph.to];
+      const p = pStart.map((v, k) => v + (tgt[k] - v) * e);
+      q = ik(q, baseM, p, YAW, 30).q;
+    }
+    QS.set(q, n * 7);
+    const fr = fkAll(q, baseM); TCPS.set([fr[7][3], fr[7][7], fr[7][11]], n * 3);
+  }
+})();
+function jointsAt(t) {
+  const x = Math.min(Math.max(t, 0), T_END) / DT, i = Math.min(Math.floor(x), N - 2), f = x - i, out = [];
+  for (let k = 0; k < 7; k++) out.push(QS[i * 7 + k] + (QS[(i + 1) * 7 + k] - QS[i * 7 + k]) * f);
+  return out;
+}
+const spinAt = t => t <= T_SCREW0 ? 0 : t >= T_SCREW1 ? TURNS * 2 * Math.PI : (t - T_SCREW0) / (T_SCREW1 - T_SCREW0) * TURNS * 2 * Math.PI;
+// blade angle about its pin, 0 = closed as in the CAD; 20.5° touches the nut flats (AF 10), 55° lets the nut corners pass
+const BLADE_OPEN = 55, BLADE_GRIP = 20.5;
+function irisAt(t) {
+  if (t < 6) return 0; if (t < 7) return ease(t - 6);
+  if (t < 19) return 1; if (t < 20) return 1 - ease(t - 19); return 0;
+}
+
+// ---------------- renderer / scene -----------------
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 20);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 0.12; controls.maxDistance = 4;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9096, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(0.6, -0.5, 1.6); sun.target.position.set(0.05, 0.25, 0);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.002;
+Object.assign(sun.shadow.camera, { left: -0.7, right: 0.7, top: 0.7, bottom: -0.7, near: 0.2, far: 3.5 });
+scene.add(sun, sun.target);
+
+const tableMat = new THREE.MeshStandardMaterial({ color: 0xc9ced3, roughness: 0.85 });
+const table = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 0.03), tableMat);
+table.position.set(0.0, 0.25, -0.015); table.receiveShadow = true; scene.add(table);
+const grid = new THREE.GridHelper(1.5, 30, 0x000000, 0x000000);
+grid.rotation.x = Math.PI / 2; grid.position.set(0.0, 0.25, 0.0002);
+grid.material.transparent = true; grid.material.opacity = 0.07; scene.add(grid);
+
+function applyTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  tableMat.color.set(cs.getPropertyValue('--table').trim() || '#c9ced3');
+  pathMat.color.set(cs.getPropertyValue('--accent').trim() || '#c8561a');
+  tcpDot.material.color.copy(pathMat.color);
+}
+
+// ---------------- materials -----------------
+const M = {
+  white: new THREE.MeshPhysicalMaterial({ color: 0xf1f1ee, roughness: 0.32, clearcoat: 0.4, clearcoatRoughness: 0.3 }),
+  black: new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.55 }),
+  alu: new THREE.MeshStandardMaterial({ color: 0xc8ccd1, metalness: 0.75, roughness: 0.38 }),
+  anod: new THREE.MeshStandardMaterial({ color: 0x34404b, metalness: 0.35, roughness: 0.5 }),
+  rubber: new THREE.MeshStandardMaterial({ color: 0x24282c, roughness: 0.9 }),
+  blade: new THREE.MeshStandardMaterial({ color: 0x5b6570, metalness: 0.2, roughness: 0.55 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0xb9bdc2, metalness: 1.0, roughness: 0.28 }),
+  zinc: new THREE.MeshStandardMaterial({ color: 0x9fa6ad, metalness: 1.0, roughness: 0.36 }),
+  pla: new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.7 }),
+  plaLight: new THREE.MeshStandardMaterial({ color: 0x8b939b, roughness: 0.68 }),
+  plaAccent: new THREE.MeshStandardMaterial({ color: 0xd4652a, roughness: 0.62 }),
+  ghost: new THREE.MeshBasicMaterial({ color: 0x3b82c4, transparent: true, opacity: 0.16, depthWrite: false }),
+};
+function setMat(obj, mat, shadow = true) {
+  obj.traverse(o => { if (o.isMesh) { o.material = mat; o.castShadow = shadow; o.receiveShadow = true; } });
+}
+
+// ---------------- load assets -----------------
+const loader = new GLTFLoader();
+function b64ToBuf(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; }
+const loadGlb = b64 => new Promise((res, rej) => loader.parse(b64ToBuf(b64), '', g => {
+  g.scene.traverse(o => { if (o.isMesh && !o.geometry.attributes.normal) o.geometry.computeVertexNormals(); });
+  res(g.scene);
+}, rej));
+
+const [frankaScene, setupScene, gripScene] = await Promise.all([loadGlb(ASSETS.franka), loadGlb(ASSETS.setup), loadGlb(ASSETS.gripper)]);
+$('loading').hidden = true;
+
+// --- Franka chain
+const robotBase = new THREE.Group(); robotBase.position.set(...BASE); scene.add(robotBase);
+const links = [];
+for (let i = 0; i < 8; i++) {
+  const l = frankaScene.getObjectByName('link' + i); l.removeFromParent(); l.position.set(0, 0, 0); l.rotation.set(0, 0, 0); links.push(l);
+  l.traverse(o => {
+    if (!o.isMesh) return;
+    const c = o.material.color, lum = (c.r + c.g + c.b) / 3;
+    if (lum > 0.8) o.material = M.white;
+    else if (lum < 0.06) o.material = M.black;
+    else o.material = new THREE.MeshStandardMaterial({ color: c.clone(), roughness: 0.5 });
+    o.castShadow = true; o.receiveShadow = true;
+  });
+}
+robotBase.add(links[0]);
+const jointNodes = []; let parent = robotBase;
+const H = Math.PI / 2;
+const JDEF = [[[0,0,0.333],[0,0,0]],[[0,0,0],[-H,0,0]],[[0,-0.316,0],[H,0,0]],[[0.0825,0,0],[H,0,0]],[[-0.0825,0.384,0],[-H,0,0]],[[0,0,0],[H,0,0]],[[0.088,0,0],[H,0,0]]];
+for (let i = 0; i < 7; i++) {
+  const fixed = new THREE.Object3D(); fixed.position.set(...JDEF[i][0]); fixed.rotation.set(JDEF[i][1][0], JDEF[i][1][1], JDEF[i][1][2], 'ZYX');
+  parent.add(fixed); const j = new THREE.Object3D(); fixed.add(j); j.add(links[i + 1]); jointNodes.push(j); parent = j;
+}
+const flange = new THREE.Object3D(); flange.position.z = 0.107; flange.rotation.z = -Math.PI / 4; parent.add(flange);
+const gripRoot = new THREE.Object3D(); gripRoot.rotation.x = Math.PI; gripRoot.position.z = 0.1563; flange.add(gripRoot);
+gripRoot.add(gripScene);
+const tcp = new THREE.Object3D(); tcp.position.z = TCP_IN_GRIPPER; gripRoot.add(tcp);
+
+// --- gripper parts
+const G = n => gripScene.getObjectByName(n);
+const housing = [G('housing_l'), G('housing_r')];
+const gripMats = {
+  post_l: M.pla, post_r: M.pla, bottom_plate: M.pla, frame: M.plaLight, motor_mount: M.pla, top_box: M.black,
+  flange_adapter: M.alu, shaft: M.steel, gear_mid: M.plaLight, gear_top: M.plaLight, socket: M.plaLight,
+  clip_a: M.steel, clip_b: M.steel, camera: M.plaAccent, iris_ring: M.plaAccent, wheel_l: M.rubber, wheel_r: M.rubber,
+};
+for (const [n, m] of Object.entries(gripMats)) if (G(n)) setMat(G(n), m);
+const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fa3b5, roughness: 0.15, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+housing.forEach(h => setMat(h, M.plaLight));
+// iris: six blades pivot on their pins; ring and blades turn together while screwing
+const irisAsm = new THREE.Group(); gripScene.add(irisAsm);
+const irisRing = G('iris_ring'); irisAsm.add(irisRing);
+const BLADE_PIVOTS = [[-1.51, -15.0], [12.24, -8.81], [13.75, 6.2], [1.51, 15.0], [-12.24, 8.81], [-13.75, -6.2]];
+const blades = BLADE_PIVOTS.map((pv, k) => {
+  const b = G('blade_' + k); setMat(b, M.blade);
+  const pivot = new THREE.Group(); pivot.position.set(pv[0] / 1000, pv[1] / 1000, 0);
+  b.position.set(-pv[0] / 1000, -pv[1] / 1000, 0); pivot.add(b); irisAsm.add(pivot); return pivot;
+});
+const wheels = ['wheel_l', 'wheel_r'].map(n => {
+  const w = G(n); const c = new THREE.Box3().setFromObject(w).getCenter(new THREE.Vector3());
+  const hub = new THREE.Group(); hub.position.set(c.x, c.y, 0); w.position.set(-c.x, -c.y, 0); hub.add(w); gripScene.add(hub); return hub;
+});
+const WHEEL_RATIO = 32.2 / 11.8;
+
+// --- setup parts
+const S = n => setupScene.getObjectByName(n);
+setMat(S('base_plate'), M.alu); setMat(S('fixture_nut'), M.anod); setMat(S('fixture_screw'), M.anod);
+setMat(S('screw'), M.zinc); setMat(S('nut'), M.steel);
+const ghosts = ['ph_arm', 'ph_pedestal', 'ph_column', 'ph_tool'].map(S).filter(Boolean);
+ghosts.forEach(g => { setMat(g, M.ghost, false); g.visible = false; });
+scene.add(setupScene);
+const nut = S('nut');
+// nut geometry is in plate coordinates; recentre so its local origin is the nut centre
+nut.traverse(o => { if (o.isMesh) o.geometry.translate(-NUT0[0], -NUT0[1], -NUT0[2]); });
+nut.removeFromParent(); scene.add(nut);
+nut.matrixAutoUpdate = false;
+const NUT_HOME = new THREE.Matrix4().makeTranslation(...NUT0);
+
+// ---------------- TCP path -----------------
+const pathPts = []; for (let n = Math.round(1 / DT); n < Math.round(25 / DT); n += 2) pathPts.push(new THREE.Vector3(TCPS[n * 3], TCPS[n * 3 + 1], TCPS[n * 3 + 2]));
+const pathMat = new THREE.LineDashedMaterial({ color: 0xc8561a, dashSize: 0.008, gapSize: 0.005, transparent: true, opacity: 0.9 });
+const pathLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pathPts), pathMat); pathLine.computeLineDistances(); scene.add(pathLine);
+const tcpDot = new THREE.Mesh(new THREE.SphereGeometry(0.0035, 16, 12), new THREE.MeshBasicMaterial({ color: 0xc8561a, depthTest: false }));
+tcpDot.renderOrder = 10; scene.add(tcpDot);
+applyTheme();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------------- pose the scene at time t -----------------
+const _m = new THREE.Matrix4(), _r = new THREE.Matrix4();
+function poseRobot(t) {
+  const q = jointsAt(t);
+  for (let k = 0; k < 7; k++) jointNodes[k].rotation.z = q[k];
+  robotBase.updateMatrixWorld(true);
+  return q;
+}
+// offset of nut relative to TCP at grip moment
+poseRobot(T_GRIP);
+const NUT_OFF = tcp.matrixWorld.clone().invert().multiply(NUT_HOME);
+poseRobot(T_RELEASE);
+const NUT_FINAL = tcp.matrixWorld.clone().multiply(_r.makeRotationZ(-TURNS * 2 * Math.PI)).multiply(NUT_OFF);
+
+function setTime(t) {
+  const q = poseRobot(t);
+  const spin = spinAt(t);
+  const close = irisAt(t);                                   // 0 = open, 1 = on the nut
+  const bladeAng = THREE.MathUtils.degToRad(BLADE_OPEN + (BLADE_GRIP - BLADE_OPEN) * close);
+  blades.forEach(b => b.rotation.z = bladeAng);
+  const ringAng = 0.5 * close;
+  irisRing.rotation.z = ringAng;
+  irisAsm.rotation.z = -spin;
+  wheels.forEach(w => w.rotation.z = -(ringAng - spin) * WHEEL_RATIO);
+  if (t < T_GRIP) nut.matrix.copy(NUT_HOME);
+  else if (t < T_RELEASE) nut.matrix.copy(tcp.matrixWorld).multiply(_r.makeRotationZ(-spin)).multiply(NUT_OFF);
+  else nut.matrix.copy(NUT_FINAL);
+  nut.matrixWorldNeedsUpdate = true;
+  tcpDot.position.setFromMatrixPosition(tcp.matrixWorld);
+  updateUI(t, q, spin);
+}
+
+// ---------------- UI -----------------
+const pad = n => String(n).padStart(2, '0');
+const stepsEl = $('steps'), segsEl = $('segs');
+PHASES.forEach((ph, i) => {
+  const li = document.createElement('li');
+  li.innerHTML = `<button type="button"><span class="n">${pad(i + 1)}</span><span class="lbl">${ph.name}</span><span class="t">${ph.t0.toFixed(1)} s</span></button>`;
+  li.querySelector('button').addEventListener('click', () => { time = ph.t0 + 0.001; });
+  stepsEl.appendChild(li);
+  const sp = document.createElement('span'); sp.style.flex = String(ph.t1 - ph.t0); segsEl.appendChild(sp);
+});
+const jointsEl = $('joints');
+const jRows = Q_LO.map((lo, k) => {
+  const row = document.createElement('div'); row.className = 'jrow';
+  row.innerHTML = `<span>q${k + 1}</span><div class="jbar"><i></i></div><span class="val">0.0°</span>`;
+  jointsEl.appendChild(row); return { bar: row.querySelector('.jbar'), mark: row.querySelector('i'), val: row.querySelector('.val') };
+});
+let lastPhase = -1;
+function updateUI(t, q, spin) {
+  let pi = PHASES.findIndex(ph => t < ph.t1); if (pi < 0) pi = PHASES.length - 1;
+  const ph = PHASES[pi];
+  if (pi !== lastPhase) {
+    lastPhase = pi;
+    $('hud-num').textContent = `${pad(pi + 1)} / ${PHASES.length}`;
+    $('hud-name').textContent = ph.name;
+    [...stepsEl.children].forEach((li, i) => li.classList.toggle('cur', i === pi));
+    [...segsEl.children].forEach((s, i) => { s.classList.toggle('cur', i === pi); s.classList.toggle('done', i < pi); });
+  }
+  $('hud-detail').textContent = ph.kind === 'screw' || (t >= T_SCREW1 && t < T_RELEASE + 0.5)
+    ? `Umdrehung ${(spin / (2 * Math.PI)).toFixed(1)} von ${TURNS} · ${((spin / (2 * Math.PI)) * PITCH * 1000).toFixed(1)} mm`
+    : (ph.detail || ' ');
+  const p = tcp.getWorldPosition(new THREE.Vector3());
+  $('tcp-x').textContent = (p.x * 1000).toFixed(1); $('tcp-y').textContent = (p.y * 1000).toFixed(1); $('tcp-z').textContent = (p.z * 1000).toFixed(1);
+  q.forEach((v, k) => {
+    const f = (v - Q_LO[k]) / (Q_HI[k] - Q_LO[k]);
+    jRows[k].mark.style.left = (f * 100).toFixed(2) + '%';
+    jRows[k].bar.classList.toggle('warn', f < 0.05 || f > 0.95);
+    jRows[k].val.textContent = (v * 180 / Math.PI).toFixed(1) + '°';
+  });
+  $('time').textContent = `${t.toFixed(1)} / ${T_END.toFixed(1)} s`;
+  $('head').style.left = (t / T_END * 100) + '%';
+  $('track').setAttribute('aria-valuenow', t.toFixed(1));
+}
+
+// transport
+let time = 0, playing = true, speed = 1;
+const playBtn = $('play');
+const ICON_PAUSE = '<rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/>';
+const ICON_PLAY = '<path d="M4 2.2v11.6c0 .8.9 1.3 1.6.8l8.6-5.8c.6-.4.6-1.2 0-1.6L5.6 1.4C4.9.9 4 1.4 4 2.2z"/>';
+function setPlaying(v) { playing = v; $('play-icon').innerHTML = v ? ICON_PAUSE : ICON_PLAY; playBtn.setAttribute('aria-label', v ? 'Pause' : 'Abspielen'); }
+playBtn.addEventListener('click', () => setPlaying(!playing));
+$('speed').addEventListener('change', e => speed = parseFloat(e.target.value));
+const track = $('track');
+function scrub(e) { const r = track.getBoundingClientRect(); time = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * T_END; }
+track.addEventListener('pointerdown', e => { track.setPointerCapture(e.pointerId); scrub(e); const mv = ev => scrub(ev); track.addEventListener('pointermove', mv); track.addEventListener('pointerup', () => track.removeEventListener('pointermove', mv), { once: true }); });
+track.addEventListener('keydown', e => { if (e.key === 'ArrowRight') time = Math.min(T_END, time + 0.5); if (e.key === 'ArrowLeft') time = Math.max(0, time - 0.5); if (e.key === ' ') { e.preventDefault(); setPlaying(!playing); } });
+$('opt-glass').addEventListener('change', e => housing.forEach(h => setMat(h, e.target.checked ? glassMat : M.plaLight, !e.target.checked)));
+$('opt-path').addEventListener('change', e => { pathLine.visible = e.target.checked; tcpDot.visible = e.target.checked; });
+$('opt-ghost').addEventListener('change', e => ghosts.forEach(g => g.visible = e.target.checked));
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) setPlaying(false);
+window.__setT = v => { time = v; };
+
+// camera presets
+let camMode = 'overview';
+const VIEWS = {
+  overview: { pos: [1.25, -0.95, 0.95], tgt: [0.04, 0.25, 0.22] },
+  side: { pos: [0.08, -1.35, 0.42], tgt: [0.04, 0.25, 0.26] },
+};
+const FOLLOW_OFF = new THREE.Vector3(0.26, -0.30, 0.13);
+let camAnim = null;
+function goView(mode) {
+  camMode = mode;
+  ['overview', 'follow', 'side'].forEach(m => $('cam-' + m).setAttribute('aria-pressed', String(m === mode)));
+  if (mode === 'follow') { camAnim = { from: camera.position.clone(), fromT: controls.target.clone(), k: 0, follow: true }; return; }
+  const v = VIEWS[mode];
+  camAnim = { from: camera.position.clone(), fromT: controls.target.clone(), to: new THREE.Vector3(...v.pos), toT: new THREE.Vector3(...v.tgt), k: 0 };
+}
+['overview', 'follow', 'side'].forEach(m => $('cam-' + m).addEventListener('click', () => goView(m)));
+camera.position.set(...VIEWS.overview.pos); controls.target.set(...VIEWS.overview.tgt);
+controls.addEventListener('start', () => { camAnim = null; if (camMode !== 'follow') { camMode = 'free'; ['overview', 'follow', 'side'].forEach(m => $('cam-' + m).setAttribute('aria-pressed', 'false')); } });
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  camera.fov = w / h < 0.9 ? 52 : 38; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage); resize();
+
+let last = performance.now();
+const _tp = new THREE.Vector3();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing) { time += dt * speed; if (time > T_END) time = 0; }
+  setTime(time);
+  if (camMode === 'follow') {
+    tcp.getWorldPosition(_tp);
+    const want = _tp.clone().add(FOLLOW_OFF);
+    if (camAnim) { camAnim.k = Math.min(1, camAnim.k + dt * 1.6); const e = ease(camAnim.k);
+      camera.position.lerpVectors(camAnim.from, want, e); controls.target.lerpVectors(camAnim.fromT, _tp, e); if (camAnim.k >= 1) camAnim = null; }
+    else { const d = _tp.clone().sub(controls.target); controls.target.add(d); camera.position.add(d); }
+  } else if (camAnim) {
+    camAnim.k = Math.min(1, camAnim.k + dt * 1.6); const e = ease(camAnim.k);
+    camera.position.lerpVectors(camAnim.from, camAnim.to, e); controls.target.lerpVectors(camAnim.fromT, camAnim.toT, e);
+    if (camAnim.k >= 1) camAnim = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

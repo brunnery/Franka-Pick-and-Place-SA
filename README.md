@@ -21,10 +21,20 @@ It contains the CAD files, the Arduino firmware and the Python software.
 │   ├── main.py             Entry point
 │   └── requirements.txt    Python dependencies
 ├── data/                   Measurements and logs
+├── visualization/          3D view of the pick and place sequence
 └── docs/                   Documentation
     ├── images/             Photos, screenshots, figures
     └── datasheets/         Datasheets of the components used
 ```
+
+## 3D visualisation
+
+Interactive 3D view of the sequence (Franka FR3, iris wheel gripper, nut pickup to screwing):
+
+- online: https://brunnery.github.io/Franka-Pick-and-Place-SA/visualization/
+- local: open `visualization/index.html` in a browser
+
+Details in [visualization/README.md](visualization/README.md).
 
 ## Getting started
 

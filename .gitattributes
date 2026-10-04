@@ -13,5 +13,6 @@
 *.stp binary
 *.stl binary
 *.3mf binary
+*.glb binary
 *.dxf binary
 *.pdf binary
