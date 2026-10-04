@@ -13,7 +13,7 @@ It contains the CAD files, the Arduino firmware and the Python software.
 │   ├── export/             Exchange and print files (STEP, STL, 3MF)
 │   └── drawings/           Technical drawings (PDF, DXF)
 ├── arduino/                Microcontroller code
-│   └── firmware/           Arduino sketch (firmware.ino)
+│   └── sketch_sep24a/      Motor shield test sketch
 ├── software/               Python software
 │   ├── franka_pick_place/  Python package
 │   ├── config/             Configuration files
@@ -40,7 +40,7 @@ python main.py
 
 ### Arduino firmware
 
-Open `arduino/firmware/firmware.ino` in the Arduino IDE, select the board and port, and upload.
+Open `arduino/sketch_sep24a/sketch_sep24a.ino` in the Arduino IDE, select the board and port, and upload.
 
 <!-- TODO: board type, wiring, required libraries -->
 
