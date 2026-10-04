@@ -1,0 +1,17 @@
+* text=auto
+
+# CAD and other binary files: never diff or merge as text
+*.sldprt binary
+*.sldasm binary
+*.slddrw binary
+*.f3d binary
+*.f3z binary
+*.ipt binary
+*.iam binary
+*.prt binary
+*.step binary
+*.stp binary
+*.stl binary
+*.3mf binary
+*.dxf binary
+*.pdf binary
