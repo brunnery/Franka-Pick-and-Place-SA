@@ -187,68 +187,68 @@ Prinzipien: Mathe/Logik ohne ROS-Abhängigkeit (testbar am Laptop), alle Zahlen 
 
 ### Software / Umgebung
 **F1.** ROS2-Distro auf der Workstation (Humble / Jazzy)? Ubuntu-Version? franka_ros2-Version / libfranka?
-Antwort: 
+Antwort: Ubuntu, weiss aber nicht welche version. 
 
 **F2.** CIC: derselbe Controller wie in der BA? Eigener Code oder aus franka_ros2 / Lab-Repo? Wie werden Soll-Pose und Steifigkeit gesetzt (Topic-Namen, Msg-Typ)?
-Antwort: 
+Antwort: ja der gleiche, aber er soll variabel pro phase benutzt werden können. wahrsheinnlich einfach 1 mit hoher 1 mit niedrigerer stiffness, mehr brauchts vermutlich nicht.
 
 **F3.** BA-Code: Wann kommt er ins BA-Repo? Welche Teile willst du übernehmen (Vision, State-Machine, Bridge, Logging)?
-Antwort: 
+Antwort: ich will eig nichts übernhemen. maximal das prinzip der vision pipeline, state machines sicher nicht, die bridge könnte man vlt auch, logging nicht. man kann also eig von einem clean slate starten.
 
 **F4.** Das SA-Repo hat aktuell `software/` als reines Python-Paket (Windows-venv im README). Soll die SA-Software ein **ROS2-Workspace** werden (Pakete unter `software/src/`) oder bleibt es Python + rclpy ohne colcon?
-Antwort: 
+Antwort: ja das soll dann danach alles über ROS2 laufen. das war bisher einfach ein platzhalter.
 
 ### Gripper / Elektronik
 **F5.** Motortreiber: Adafruit Motor Shield v2 (wie in `sketch_sep24a`)? Welcher Arduino (Uno/Mega/…)? Welcher Motor hängt an welchem Port (M1–M4)?
-Antwort: 
+Antwort: Arduino R4 Minima mit Motorshield von Adafruit v2.3. motoren ist noch nicht ganz klar aber vermutlich sind die beiden für das Iris Shutter an port M2 und M4, das kann dann aber noch angepasst werden. der dritte motor ist dann vermutlich an Port M1
 
 **F6.** Iris: Wie wird „geschlossen / Mutter gegriffen“ erkannt? (Drucksensor wie BA an A0, Stromsensor, Endschalter, Encoder, nur Zeit?)
-Antwort: 
+Antwort: Über Zeit, die Motoren geben kein Feedback. das wird dann einfach iteriert bis es funktioniert. sollte aber keine grosse Sache sein. 
 
 **F7.** Dauerhaftes Halten: Getriebe selbsthemmend (Schnecke)? Oder muss der Motor mit Halte-PWM bestromt bleiben? Wie heiss werden die Motoren?
-Antwort: 
+Antwort: Die Motoren sollen einfach den Befehl bekommen weiter zu drehen. dann Drücken sie ja quasi einfach alles zusammen, das reicht dann auch. Heiss werden die nicht, habe das gleiche bei der BA auch gemacht und hatte nie probleme.
 
 **F8.** M3 dreht den ganzen Gripper inkl. M1/M2: Kabelführung? (Schleifring / max. Umdrehungen + zurückdrehen / anders)
-Antwort: 
+Antwort: der Dritte Motor, vermutlich an port 1 dreht den ganzen Gripper. Kabelführung inkl. Schleifring ist berücksichtigt. der muss einfach drehen.
 
 **F9.** M3: Encoder vorhanden? Wie soll „fertig geschraubt“ erkannt werden (Zeit, Strom/Stall, z-Weg des Roboters, Fz/Mz vom FR3)?
-Antwort: 
+Antwort: Ebenfalls über Zeit, therotisch geht auch pber einen Torque Sensor am Arm, aber eher unwahrscheinlich
 
 **F10.** Übersetzung Motor → Iris und Motor → Rotation bekannt? (für Umdrehungen ↔ Zeit)
-Antwort: 
+Antwort: das weiss ich leider nicht, spielt aber auch nicht so eine Rolle. das wird dann getestet bis es stimmt.
 
 ### Kamera / Vision
 **F11.** Kameramodell, Auflösung, FPS? Fokus fix oder Autofokus (Autofokus zerstört Kalibrierung)?
-Antwort: 
+Antwort: HutoPi 720p HD USB camera with OV9726 module, wir haben dafür auch bei der BA keine spezifikationen gefunden und mussten sleber eine kalibrierung machen. ich kann mal schauen ob ich diese Werte wieder finde. 
 
 **F12.** Montage: Senkrecht nach unten? Ungefährer Versatz Kamera → Gripper-Mitte (x, y, z in mm)?
-Antwort: 
+Antwort: Stand 07.10.26, Delta_x = 0.1mm = 0mm, Delta_y = -44.505mm, Delta_z = 52.1mm
 
 **F13.** Bleibt die schwarze Lackierung + Threshold-Detektion? Untergrund (Farbe/Material)? Beleuchtung kontrolliert?
-Antwort: 
+Antwort: eigentlich will ich dass es ohne schwarze lakierung geht. sprich einfach die Mutter auf weissem untergrund.
 
 **F14.** Muss die Orientierung der Mutter (Sechseck-Winkel) bestimmt werden, oder zentriert die Iris die Mutter selbst beim Schliessen?
-Antwort: 
+Antwort: muss nicht bestimmt werden. wenn wir in zukunft viele Fehler deswegen haben kann mans nochmal anpassen.
 
 ### Teile / Aufgabe
 **F15.** Muttergrössen (M5, M6, …)? Mutterhöhe? Schraubentyp und -länge, wie fixiert (eingeklebt, Platte)?
-Antwort: 
+Antwort: M6, schraube ist eine "stiftschraube" mit einer quadratischen Basis, 10x10x20 LxBxH, gewinde 19mm hoch, fixiert, sprich ist immer schon schraubbereit.
 
 **F16.** Liegen Mutter und Schraube an beliebigen Positionen im Arbeitsbereich oder in einem bekannten Bereich? Mehrere Muttern nacheinander?
-Antwort: 
+Antwort: das Ziel ist, dass beliebige Positionen in einem vorbestimmten Bereich gewählt werden können. da ich nur eine Kamera habe muss die mutte rund schraube jeweils in einer gehardcodeden Area liegen in welcher das visual servoing dann greift.
 
 **F17.** Ist „Mutter flush auf Tisch“ sicher? Gripper-Unterseite vs. Mutterhöhe – greift die Iris dann auf voller Mutterhöhe?
-Antwort: 
+Antwort: wenn gripper unterseite auf dem tisch liegt, werden die greifzähne des Iris mechanismus 3.5mm höher sein als der Tisch. also sprich die Mutter wird flush mit der Gripper unterseie gemacht, nicht mit den gripper Zähnen selbst. spielt aber kein Rolle.
 
 ### Organisatorisch
 **F18.** Abgabedatum, Zwischenpräsentation, Meilensteine? Ab wann hast du Zugriff auf die Workstation?
-Antwort: 
+Antwort: Theoretisch ist abgabe am 31.10.26. zwischenabgaben gibt es nicht, keine Meilensteine. Am ende soll die erfolgsquote einfach höher sein.
 
 **F19.** Vorgaben Betreuer (Sprache des Berichts, Pflicht-Evaluation, Vergleich mit BA erwünscht)?
-Antwort: 
+Antwort: alles in Englisch, Vergleich mit BA soll sicher auch drin sein. 
 
 **F20.** Sonst noch etwas, das ich wissen sollte / was dich an meinem Vorschlag (§5–§7) stört?
-Antwort: 
+Antwort: Momentan nicht. das wird dann mal bis mal gemacht.
 
 ---
 
