@@ -1,29 +1,27 @@
 # Semesterarbeit – Projektkontext & Gameplan
 
-> Lebendes Dokument. Dient als Kontext für Claude (und mich). Bei jeder Designentscheidung hier nachführen.
-> Status: **Vorbereitung ohne Workstation** (Stand 07.10.2026)
+> Lebendes Dokument, Kontext für Claude und mich. Bei jeder Designentscheidung nachführen.
+> **Version 2** (07.10.2026) – nach Beantwortung der Fragen F1–F20 (Antworten im Anhang A).
+> Abgabe: **31.10.2026** → alles, was nicht direkt die Erfolgsquote erhöht, wird gestrichen.
 
 ---
 
-## 1. Ziel in einem Satz
+## 1. Ziel
 
-Ein FR3 mit eye-in-hand USB-Kamera und neuem Iris-Gripper soll eine Mutter autonom finden, greifen, über einer Schraube platzieren und aufschrauben – mit direkter Zielpose aus der Kamera statt iterativer Pixel-Fehlerminimierung.
+Ein FR3 mit eye-in-hand USB-Kamera und neuem Iris-Gripper soll eine **M6-Mutter** (blank, auf weissem Untergrund) innerhalb eines definierten Bereichs finden, greifen, auf eine fixierte Stiftschraube setzen und aufschrauben.
+Erfolgskriterium: **höhere Erfolgsquote als in der BA**, Vergleich mit der BA im Bericht (Englisch).
+
+Kernänderungen gegenüber der BA:
+1. **Direkte Zielpose** aus Kamerabild (Ansatz 2) statt iterativer Pixel-Regelung.
+2. **Iris-Gripper + rotierender Gripper** statt Backen + Schraubendreher.
+3. **Keine schwarze Lackierung** mehr – Detektion von blankem Metall auf Weiss.
+4. **Clean Slate:** neue ROS2-Software, aus der BA wird nur das Prinzip der Vision-Pipeline übernommen.
 
 ---
 
-## 2. Ausgangslage aus der Bachelorarbeit (BA)
+## 2. Ausgangslage aus der BA (Kurzfassung)
 
-**BA:** *Design and Control of a Low-Cost 3D-Printed End Effector for Autonomous Nut Grasping, Placing and Fastening* (Aug 2026, ETH, PDZ).
-
-### Was existiert / funktioniert hat
-- ROS2-Stack: Vision-Node → State-Machine *pick* / *place* → Arduino-Bridge (serial) + Cartesian Impedance Controller (CIC) → FR3.
-- Vision: Graustufen-Threshold (80), Gauss 5×5, Morphologie, Konturfilter (Fläche 500–50 000 px, 5–8 Ecken, Kompaktheit 0.50–0.92), EMA auf Centroid (α = 0.25). Mutter und Schraubenkopf **matt schwarz lackiert**.
-- Zentrierung: P-Regler auf normierten Pixelfehler (Gain 0.003 bzw. 0.0015 m/Einheit, Threshold 0.08 / 0.03, Loop 5 / 10 Hz).
-- Kontakterkennung: Fz < −4 N (Tiefpass 0.1/0.9) → Steifigkeit umschalten (3000/1000 → 250 N/m).
-- Arduino: 4 DC-Motoren (2× Backen, Schraubendreher, Adapter), **alles zeitgesteuert** (z. B. Schrauben 5000 ms fix).
-
-### Ergebnisse (7 von 8 Runs ausgewertet)
-| Phase | Steady-state Fehler [mm] |
+| Phase | Steady-state Fehler BA [mm] |
 |---|---|
 | Grasp | 0.16 ± 0.14 |
 | Vision centering | 1.57 ± 0.57 |
@@ -31,230 +29,242 @@ Ein FR3 mit eye-in-hand USB-Kamera und neuem Iris-Gripper soll eine Mutter auton
 | Release | 0.86 ± 0.14 |
 | Screwing | 1.35 ± 0.19 |
 
-Zykluszeit Ø 62 s (erfolgreiche Runs), 1 Run Abbruch weil Zentrierung in Timeout oszillierte.
-⚠️ Gemessen wurde Tracking (Ist vs. Soll-Pose), **nicht** Genauigkeit relativ zur Schraube.
-
-### Lessons learned → direkte Anforderungen an die SA
-| BA-Schwachstelle | Konsequenz für SA |
-|---|---|
-| Vision-Zentrierung streut am stärksten, iterativ, oszilliert teils | **Ansatz 2:** Zielpose direkt aus Intrinsics + Höhe berechnen, ein Move |
-| Feste Offsets (Kamera→Schraubendreher 0.057 m), Blindfahrt | Kalibrierte Transformation Kamera→Tool (Hand-Eye) statt Handmessung |
-| Motoren zeitgesteuert, verlorener Serial-Befehl blockiert Ablauf | Serial-Protokoll mit ACK/DONE + Timeouts, wo möglich Feedback |
-| Steifigkeit nie getunt | Phasenabhängige Steifigkeit als bewusster Parameter |
-| Future Work der BA: rotierender Gripper, Tiefenkamera, direkte Zielpose | Rotierender Gripper + direkte Zielpose = Kern der SA |
-| Genauigkeit relativ zum Objekt nicht gemessen | Ground-Truth-Messung von Anfang an einplanen (siehe §9) |
+- 8 Runs, Ø Zykluszeit 62 s, 1 Run abgebrochen (Zentrierung oszillierte bis Timeout).
+- Gemessen wurde Tracking (Ist vs. Soll), **nicht** Genauigkeit relativ zum Objekt.
+- Schwächen → Antworten in der SA: iterative Zentrierung → Ansatz 2; feste Offsets → definierte TF-Kette; Serial ohne Quittung → ACK/DONE-Protokoll; Steifigkeit nicht variiert → 2 Presets.
 
 ---
 
-## 3. Hardware-Setup
+## 3. Hardware (fix)
 
 ```
-Workstation ──USB-C (serial)──► Arduino ──► Motortreiber ──► M1, M2 (Iris), M3 (Rotation)
-     │                              ▲
-     │                              └── eigene Stromversorgung (Steckdose)
-     ├──USB-A──► USB-Kamera (eye-in-hand, am Gripper)
-     └──Ethernet──► FR3 (franka_ros2, CIC)
+Workstation ──USB-C (serial)──► Arduino UNO R4 Minima + Adafruit Motor Shield v2.3
+     │                               ├─ M2 ┐ Iris (gegensinnig)
+     │                               ├─ M4 ┘
+     │                               └─ M1   Rotation ganzer Gripper (Schleifring)
+     ├──USB-A──► HutoPi 720p USB-Kamera (OV9726), eye-in-hand
+     └──Ethernet──► FR3 (franka_ros2, Cartesian Impedance Controller aus BA)
 ```
+Portbelegung ist **vorläufig** → in Firmware nur an einer Stelle definiert (Konstanten).
 
-### Neuer Gripper
-- **M1 + M2:** treiben je ein Zahnrad, das einen **Iris-Mechanismus** (wie Kamerablende) öffnet/schliesst → variables Sechseck, mehrere Muttergrössen. Motoren laufen gegensinnig.
-- **Halten:** Iris bleibt aktiv geschlossen, Mutter dauerhaft eingeklemmt (auch während Rotation).
-- **M3:** dreht den ganzen Gripper → schraubt die Mutter auf.
+| Grösse | Wert | Quelle |
+|---|---|---|
+| Kamera-Offset zu Gripper-Mitte | Δx = 0, Δy = −44.505 mm, Δz = 52.1 mm | CAD, Stand 07.10.26 (Frame → F21) |
+| Iris-Zähne über Gripper-Unterseite | 3.5 mm | CAD |
+| Mutter | M6 (Höhe ≈ 5 mm, SW 10 mm, DIN 934) | F15 |
+| Stiftschraube | quadratische Basis 10×10 mm, H 20 mm, Gewinde 19 mm | F15 (Höhen → F22) |
+| Kamera-Intrinsics | aus BA-Kalibrierung, falls auffindbar, sonst neu | F11 |
+
+Gripper-Verhalten: **alles zeitgesteuert, kein Feedback**. Halten = Iris-Motoren laufen weiter in Schliessrichtung (in der BA ohne Überhitzung erprobt).
 
 ---
 
 ## 4. Ablauf (Soll)
 
-### Phase A – Pick (Codebase/Node 1)
-1. Auf Reisehöhe über Arbeitsbereich fahren, Bild aufnehmen.
-2. Mutter detektieren → Centroid (u, v) + Orientierung (Sechseck-Winkel).
-3. **Zielpose direkt berechnen** (§5.1), ein Move auf Anfahrhöhe über die Mutter.
-4. Optional 1 Verifikationsbild → ggf. eine Korrektur (kein Regelkreis).
-5. Absenken bis Gripper-Unterseite **flush** mit Tisch (Kontakt über Fz-Schwelle, niedrige z-Steifigkeit).
-6. Iris schliessen, Halten aktiv lassen. Greifen bestätigen.
+Arbeitsbereiche für Mutter (**Area N**) und Schraube (**Area S**) sind fest. Zu jeder Area gibt es eine fest definierte **Beobachtungspose**, von der aus die ganze Area im Bild liegt.
 
-### Phase B – Place & Screw (Codebase/Node 2)
-1. Anheben auf Reisehöhe.
-2. Schraube detektieren, Zielpose berechnen, sodass die **Mutter** (= Tool-Frame, nicht Kamera) über der Schraube steht.
-3. Absenken in −z bei gleichzeitigem **Wiggle** in x/y (geringe xy-Steifigkeit) bis Mutter aufsitzt.
-4. Optional: kurz rückwärts drehen (M3) um Gewindeanfang zu finden, dann vorwärts.
-5. M3 schraubt, Abbruch über Zeit / Drehmoment / z-Fortschritt (§6).
-6. Iris öffnen, wegfahren.
+### Phase A – Pick
+| # | Schritt | Steifigkeit | Abbruch/Übergang |
+|---|---|---|---|
+| A1 | Iris öffnen, zur Beobachtungspose N fahren | HIGH | Pose erreicht |
+| A2 | Bild aufnehmen (n Frames mitteln), Mutter detektieren | – | Detektion gültig, sonst Retry/Abbruch |
+| A3 | Pixel → Punkt im Basis-Frame (§5.1), Ziel = Gripper-Mitte über Mutter | – | – |
+| A4 | Anfahrpose über Mutter (z.B. +30 mm) | HIGH | Pose erreicht |
+| A5 | Absenken bis Gripper-Unterseite auf Tisch | LOW | Fz < Schwelle **oder** z-Ziel erreicht |
+| A6 | Iris schliessen (t_close), danach Halten (Motoren laufen weiter) | LOW | Zeit |
+| A7 | Anheben | HIGH | Pose erreicht |
+
+### Phase B – Place & Screw
+| # | Schritt | Steifigkeit | Abbruch/Übergang |
+|---|---|---|---|
+| B1 | Beobachtungspose S | HIGH | Pose erreicht |
+| B2 | Schraube detektieren, Pixel → Basis | – | Detektion gültig |
+| B3 | Anfahrpose: Mutter koaxial über Gewindespitze (+10 mm) | HIGH | Pose erreicht |
+| B4 | Absenken in −z mit leichtem xy-Wiggle bis Mutter aufsitzt | LOW | Fz < Schwelle |
+| B5 | Optional: kurz rückwärts drehen (Gewindeanfang finden) | LOW | Zeit |
+| B6 | M1 vorwärts drehen, Roboter folgt in −z (niedrige z-Steifigkeit, Soll leicht unter Ist) | LOW | Zeit t_screw |
+| B7 | Iris öffnen, wegfahren | HIGH | – |
+
+Pick und Place sind **einzeln startbar** (zum Testen), plus ein kombinierter Ablauf.
 
 ---
 
 ## 5. Methodik
 
-### 5.1 Vision – Ansatz 2: Direkte Zielpose (Priorität)
-Lochkameramodell, Tiefe Z aus bekannter Höhe:
+### 5.1 Pixel → Basis-Frame (Ansatz 2)
+Kamera schaut senkrecht nach unten, Objektebene bekannt (Tisch + Objekthöhe):
 
 ```
-X_c = (u − c_x) · Z / f_x
-Y_c = (v − c_y) · Z / f_y
-Z   = Abstand Kamera → Tischebene (aus FK des FR3 + Hand-Eye + Tischhöhe)
-p_base = T_base_ee · T_ee_cam · [X_c, Y_c, Z, 1]ᵀ
+(u, v)        entzerrter Pixel des Objekt-Mittelpunkts
+d             = z_cam − z_obj   (Abstand Kamera → Objektebene, aus FK + Offset)
+X_c = (u − c_x) · d / f_x
+Y_c = (v − c_y) · d / f_y
+p_base = T_base_flange · T_flange_cam · [X_c, Y_c, d, 1]ᵀ
+Ziel Gripper-Mitte (xy) = p_base(xy),  z aus Phase
 ```
-- Bild vorher **entzerren** (Distortion-Koeffizienten aus Kalibrierung).
-- Objekthöhe berücksichtigen (Mutteroberkante bzw. Schraubenspitze ≠ Tischebene).
-- Kamera möglichst senkrecht zum Tisch → Ebenen-Schnitt bleibt einfach; sonst allgemeiner Strahl-Ebene-Schnitt (gleiche Formel, nur Rotation mitnehmen).
-- Benötigt: **Intrinsics-Kalibrierung** (Schachbrett, ROS2 `camera_calibration`) und **Hand-Eye-Kalibrierung** `T_ee_cam` (z. B. `easy_handeye2` oder OpenCV `calibrateHandEye`).
-- Detektion aus BA wiederverwenden (Threshold-Pipeline), aber parametrisierbar über YAML.
+- Allgemeine Umsetzung als **Strahl-Ebene-Schnitt** (funktioniert auch bei leicht schiefer Kamera, kostet nichts extra).
+- `T_flange_cam` vorerst aus **CAD-Offset**. Eine volle Hand-Eye-Kalibrierung lassen wir aus Zeitgründen weg. Stattdessen **Verifikation**: Mutter an bekannter Position → Ziel anfahren → Restfehler messen → konstanten xy-Korrekturterm in YAML.
+- Objektebenen: Mutter = Tisch + ~5 mm; Schraube = Oberkante der quadratischen Basis (Kontur), siehe F22.
+- Fallback (Ansatz 1): 1–2 Korrekturiterationen mit einem zweiten Bild aus der Anfahrpose. Reiner Code-Pfad im selben Modul, per Parameter an/aus.
 
-### 5.2 Fallback – Ansatz 1: Fehlerminimierung (BA)
-Pixelfehler Bildmitte↔Centroid, P-Regler. Nur falls Ansatz 2 nicht genau genug. Mögliche Hybridlösung: Ansatz 2 für Grobpositionierung + 1–2 Iterationen Ansatz 1 zur Feinkorrektur.
+### 5.2 Detektion ohne Lackierung (blank auf Weiss)
+Ein Vorteil ist, dass der Untergrund jetzt **hell** ist und das Objekt dunkler bzw. strukturiert:
+1. Grau → Gauss → **Otsu-Threshold invertiert** (oder adaptiv) → Morphologie.
+2. Nur Konturen innerhalb einer **ROI = Area im Bild** (Areas sind ja bekannt).
+3. **Mutter:** Kontur mit **innerem Loch** (`RETR_CCOMP`-Hierarchie). Das Loch (weisser Tisch durch die Mutter sichtbar) ist ein sehr robustes Merkmal, und sein Mittelpunkt = Mutter-Mittelpunkt. Filter: Fläche, Verhältnis Loch/Aussen, Kompaktheit.
+4. **Schraube:** Quadrat 10×10 (approxPolyDP → 4 Ecken, Seitenverhältnis ≈ 1) mit Kreis (Gewinde) in der Mitte. Wir nehmen den Mittelpunkt des Quadrats.
+5. Erwartete Grösse in Pixeln aus d und f berechnen → Flächenfilter **automatisch** statt von Hand getunt.
+6. Reflexionen von blankem Metall: Mittelung über n Frames, Median-Mittelpunkt; ggf. diffuses Licht.
 
-### 5.3 Regelung (CIC)
-- Bestehenden Cartesian Impedance Controller weiterverwenden.
-- Steifigkeit **pro Phase** setzen (Free motion / Kontakt / Wiggle / Screwing), als Parameter in YAML statt hart codiert.
-- Wiggle: kleine Kreis-/Spiralbahn der Soll-Pose in xy (Amplitude ~0.5–1 mm, wenige Hz) + konstanter Druck in −z; Erfolg = z-Sprung / Fz-Abfall.
+Alles als reine Funktionen (`numpy`/`cv2`, kein ROS) → am Laptop mit Fotos testbar.
+
+### 5.3 Regelung
+- Bestehender CIC aus der BA, **2 Steifigkeits-Presets** (HIGH für freie Bewegung, LOW für Kontakt/Schrauben) in YAML.
+- Kontakt: gefiltertes Fz < Schwelle (BA: −4 N, Tiefpass α = 0.1).
+- Wiggle (B4): kleine Kreisbahn in xy (≈ 0.5–1 mm, ~2 Hz) während z sinkt; nur falls ohne Wiggle Fehlversuche auftreten.
 
 ---
 
-## 6. Arduino / Serial-Protokoll (Vorschlag)
+## 6. Gripper-Firmware & Serial-Protokoll
 
-Zeilenbasiert ASCII, jeder Befehl wird quittiert:
+Zeitsteuerung läuft **auf dem Arduino** (nicht-blockierend mit `millis()`). Der PC schickt nur Befehle und wartet auf DONE.
+
 ```
-PC → Arduino:  <ID> <CMD> [args]\n
-Arduino → PC:  <ID> ACK\n          (sofort)
-               <ID> DONE [data]\n  (Aktion fertig)
-               <ID> ERR <code>\n
+PC → Arduino:  <id> <CMD> [args]\n
+Arduino → PC:  <id> ACK\n            sofort nach gültigem Befehl
+               <id> DONE\n           Aktion fertig (Zeit abgelaufen)
+               <id> ERR <grund>\n
+               READY\n               nach Boot
 ```
-| Befehl | Bedeutung |
+| Befehl | Wirkung |
 |---|---|
-| `IRIS_OPEN` | Iris öffnen bis Endlage/Zeit |
-| `IRIS_CLOSE <pwm>` | schliessen, danach in Haltemodus |
-| `IRIS_HOLD <pwm>` | Haltekraft setzen |
-| `ROT <dir> <pwm> <ms>` | M3 drehen |
-| `STOP` | alle Motoren aus (Not-Halt) |
-| `STATUS` | Zustand + Sensorwerte |
-| Heartbeat | Arduino stoppt Motoren, wenn > X s kein Befehl |
+| `OPEN <ms> <speed>` | Iris öffnen für ms, dann Motoren aus |
+| `CLOSE <ms> <speed> <hold_speed>` | Iris schliessen für ms → DONE → weiter mit hold_speed (Halten) |
+| `ROT <+1/-1> <ms> <speed>` | M1 drehen für ms → DONE → aus. Iris hält weiter |
+| `STOP` | alle Motoren aus |
+| `PING` | → `<id> DONE` (Lebenszeichen + Watchdog-Reset) |
+| `STATE` | → `<id> DONE iris=<open/closing/holding/opening/off> rot=<on/off>` |
 
-ROS2-Seite: Bridge-Node als **Action Server** (z. B. `GripperCommand`), damit State-Machines auf DONE/Timeout warten können statt blind zu schlafen.
+- **Watchdog:** kein Befehl/PING für > 2 s → alle Motoren aus. Die Bridge sendet PING mit 2 Hz. (Achtung: beim Halten essentiell, sonst lässt die Iris die Mutter fallen, wenn ROS hängt – das ist gewollt sicherer Zustand.)
+- Konstanten (Ports, Richtungen, Default-Zeiten) oben in der Firmware, Zeiten sonst immer vom PC → Tuning nur in YAML, nicht neu flashen.
+- ROS2: `gripper_bridge`-Node als **Action Server** `~/command` (`GripperCommand.action`: cmd, duration_ms, speed, hold_speed → success, message).
 
 ---
 
-## 7. Software-Architektur (Vorschlag)
+## 7. Software-Architektur
 
-> Hinweis: Das Repo hat bereits `arduino/`, `cad/`, `software/`, `data/`, `visualization/`, `docs/`. Der Baum unten zeigt die Zielstruktur für `software/` – Details hängen von F4 (ROS2-Workspace ja/nein) ab.
-
-Statt zwei kopierten Codebases: **ein Repo, gemeinsame Module, zwei getrennt startbare State-Machines** (pick / place). Damit bleibt separates Testen möglich, ohne doppelten Code.
+ROS2-Workspace unter `software/` (Clean Slate). Distro-agnostisch (Humble/Jazzy), nur `rclpy`, keine exotischen Abhängigkeiten.
 
 ```
-semesterarbeit/
-├── docs/PLAN.md             ← dieses Dokument
-├── CLAUDE.md                ← Kurzkontext/Konventionen für Claude
-├── firmware/                ← Arduino-Sketch
+software/
 ├── src/
-│   ├── sa_interfaces/       ← msgs/actions (GripperCommand, DetectedObject)
-│   ├── sa_vision/           ← Detektion + Pixel→3D (reine Python-Libs + dünner ROS-Node)
-│   ├── sa_gripper/          ← Serial-Bridge (Action Server)
-│   ├── sa_motion/           ← Pose-Helfer, Wiggle, Steifigkeits-Presets, CIC-Interface
-│   └── sa_tasks/            ← State-Machines pick.py, place.py, Launchfiles, config/*.yaml
-├── calibration/             ← Intrinsics, Hand-Eye (Ergebnisse versioniert)
-├── tools/                   ← Logging, Auswertung, Plots
-└── tests/                   ← Unit-Tests ohne Hardware (Mocks)
+│   ├── sa_interfaces/      ament_cmake: GripperCommand.action, Detection.msg
+│   ├── sa_gripper/         serial_protocol.py (rein), gripper_bridge node
+│   ├── sa_vision/          detection.py, geometry.py (rein), vision_node
+│   └── sa_tasks/           state machines pick/place/full, robot_interface.py (CIC-Wrapper),
+│                           launch/, config/{robot,vision,gripper,areas}.yaml
+└── tests/  (pro Paket unter test/, pytest, ohne Hardware)
+arduino/iris_gripper/       neue Firmware (sketch_sep24a bleibt als Motortest)
+calibration/                Intrinsics (yaml), Verifikationsmessungen
+data/                       Logs der Runs (csv/rosbag)
+tools/                      Auswertung + Plots für den Bericht
 ```
-Prinzipien: Mathe/Logik ohne ROS-Abhängigkeit (testbar am Laptop), alle Zahlen in YAML, Hardware über Interfaces mockbar.
+Prinzipien:
+- **Reine Logik ohne ROS** (Detektion, Geometrie, Protokoll, State-Machine-Übergänge) → Unit-Tests am Laptop.
+- **Alle Zahlen in YAML**, keine Magic Numbers im Code.
+- Hardware hinter Interfaces (`RobotInterface`, `GripperInterface`, `Camera`) → **Mock-Varianten** für Trockenlauf.
+- State Machine: einfache explizite Python-Klasse (Enum + Übergangstabelle), kein SMACH/BT – weniger Overhead.
+- Jeder Run schreibt automatisch eine CSV (Zeit, Phase, Soll-/Ist-Pose, Fz, Detektion) → direkt BA-vergleichbare Auswertung.
+- Code, Kommentare und Logs **auf Englisch** (Bericht ist Englisch).
 
 ---
 
-## 8. Was wir **vor** Workstation-Zugang vorbereiten
+## 8. Zeitplan (Abgabe 31.10.)
 
-| # | Paket | Ohne Workstation testbar? |
+| Woche | Fokus | Ohne Workstation? |
 |---|---|---|
-| 1 | Repo-Struktur, Interfaces, `CLAUDE.md` | ✅ |
-| 2 | Arduino-Firmware inkl. Protokoll + Heartbeat | ✅ am Board allein |
-| 3 | Pixel→3D-Modul + Unit-Tests (synthetische Daten) | ✅ |
-| 4 | Detektion mit beliebiger Webcam / Fotos der Mutter | ✅ am Laptop |
-| 5 | Intrinsics-Kalibrierung der eigentlichen Kamera | ✅ am Laptop |
-| 6 | State-Machine-Gerüst mit Mock-Robot + Mock-Gripper | ✅ |
-| 7 | Logging- und Auswerteskripte (BA-Metriken + neue) | ✅ mit BA-Logs |
-| 8 | Hand-Eye-Kalibrierungsablauf (Skript fertig, Durchführung später) | ⚠️ teilweise |
-| 9 | CIC-Integration, Steifigkeiten, Realtests | ❌ |
+| **KW41** (07.–11.10.) | Firmware + Protokoll, Workspace-Gerüst, Geometrie + Tests, Detektion an Fotos, Mocks, Logging | ✅ |
+| **KW42** (12.–18.10.) | Workstation: Build, Kamera + Intrinsics, Offset-Verifikation, **Phase A läuft** | ❌ |
+| **KW43** (19.–25.10.) | **Phase B läuft**, Zeiten/Fz tunen, Evaluation-Runs (N ≥ 10) | ❌ |
+| **KW44** (26.–31.10.) | Auswertung, Plots, Bericht fertig | ✅ |
+
+Bericht parallel schreiben (Methodik-Kapitel kann schon in KW41/42 entstehen).
+
+### Vorbereitung – Checkliste (KW41, mit Claude)
+- [ ] `CLAUDE.md` + Workspace-Gerüst (Pakete, package.xml, setup.py, Launch, YAML)
+- [ ] Firmware `arduino/iris_gripper` + Test am Board (ohne Roboter)
+- [ ] `serial_protocol.py` + `gripper_bridge` + Test-CLI
+- [ ] `geometry.py` (Pixel → Basis) + Unit-Tests mit synthetischen Daten
+- [ ] `detection.py` + Fotos von Mutter/Schraube auf Weiss (Handy oder die Kamera am Laptop) → `data/images/`
+- [ ] Intrinsics: BA-Werte suchen, sonst Kalibrierskript (Schachbrett) am Laptop
+- [ ] State Machines + Mock-Robot/-Gripper → Trockenlauf des gesamten Ablaufs
+- [ ] Logging + Auswerteskript (BA-Metriken)
 
 ---
 
-## 9. Evaluation (früh festlegen)
-- Gleiche Metriken wie BA (Tracking-Fehler je Phase, Zykluszeit, Erfolgsrate) → direkter Vergleich.
-- **Neu:** Positionsfehler relativ zum Objekt (z. B. Mutter/Schraube an bekannter Position via Lehre, Abweichung messen).
-- Erfolgsrate über N ≥ 10 Runs, verschiedene Startpositionen, ggf. verschiedene Muttergrössen.
+## 9. Evaluation
+- **Erfolgsquote** (Hauptmetrik): N ≥ 10 Runs mit verschiedenen Positionen in Area N / Area S. Erfolg je Phase separat protokollieren (Detektion / Greifen / Aufsetzen / Schrauben).
+- **BA-Vergleich:** gleiche Tracking-Metriken je Phase + Zykluszeit.
+- **Neu:** Positionsfehler der Zielberechnung relativ zum Objekt (Objekt an bekannter Position, Abweichung Ziel ↔ Wahrheit).
 
 ---
 
-## 10. Offene Fragen – bitte direkt hier beantworten
+## 10. Offene Fragen (Runde 2)
 
-> Einfach hinter `Antwort:` schreiben (auch direkt im GitHub-Webeditor). Stichworte reichen. Unbekannt → `?` lassen.
+> Hinter `Antwort:` schreiben. Kurz reicht.
 
-### Software / Umgebung
-**F1.** ROS2-Distro auf der Workstation (Humble / Jazzy)? Ubuntu-Version? franka_ros2-Version / libfranka?
-Antwort: Ubuntu, weiss aber nicht welche version. 
+**F21.** Kamera-Offset (Δx 0 / Δy −44.505 / Δz 52.1 mm): relativ zu welchem Punkt und in welchem Frame? (z.B. Mitte Gripper-Unterseite, Achsen wie FR3-Flansch?) Positives Δz = Kamera höher als Gripper-Unterseite?
+Antwort: 
 
-**F2.** CIC: derselbe Controller wie in der BA? Eigener Code oder aus franka_ros2 / Lab-Repo? Wie werden Soll-Pose und Steifigkeit gesetzt (Topic-Namen, Msg-Typ)?
-Antwort: ja der gleiche, aber er soll variabel pro phase benutzt werden können. wahrsheinnlich einfach 1 mit hoher 1 mit niedrigerer stiffness, mehr brauchts vermutlich nicht.
+**F22.** Stiftschraube: Ist die Gesamthöhe 20 mm Basis + 19 mm Gewinde = 39 mm, oder 20 mm insgesamt? Schaut das Gewinde oben aus der Basis heraus?
+Antwort: 
 
-**F3.** BA-Code: Wann kommt er ins BA-Repo? Welche Teile willst du übernehmen (Vision, State-Machine, Bridge, Logging)?
-Antwort: ich will eig nichts übernhemen. maximal das prinzip der vision pipeline, state machines sicher nicht, die bridge könnte man vlt auch, logging nicht. man kann also eig von einem clean slate starten.
+**F23.** CIC-Schnittstelle: Wie hast du in der BA Soll-Pose und Steifigkeit gesetzt (Topic-Name, Msg-Typ, z.B. `PoseStamped` auf `/cartesian_impedance/target`)? Woher kommt die Ist-Pose bzw. Fz (`franka_robot_state`)? Ein Code-Snippet aus der BA reicht.
+Antwort: 
 
-**F4.** Das SA-Repo hat aktuell `software/` als reines Python-Paket (Windows-venv im README). Soll die SA-Software ein **ROS2-Workspace** werden (Pakete unter `software/src/`) oder bleibt es Python + rclpy ohne colcon?
-Antwort: ja das soll dann danach alles über ROS2 laufen. das war bisher einfach ein platzhalter.
+**F24.** Ab wann genau hast du Zugriff auf die Workstation?
+Antwort: 
 
-### Gripper / Elektronik
-**F5.** Motortreiber: Adafruit Motor Shield v2 (wie in `sketch_sep24a`)? Welcher Arduino (Uno/Mega/…)? Welcher Motor hängt an welchem Port (M1–M4)?
-Antwort: Arduino R4 Minima mit Motorshield von Adafruit v2.3. motoren ist noch nicht ganz klar aber vermutlich sind die beiden für das Iris Shutter an port M2 und M4, das kann dann aber noch angepasst werden. der dritte motor ist dann vermutlich an Port M1
+**F25.** Gibt es BA-Kalibrierwerte der Kamera (fx, fy, cx, cy, Distortion)? Falls ja: hier einfügen oder als Datei in `calibration/` ablegen.
+Antwort: 
 
-**F6.** Iris: Wie wird „geschlossen / Mutter gegriffen“ erkannt? (Drucksensor wie BA an A0, Stromsensor, Endschalter, Encoder, nur Zeit?)
-Antwort: Über Zeit, die Motoren geben kein Feedback. das wird dann einfach iteriert bis es funktioniert. sollte aber keine grosse Sache sein. 
-
-**F7.** Dauerhaftes Halten: Getriebe selbsthemmend (Schnecke)? Oder muss der Motor mit Halte-PWM bestromt bleiben? Wie heiss werden die Motoren?
-Antwort: Die Motoren sollen einfach den Befehl bekommen weiter zu drehen. dann Drücken sie ja quasi einfach alles zusammen, das reicht dann auch. Heiss werden die nicht, habe das gleiche bei der BA auch gemacht und hatte nie probleme.
-
-**F8.** M3 dreht den ganzen Gripper inkl. M1/M2: Kabelführung? (Schleifring / max. Umdrehungen + zurückdrehen / anders)
-Antwort: der Dritte Motor, vermutlich an port 1 dreht den ganzen Gripper. Kabelführung inkl. Schleifring ist berücksichtigt. der muss einfach drehen.
-
-**F9.** M3: Encoder vorhanden? Wie soll „fertig geschraubt“ erkannt werden (Zeit, Strom/Stall, z-Weg des Roboters, Fz/Mz vom FR3)?
-Antwort: Ebenfalls über Zeit, therotisch geht auch pber einen Torque Sensor am Arm, aber eher unwahrscheinlich
-
-**F10.** Übersetzung Motor → Iris und Motor → Rotation bekannt? (für Umdrehungen ↔ Zeit)
-Antwort: das weiss ich leider nicht, spielt aber auch nicht so eine Rolle. das wird dann getestet bis es stimmt.
-
-### Kamera / Vision
-**F11.** Kameramodell, Auflösung, FPS? Fokus fix oder Autofokus (Autofokus zerstört Kalibrierung)?
-Antwort: HutoPi 720p HD USB camera with OV9726 module, wir haben dafür auch bei der BA keine spezifikationen gefunden und mussten sleber eine kalibrierung machen. ich kann mal schauen ob ich diese Werte wieder finde. 
-
-**F12.** Montage: Senkrecht nach unten? Ungefährer Versatz Kamera → Gripper-Mitte (x, y, z in mm)?
-Antwort: Stand 07.10.26, Delta_x = 0.1mm = 0mm, Delta_y = -44.505mm, Delta_z = 52.1mm
-
-**F13.** Bleibt die schwarze Lackierung + Threshold-Detektion? Untergrund (Farbe/Material)? Beleuchtung kontrolliert?
-Antwort: eigentlich will ich dass es ohne schwarze lakierung geht. sprich einfach die Mutter auf weissem untergrund.
-
-**F14.** Muss die Orientierung der Mutter (Sechseck-Winkel) bestimmt werden, oder zentriert die Iris die Mutter selbst beim Schliessen?
-Antwort: muss nicht bestimmt werden. wenn wir in zukunft viele Fehler deswegen haben kann mans nochmal anpassen.
-
-### Teile / Aufgabe
-**F15.** Muttergrössen (M5, M6, …)? Mutterhöhe? Schraubentyp und -länge, wie fixiert (eingeklebt, Platte)?
-Antwort: M6, schraube ist eine "stiftschraube" mit einer quadratischen Basis, 10x10x20 LxBxH, gewinde 19mm hoch, fixiert, sprich ist immer schon schraubbereit.
-
-**F16.** Liegen Mutter und Schraube an beliebigen Positionen im Arbeitsbereich oder in einem bekannten Bereich? Mehrere Muttern nacheinander?
-Antwort: das Ziel ist, dass beliebige Positionen in einem vorbestimmten Bereich gewählt werden können. da ich nur eine Kamera habe muss die mutte rund schraube jeweils in einer gehardcodeden Area liegen in welcher das visual servoing dann greift.
-
-**F17.** Ist „Mutter flush auf Tisch“ sicher? Gripper-Unterseite vs. Mutterhöhe – greift die Iris dann auf voller Mutterhöhe?
-Antwort: wenn gripper unterseite auf dem tisch liegt, werden die greifzähne des Iris mechanismus 3.5mm höher sein als der Tisch. also sprich die Mutter wird flush mit der Gripper unterseie gemacht, nicht mit den gripper Zähnen selbst. spielt aber kein Rolle.
-
-### Organisatorisch
-**F18.** Abgabedatum, Zwischenpräsentation, Meilensteine? Ab wann hast du Zugriff auf die Workstation?
-Antwort: Theoretisch ist abgabe am 31.10.26. zwischenabgaben gibt es nicht, keine Meilensteine. Am ende soll die erfolgsquote einfach höher sein.
-
-**F19.** Vorgaben Betreuer (Sprache des Berichts, Pflicht-Evaluation, Vergleich mit BA erwünscht)?
-Antwort: alles in Englisch, Vergleich mit BA soll sicher auch drin sein. 
-
-**F20.** Sonst noch etwas, das ich wissen sollte / was dich an meinem Vorschlag (§5–§7) stört?
-Antwort: Momentan nicht. das wird dann mal bis mal gemacht.
+**F26.** Wie gross sind Area N und Area S ungefähr (mm), und wie weit liegen sie auseinander? Von welcher Höhe aus siehst du die ganze Area?
+Antwort: 
 
 ---
 
 ## 11. Entscheidungslog
 | Datum | Entscheidung | Begründung |
 |---|---|---|
-| 07.10.2026 | Ansatz 2 (direkte Zielpose) zuerst, Ansatz 1 als Fallback | BA: Zentrierung = grösste Streuung |
-| 07.10.2026 | Ein Repo, zwei State-Machines statt zwei Codebases | weniger Duplikat, trotzdem getrennt testbar |
-| 07.10.2026 | Serial mit ACK/DONE + Heartbeat | BA: verlorener Befehl blockierte Ablauf |
+| 07.10. | Ansatz 2 zuerst, Ansatz 1 als optionaler Korrekturschritt | BA: Zentrierung = grösste Streuung |
+| 07.10. | Ein ROS2-Workspace, Pick/Place separat startbar | weniger Duplikat, trotzdem einzeln testbar |
+| 07.10. | Serial mit ACK/DONE + Watchdog, Zeitsteuerung auf dem Arduino | kein Feedback vorhanden, BA: verlorene Befehle |
+| 07.10. | Keine Hand-Eye-Kalibrierung, CAD-Offset + Verifikation/Korrekturterm | Zeitbudget (Abgabe 31.10.) |
+| 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
+| 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |
+| 07.10. | 2 Steifigkeits-Presets (HIGH/LOW) | reicht laut F2 |
+| 07.10. | Clean Slate, Code auf Englisch | F3, F19 |
+
+---
+
+## Anhang A – Antworten Runde 1 (07.10.2026, gekürzt)
+- **F1** Ubuntu, Version unbekannt; ROS2-Distro unbekannt.
+- **F2** gleicher CIC wie BA, variabel pro Phase; 2 Stiffness-Stufen reichen.
+- **F3** nichts übernehmen, max. Prinzip der Vision-Pipeline, evtl. Bridge → Clean Slate.
+- **F4** alles über ROS2, `software/` war Platzhalter.
+- **F5** Arduino R4 Minima + Adafruit Motor Shield v2.3; Iris vermutlich M2 + M4, Rotation M1 (änderbar).
+- **F6** Iris über Zeit, kein Feedback, wird iterativ getunt.
+- **F7** Halten = Motoren drehen weiter, in BA ohne Erwärmungsprobleme.
+- **F8** Schleifring vorhanden, Rotation unbegrenzt.
+- **F9** Schrauben über Zeit; Torque-Sensor am Arm theoretisch möglich, eher nicht.
+- **F10** Übersetzungen unbekannt, egal – wird getestet.
+- **F11** HutoPi 720p HD USB (OV9726), keine Specs, BA-Kalibrierung evtl. auffindbar.
+- **F12** Offset Δx 0, Δy −44.505 mm, Δz 52.1 mm (Stand 07.10.).
+- **F13** keine Lackierung mehr, Mutter auf weissem Untergrund.
+- **F14** Orientierung nicht nötig, später ggf. nachrüsten.
+- **F15** M6; Stiftschraube mit quadr. Basis 10×10×20, Gewinde 19 mm, fixiert.
+- **F16** beliebige Position innerhalb fester Areas (eine Kamera).
+- **F17** Gripper-Unterseite auf Tisch, Iris-Zähne 3.5 mm höher – unkritisch.
+- **F18** Abgabe 31.10.26, keine Meilensteine, Ziel: höhere Erfolgsquote.
+- **F19** Bericht Englisch, BA-Vergleich erwünscht.
+- **F20** nichts weiter.
