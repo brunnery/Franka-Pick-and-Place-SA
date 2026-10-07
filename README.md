@@ -3,7 +3,7 @@
 Repository for my semester thesis on pick and place with a Franka robot arm.
 It contains the CAD files, the Arduino firmware and the Python software.
 
-<!-- TODO: short description of the goal of the thesis -->
+Gameplan, Methodik und offene Fragen: [docs/PLAN.md](docs/PLAN.md)
 
 ## Repository structure
 
