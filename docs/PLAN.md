@@ -49,7 +49,8 @@ Portbelegung ist **vorläufig** → in Firmware nur an einer Stelle definiert (K
 
 | Grösse | Wert | Quelle |
 |---|---|---|
-| **Flansch-Mitte → Kamera (Linsenmitte, unterster Punkt)** | Δx = 0, Δy = +44.4 mm, Δz = 60.223 mm | CAD, Stand 08.10.26 (F21) – Achsenrichtung → F27 |
+| **Flansch-Mitte → Kamera (Linsenmitte, unterster Punkt)** | Δx = 0, Δy = +44.4 mm, Δz = 60.223 mm | CAD, Stand 08.10.26 (F21) – Seite → F28 |
+| Kamera-Rotation | x_robo = −y_cam, y_robo = −x_cam, z_robo = −z_cam (Gripper nach unten) | F27 ✅ |
 | Kamera → Gripper-Mitte (alt, nur Plausibilität) | Δx = 0, Δy = −44.505 mm, Δz = 52.1 mm | CAD, 07.10.26 |
 | **Flansch-Mitte → Mitte Bodenplatte Gripper (TCP, liegt auf Tisch auf)** | Δx = 0, Δy = 0, Δz = 113.823 mm (CAD: 0.1/0.1 → 0) | CAD, Stand 08.10.26 ✅ |
 | Iris-Zähne über Gripper-Unterseite | 3.5 mm | CAD |
