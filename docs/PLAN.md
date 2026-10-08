@@ -49,7 +49,9 @@ Portbelegung ist **vorläufig** → in Firmware nur an einer Stelle definiert (K
 
 | Grösse | Wert | Quelle |
 |---|---|---|
-| Kamera-Offset zu Gripper-Mitte | Δx = 0, Δy = −44.505 mm, Δz = 52.1 mm | CAD, Stand 07.10.26 (Frame → F21) |
+| **Flansch-Mitte → Kamera (Linsenmitte, unterster Punkt)** | Δx = 0, Δy = +44.4 mm, Δz = 60.223 mm | CAD, Stand 08.10.26 (F21) – Achsenrichtung → F27 |
+| Kamera → Gripper-Mitte (alt, nur Plausibilität) | Δx = 0, Δy = −44.505 mm, Δz = 52.1 mm | CAD, 07.10.26 |
+| ⇒ abgeleitet: Flansch → Gripper-Unterseite (TCP) | ≈ (0, −0.1, 112.3) mm, Gripper koaxial zum Flansch | Summe beider Offsets, **zu bestätigen (F27)** |
 | Iris-Zähne über Gripper-Unterseite | 3.5 mm | CAD |
 | Mutter | M6 (Höhe ≈ 5 mm, SW 10 mm, DIN 934) | F15 |
 | Stiftschraube | quadratische Basis 10×10 mm, H 20 mm, Gewinde 19 mm | F15 (Höhen → F22) |
@@ -213,7 +215,10 @@ Bericht parallel schreiben (Methodik-Kapitel kann schon in KW41/42 entstehen).
 
 > Hinter `Antwort:` schreiben. Kurz reicht.
 
-**F21.** Kamera-Offset (Δx 0 / Δy −44.505 / Δz 52.1 mm): relativ zu welchem Punkt und in welchem Frame? (z.B. Mitte Gripper-Unterseite, Achsen wie FR3-Flansch?) Positives Δz = Kamera höher als Gripper-Unterseite?
+**F21.** Kamera-Offset: relativ zu welchem Punkt und in welchem Frame?
+Antwort (08.10.): Flansch-Mitte → Kamera-Linsenmitte (unterster Part): Δx = 0, Δy = 44.4 mm, Δz = 60.223 mm. ✅
+
+**F27.** Achsen des Offsets: Sind x/y/z die Achsen des **FR3-Flanschs** (`fr3_link8`: z zeigt vom Flansch weg Richtung Werkzeug)? Achtung: der Franka-Hand-Frame ist ggf. um 45° um z gedreht – in welcher Richtung zeigt +y am realen Gripper (z.B. relativ zu den LEDs / zum Franka-Logo am Flansch)? Und stimmt die Ableitung Flansch → Gripper-Unterseite ≈ 112.3 mm, Gripper koaxial?
 Antwort: 
 
 **F22.** Stiftschraube: Ist die Gesamthöhe 20 mm Basis + 19 mm Gewinde = 39 mm, oder 20 mm insgesamt? Schaut das Gewinde oben aus der Basis heraus?
@@ -240,6 +245,7 @@ Antwort:
 | 07.10. | Ein ROS2-Workspace, Pick/Place separat startbar | weniger Duplikat, trotzdem einzeln testbar |
 | 07.10. | Serial mit ACK/DONE + Watchdog, Zeitsteuerung auf dem Arduino | kein Feedback vorhanden, BA: verlorene Befehle |
 | 07.10. | Keine Hand-Eye-Kalibrierung, CAD-Offset + Verifikation/Korrekturterm | Zeitbudget (Abgabe 31.10.) |
+| 08.10. | Kamera-Pose relativ zum **Flansch** definieren (`T_flange_cam`), TCP separat | Flansch-Pose kommt direkt aus FK, keine Kette über Gripper nötig |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
 | 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |
 | 07.10. | 2 Steifigkeits-Presets (HIGH/LOW) | reicht laut F2 |

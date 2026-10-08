@@ -15,5 +15,6 @@ Deadline 31.10.2026 – prefer the simplest thing that raises the success rate.
 
 ## Hardware quick facts
 - Iris motors: M2 + M4 (opposite directions), rotation: M1 (slip ring, unlimited). Provisional.
-- Camera offset to gripper centre: dx 0, dy −44.505 mm, dz 52.1 mm (CAD, frame see PLAN F21).
+- Flange centre → camera lens centre: dx 0, dy +44.4 mm, dz 60.223 mm (CAD 08.10.; axis orientation see PLAN F27).
+- Flange → gripper bottom (TCP): ≈ (0, 0, 112.3) mm, gripper coaxial with flange (derived, to be confirmed).
 - Camera: HutoPi 720p (OV9726), looks straight down.
