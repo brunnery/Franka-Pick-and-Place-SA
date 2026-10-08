@@ -15,6 +15,7 @@ Deadline 31.10.2026 – prefer the simplest thing that raises the success rate.
 
 ## Hardware quick facts
 - Iris motors: M2 + M4 (opposite directions), rotation: M1 (slip ring, unlimited). Provisional.
-- Flange centre → camera lens centre: dx 0, dy +44.4 mm, dz 60.223 mm (CAD 08.10.; axis orientation see PLAN F27).
+- Flange centre → camera lens centre: dx 0, dy +44.4 mm, dz 60.223 mm (CAD 08.10.; side of flange see PLAN F28).
+- Axis mapping (gripper pointing down, viewed from base): x_robo = −y_cam, y_robo = −x_cam, z_robo = −z_cam (OpenCV camera frame: x right, y down in image, z into scene).
 - Flange centre → gripper bottom-plate centre (TCP, rests on table): (0, 0, 113.823) mm (CAD 08.10.). All offsets in mm, CAD values ≤ 0.1 mm treated as 0.
 - Camera: HutoPi 720p (OV9726), looks straight down.

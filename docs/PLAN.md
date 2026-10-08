@@ -218,7 +218,14 @@ Bericht parallel schreiben (Methodik-Kapitel kann schon in KW41/42 entstehen).
 **F21.** Kamera-Offset: relativ zu welchem Punkt und in welchem Frame?
 Antwort (08.10.): Flansch-Mitte → Kamera-Linsenmitte (unterster Part): Δx = 0, Δy = 44.4 mm, Δz = 60.223 mm. ✅
 
-**F27.** Achsen des Offsets: Sind x/y/z die Achsen des **FR3-Flanschs** (`fr3_link8`: z zeigt vom Flansch weg Richtung Werkzeug)? Achtung: der Franka-Hand-Frame ist ggf. um 45° um z gedreht – in welcher Richtung zeigt +y am realen Gripper (z.B. relativ zu den LEDs / zum Franka-Logo am Flansch)? (TCP ist geklärt: 0/0/113.823 mm.)
+**F27.** Achsen / Frames.
+Antwort (08.10., bestätigt): Blick von der Roboterbasis aus, Gripper schaut senkrecht nach unten:
+- Basis: z_robo nach oben, x_robo nach vorne, y_robo nach links.
+- Kamera (OpenCV): z_cam nach unten (ins Bild), x_cam nach rechts (+u), y_cam nach hinten (+v).
+- ⇒ **z_robo = −z_cam, x_robo = −y_cam, y_robo = −x_cam**, d.h. Δx_robo = −Δv, Δy_robo = −Δu (gleich wie BA „Axis Mapping“).
+- EE-Frame (BA-Bild): z nach unten, x wie Basis-x, y = −Basis-y (180° um x). Damit R_EE_cam = Rz(+90°).
+
+**F28.** Auf welcher Seite des Flanschs sitzt die Kamera, von der Basis aus gesehen bei nach unten schauendem Gripper: links (+y_robo), rechts (−y_robo), vorne oder hinten? (Damit ist klar, in welchem Frame die +44.4 mm gelten.)
 Antwort: 
 
 **F22.** Stiftschraube: Ist die Gesamthöhe 20 mm Basis + 19 mm Gewinde = 39 mm, oder 20 mm insgesamt? Schaut das Gewinde oben aus der Basis heraus?
@@ -246,6 +253,7 @@ Antwort:
 | 07.10. | Serial mit ACK/DONE + Watchdog, Zeitsteuerung auf dem Arduino | kein Feedback vorhanden, BA: verlorene Befehle |
 | 07.10. | Keine Hand-Eye-Kalibrierung, CAD-Offset + Verifikation/Korrekturterm | Zeitbudget (Abgabe 31.10.) |
 | 08.10. | Kamera-Pose relativ zum **Flansch** definieren (`T_flange_cam`), TCP separat | Flansch-Pose kommt direkt aus FK, keine Kette über Gripper nötig |
+| 08.10. | Achsen-Mapping Kamera↔Basis aus BA übernommen (F27) | bestätigt, Grundlage für geometry.py |
 | 08.10. | `T_flange_tcp` = (0, 0, 113.823 mm), Werte < 0.2 mm aus CAD = 0 | CAD; alter Kamera→Gripper-Offset (52.1) ist damit überholt |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
 | 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |
