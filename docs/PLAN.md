@@ -226,7 +226,14 @@ Antwort (08.10., bestätigt): Blick von der Roboterbasis aus, Gripper schaut sen
 - ⇒ **z_robo = −z_cam, x_robo = −y_cam, y_robo = −x_cam**, d.h. Δx_robo = −Δv, Δy_robo = −Δu (gleich wie BA „Axis Mapping“).
 - EE-Frame (BA-Bild): z nach unten, x wie Basis-x, y = −Basis-y (180° um x). Damit R_EE_cam = Rz(+90°).
 
-**F28.** Auf welcher Seite des Flanschs sitzt die Kamera, von der Basis aus gesehen bei nach unten schauendem Gripper: links (+y_robo), rechts (−y_robo), vorne oder hinten? (Damit ist klar, in welchem Frame die +44.4 mm gelten.)
+**F28.** Kameraseite.
+Antwort (08.10.): Kamera zeigt **immer nach vorne (+x_robo)**, d.h. EE-Gierwinkel fix so, dass die Kamera vor dem Flansch sitzt. ✅
+⇒ EE-Orientierung (Soll für alle Bewegungen): x_EE = +y_robo, y_EE = +x_robo, z_EE = −z_robo. Mit dem Achsen-Mapping aus F27 folgt R_EE_cam = Rz(180°): x_cam = −x_EE, y_cam = −y_EE, z_cam = z_EE. Im Bild liegt der Gripper/TCP 44.4 mm „hinten“ = unterhalb der Bildmitte.
+
+**F29.** Bestätigen: Wenn die Kamera vorne sitzt, ist der Gripper (bzw. die Halterung) im Kamerabild **unten**? (Damit gilt F27 genau in dieser Konfiguration.)
+Antwort: 
+
+**F30.** Sitzt die Kamera auf dem **drehenden** Teil (M1 dreht sie mit) oder auf dem fixen Teil am Flansch? Falls sie mitdreht: Orientierung nach dem Schrauben unbekannt → vor jedem Bild zurückdrehen nötig.
 Antwort: 
 
 **F22.** Stiftschraube: Ist die Gesamthöhe 20 mm Basis + 19 mm Gewinde = 39 mm, oder 20 mm insgesamt? Schaut das Gewinde oben aus der Basis heraus?
@@ -254,6 +261,7 @@ Antwort:
 | 07.10. | Serial mit ACK/DONE + Watchdog, Zeitsteuerung auf dem Arduino | kein Feedback vorhanden, BA: verlorene Befehle |
 | 07.10. | Keine Hand-Eye-Kalibrierung, CAD-Offset + Verifikation/Korrekturterm | Zeitbudget (Abgabe 31.10.) |
 | 08.10. | Kamera-Pose relativ zum **Flansch** definieren (`T_flange_cam`), TCP separat | Flansch-Pose kommt direkt aus FK, keine Kette über Gripper nötig |
+| 08.10. | Kamera immer vorne (+x_robo), EE-Yaw fix | F28; Pixel-Mapping bleibt konstant, Beobachtungspose = Area-Mitte − 44.4 mm in x |
 | 08.10. | Achsen-Mapping Kamera↔Basis aus BA übernommen (F27) | bestätigt, Grundlage für geometry.py |
 | 08.10. | `T_flange_tcp` = (0, 0, 113.823 mm), Werte < 0.2 mm aus CAD = 0 | CAD; alter Kamera→Gripper-Offset (52.1) ist damit überholt |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
