@@ -23,6 +23,8 @@ setup(
     entry_points={
         "console_scripts": [
             "vision_node = sa_vision.vision_node:main",
+            "capture_images = sa_vision.capture_images:main",
+            "evaluate_images = sa_vision.evaluate_images:main",
         ],
     },
 )
