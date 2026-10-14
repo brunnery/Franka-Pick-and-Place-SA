@@ -6,3 +6,4 @@
     pixel_format: mjpeg2rgb
     framerate: 30.0
     camera_name: hd_camera
+    frame_id: camera_optical_frame
