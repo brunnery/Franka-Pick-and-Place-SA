@@ -2,7 +2,7 @@
 
 > Living document. Every formula, model or principle that the code relies on and that belongs in the report is written down here, in report-ready English, with symbols defined once.
 > Status per section: **used** (in the code), **planned** (decided, not implemented yet), **dropped** (kept for the discussion chapter).
-> Last update: 14.10.2026
+> Last update: 14.10.2026 (calibration)
 
 ---
 
@@ -29,7 +29,7 @@ With the gripper pointing down and the camera in front of the flange, the camera
 
 ---
 
-## 1. Camera model – **planned**
+## 1. Camera model – **used**
 
 ### 1.1 Pinhole projection
 A point $\mathbf{P}_C = (X_C, Y_C, Z_C)^\top$ in the camera frame projects to the normalised image plane as
@@ -68,6 +68,23 @@ $$
 $$
 
 with Levenberg–Marquardt, initialised from the closed-form homography solution [Zhang 2000]. The RMS reprojection error is reported as the calibration quality measure. Tool: ROS 2 `camera_calibration`.
+
+### 1.4 Calibration result – **used**
+14.10.2026, 1280 × 720 px, board with 8 × 11 inner corners and 30 mm squares, 68 views. File: `calibration/hd_camera.yaml`.
+
+| Parameter | Value |
+|---|---|
+| $f_x,\ f_y$ | 2077.2 px, 2083.7 px |
+| $c_x,\ c_y$ | 695.4 px, 405.6 px |
+| $k_1, k_2, p_1, p_2, k_3$ | 0.137, −0.749, −0.0022, 0.0012, 0 |
+| Field of view (h × v) | $2\arctan\frac{W}{2f_x} = 34.2°$ × $2\arctan\frac{H}{2f_y} = 19.6°$ |
+
+Two calibrations from overlapping sample sets differed by less than 0.4 % in $f$ and less than 1 px in $(c_x, c_y)$, which indicates a stable estimate.
+
+Consequences for the method:
+- **Ground resolution** $d/f$: 0.096 mm/px at $d = 200$ mm, 0.144 mm/px at 300 mm, 0.193 mm/px at 400 mm. The M6 nut (10 mm across flats) spans about 69 px at 300 mm.
+- **Narrow field of view:** at $d = 300$ mm the image covers only about 185 × 104 mm on the table. Each work area must fit into this footprint from its observation pose.
+- **Principal point offset:** the optical axis meets the image at $(695, 406)$, i.e. 55 px right of and 46 px below the image centre $(640, 360)$. At $d = 300$ mm this is about 8 mm and 7 mm on the table. Centring an object on the geometric image centre, as in the BA, therefore does not place it on the optical axis; the back-projection in Section 3 uses $(c_x, c_y)$ and avoids this bias.
 
 ---
 

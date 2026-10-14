@@ -1,0 +1,24 @@
+# Intrinsic calibration of the eye-in-hand USB camera (HutoPi 720p, OV9726)
+# Date: 14.10.2026, ROS 2 camera_calibration (mono pinhole, plumb_bob)
+# Board: 9x12 squares (8x11 inner corners), 30 mm squares, 68 samples
+# Valid only for 1280x720. Recalibrate after changing the resolution or the lens.
+image_width: 1280
+image_height: 720
+camera_name: hd_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [2077.155838, 0.000000, 695.441022, 0.000000, 2083.725681, 405.574535, 0.000000, 0.000000, 1.000000]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.137350, -0.749399, -0.002155, 0.001190, 0.000000]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 1.000000]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [2088.671875, 0.000000, 695.850246, 0.000000, 0.000000, 2095.340820, 404.333906, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]

@@ -56,7 +56,7 @@ Portbelegung ist **vorläufig** → in Firmware nur an einer Stelle definiert (K
 | Iris-Zähne über Gripper-Unterseite | 3.5 mm | CAD |
 | Mutter | M6 (Höhe ≈ 5 mm, SW 10 mm, DIN 934) | F15 |
 | Stiftschraube | quadratische Basis 10×10 mm, H 20 mm, Gewinde 19 mm | F15 (Höhen → F22) |
-| Kamera-Intrinsics | aus BA-Kalibrierung, falls auffindbar, sonst neu | F11 |
+| Kamera-Intrinsics | 1280×720: f ≈ 2077 px, (c_x, c_y) = (695, 406), FOV 34°×20° → `calibration/hd_camera.yaml` | Kalibrierung 14.10.26 ✅ |
 
 Gripper-Verhalten: **alles zeitgesteuert, kein Feedback**. Halten = Iris-Motoren laufen weiter in Schliessrichtung (in der BA ohne Überhitzung erprobt).
 
@@ -264,6 +264,7 @@ Antwort:
 | 08.10. | Kamera immer vorne (+x_robo), EE-Yaw fix | F28; Pixel-Mapping bleibt konstant, Beobachtungspose = Area-Mitte − 44.4 mm in x |
 | 08.10. | Achsen-Mapping Kamera↔Basis aus BA übernommen (F27) | bestätigt, Grundlage für geometry.py |
 | 08.10. | `T_flange_tcp` = (0, 0, 113.823 mm), Werte < 0.2 mm aus CAD = 0 | CAD; alter Kamera→Gripper-Offset (52.1) ist damit überholt |
+| 14.10. | Neu kalibriert (BA-Werte nicht mehr verfügbar), Auflösung fix 1280×720 | Schachbrett 8×11 innere Ecken, 30 mm; enges FOV (≈185×104 mm bei d = 300 mm) → Beobachtungshöhe pro Area so wählen, dass die Area ins Bild passt |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
 | 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |
 | 07.10. | 2 Steifigkeits-Presets (HIGH/LOW) | reicht laut F2 |
