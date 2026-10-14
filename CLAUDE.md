@@ -9,7 +9,8 @@ Deadline 31.10.2026 – prefer the simplest thing that raises the success rate.
 - Code, comments, logs, commit messages: English. Planning docs (`docs/PLAN.md`): German.
 - ROS2 workspace in `software/` (rclpy, ament_python; interfaces in ament_cmake). Must work on Humble and Jazzy.
 - Pure logic (detection, geometry, serial protocol, state transitions) must not import rclpy → unit-testable with pytest on any laptop.
-- No magic numbers in code: everything tunable lives in `software/src/sa_tasks/config/*.yaml`.
+- No magic numbers in code: everything tunable lives in the YAML of its package, `software/src/<pkg>/config/*.yaml`. Nodes declare parameters without defaults, so a missing YAML entry fails loudly.
+- Environment: ROS 2 Humble, system NumPy 1.21 / OpenCV 4.5. Always run with `PYTHONNOUSERSITE=1` (NumPy 2 in `~/.local` breaks ROS OpenCV); never pip install. Build: `cd software && colcon build --symlink-install`. Unit tests: `cd software/src/<pkg> && python3 -m pytest test`.
 - Hardware behind interfaces with mock implementations (robot, gripper, camera).
 - Gripper is purely time-based (no sensors). Timing runs on the Arduino; PC sends durations.
 - Firmware: `arduino/iris_gripper/` (Arduino UNO R4 Minima, Adafruit Motor Shield v2.3). Port mapping only via constants at top of the sketch.

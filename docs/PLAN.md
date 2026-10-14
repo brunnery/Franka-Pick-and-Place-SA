@@ -265,6 +265,10 @@ Antwort:
 | 08.10. | Achsen-Mapping Kamera↔Basis aus BA übernommen (F27) | bestätigt, Grundlage für geometry.py |
 | 08.10. | `T_flange_tcp` = (0, 0, 113.823 mm), Werte < 0.2 mm aus CAD = 0 | CAD; alter Kamera→Gripper-Offset (52.1) ist damit überholt |
 | 14.10. | Neu kalibriert (BA-Werte nicht mehr verfügbar), Auflösung fix 1280×720 | Schachbrett 8×11 innere Ecken, 30 mm; enges FOV (≈185×104 mm bei d = 300 mm) → Beobachtungshöhe pro Area so wählen, dass die Area ins Bild passt |
+| 14.10. | Workspace `software/` mit `sa_interfaces` (`Detection.msg`) + `sa_vision`; altes Gerüst (`main.py`, `franka_pick_place/`) entfernt | §7 |
+| 14.10. | YAML **pro Paket** (`sa_vision/config/vision.yaml`) statt zentral in `sa_tasks/config` | Paket eigenständig start- und testbar, sa_tasks existiert noch nicht |
+| 14.10. | `vision_node` liefert Pixel (roh + entzerrt) und Punkt im **Kamera-Frame** mit d aus YAML; Basis-Frame erst mit FK (sa_tasks) | Roboter/TF noch nicht verfügbar; `geometry.py` hat den allgemeinen Strahl-Ebene-Schnitt bereits |
+| 14.10. | Detektion nur gültig bei **genau einem** Kandidaten; Mittelpunkt = Loch-Schwerpunkt; Zusatzfilter Konzentrizität Loch/Aussen | lieber Retry als falsche Mutter greifen |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
 | 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |
 | 07.10. | 2 Steifigkeits-Presets (HIGH/LOW) | reicht laut F2 |

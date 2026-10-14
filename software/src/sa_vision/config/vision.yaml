@@ -1,0 +1,26 @@
+# Parameters of sa_vision/vision_node. Lengths in mm, image quantities in px.
+# Theory behind each filter: docs/THEORY.md, Section 2.
+vision_node:
+  ros__parameters:
+    # Distance camera centre -> nut top face along the optical axis (d in THEORY 3.2).
+    # Later from forward kinematics; for now set by hand to the observation height.
+    object_plane_distance_mm: 300.0
+    publish_debug: true
+
+    nut:
+      # Region of interest [x, y, width, height]; all 0 = full image.
+      roi: [0, 0, 0, 0]
+      # Pre-processing
+      blur_kernel_px: 5            # Gaussian kernel, odd
+      morph_kernel_px: 5           # elliptic structuring element for opening/closing
+      morph_open_iterations: 1     # removes specks
+      morph_close_iterations: 1    # fills gaps from highlights
+      # Geometry of the M6 nut (DIN 934) -> expected size in px from f and d
+      across_flats_mm: 10.0
+      hole_diameter_mm: 5.0        # visible bright hole (thread minor diameter ~4.9 mm)
+      # Filters
+      area_tolerance: 0.35         # outer area within expected * (1 +- tol)
+      hole_ratio_tolerance: 0.5    # hole/outer area within expected * (1 +- tol)
+      min_compactness: 0.75        # 4 pi A / P^2; regular hexagon 0.907
+      max_centre_offset_ratio: 0.15  # |hole centre - outer centre| / across-flats in px
+      centre_source: hole          # "hole" or "outer"

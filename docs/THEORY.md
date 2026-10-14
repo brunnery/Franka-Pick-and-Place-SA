@@ -2,7 +2,7 @@
 
 > Living document. Every formula, model or principle that the code relies on and that belongs in the report is written down here, in report-ready English, with symbols defined once.
 > Status per section: **used** (in the code), **planned** (decided, not implemented yet), **dropped** (kept for the discussion chapter).
-> Last update: 14.10.2026 (calibration)
+> Last update: 14.10.2026 (detection and back-projection implemented in `sa_vision`)
 
 ---
 
@@ -88,7 +88,7 @@ Consequences for the method:
 
 ---
 
-## 2. Object detection – **planned**
+## 2. Object detection – **used** (nut, `sa_vision/detection.py`; stud: planned)
 
 Goal: the centre $(u, v)$ of the nut (pick) and of the stud base (place), from a single observation pose, on a white background, without painting the parts (in the BA they were painted matt black).
 
@@ -131,13 +131,17 @@ A_\text{px} \approx A_\text{mm} \left(\frac{f}{d}\right)^2
 $$
 
 For the M6 nut (across flats $s = 10$ mm): $A_\text{hex} = \frac{\sqrt3}{2} s^2 \approx 86.6\ \text{mm}^2$. The accepted area window is a tolerance band around this value, so it stays valid when the observation height changes.
+- **Hole ratio:** the area ratio hole/outer is expected near $\frac{\pi D^2/4}{A_\text{hex}}$ with the visible hole diameter $D \approx 5$ mm (≈ 0.23). This rejects washers and rings.
+- **Concentricity:** the centroids of the outer contour and of the hole must lie within a fraction of $s\,f/d$ of each other.
+- **Uniqueness:** a detection is valid only if exactly one contour passes all filters. Two candidates in the work area are treated as an error rather than guessed.
+- The reported centre is the hole centroid by default (option: outer centroid). With perspective, the visible hole is the overlap of the top and bottom openings, so its centroid corresponds to roughly half the nut height; for a nut at lateral distance $X$ from the optical axis the top and bottom planes differ by $X h / d$ in the image (≈ 0.8 mm at $X = 50$, $h = 5$, $d = 300$ mm), i.e. the error against the top-face centre is about half of this.
 
-### 2.7 Temporal robustness
+### 2.7 Temporal robustness – **planned**
 The centre is the **median** over $n$ consecutive frames. The median rejects single-frame outliers from reflections, which the exponential filter of the BA ($\alpha = 0.25$) only damps.
 
 ---
 
-## 3. From pixel to robot target – **planned**
+## 3. From pixel to robot target – **used** (camera frame, `sa_vision/geometry.py`); base frame and tool target: planned
 
 ### 3.1 Back-projection as ray–plane intersection
 After undistortion, the pixel defines a viewing ray in the camera frame:
@@ -159,7 +163,7 @@ $$
 \lambda^* = \frac{z_\text{obj} - o_z}{(\mathbf{R}\,\mathbf{r}_C)_z}, \qquad \mathbf{p}_\text{obj} = \mathbf{o} + \lambda^* \mathbf{R}\,\mathbf{r}_C
 $$
 
-This is valid for any camera orientation, as long as the ray is not parallel to the plane.
+This is valid for any camera orientation, as long as the ray is not parallel to the plane and $\lambda^* > 0$ (plane in front of the camera).
 
 ### 3.2 Special case: camera looking straight down
 If the optical axis is vertical, $\lambda^* = d$ and the result reduces to the familiar pinhole relation
@@ -167,6 +171,8 @@ If the optical axis is vertical, $\lambda^* = d$ and the result reduces to the f
 $$
 X_C = \frac{(u - c_x)\, d}{f_x}, \qquad Y_C = \frac{(v - c_y)\, d}{f_y}
 $$
+
+The vision node currently publishes this point $(X_C, Y_C, d)$ in the camera frame, with $d$ taken from the configuration (observation height). The transformation into $\{B\}$ with Section 3.1 follows once the forward kinematics are available.
 
 ### 3.3 Tool target
 The commanded TCP position is $\mathbf{p}_\text{obj}$ in $x, y$; $z$ is set per phase (approach height, contact). The orientation is fixed (gripper down, camera towards $+x_B$). A constant correction $\Delta\mathbf{p}$ from the verification measurement (Section 4) is added in $x, y$.
