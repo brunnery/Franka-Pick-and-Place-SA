@@ -39,3 +39,8 @@ desktop.ini
 
 # Secrets and local settings
 .env
+
+# colcon workspace (software/)
+software/build/
+software/install/
+software/log/

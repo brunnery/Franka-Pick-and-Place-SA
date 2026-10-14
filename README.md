@@ -14,12 +14,11 @@ Gameplan, Methodik und offene Fragen: [docs/PLAN.md](docs/PLAN.md)
 │   └── drawings/           Technical drawings (PDF, DXF)
 ├── arduino/                Microcontroller code
 │   └── sketch_sep24a/      Motor shield test sketch
-├── software/               Python software
-│   ├── franka_pick_place/  Python package
-│   ├── config/             Configuration files
-│   ├── tests/              Tests
-│   ├── main.py             Entry point
-│   └── requirements.txt    Python dependencies
+├── software/               ROS 2 workspace (colcon)
+│   ├── src/                ROS 2 packages (sa_interfaces, ...)
+│   ├── launch/             Stand-alone launch files (camera)
+│   └── config/             Configuration of stand-alone launch files
+├── calibration/            Camera intrinsics
 ├── data/                   Measurements and logs
 ├── visualization/          3D view of the pick and place sequence
 └── docs/                   Documentation
@@ -38,15 +37,19 @@ Details in [visualization/README.md](visualization/README.md).
 
 ## Getting started
 
-### Python software
+### ROS 2 software
+
+ROS 2 Humble, system Python packages only (NumPy 1.21, OpenCV 4.5). A NumPy 2 in `~/.local` breaks the ROS OpenCV bindings, so always run with `PYTHONNOUSERSITE=1` and do not install anything with pip.
 
 ```bash
+export PYTHONNOUSERSITE=1
+source /opt/ros/humble/setup.bash
 cd software
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
+colcon build --symlink-install
+source install/setup.bash
 ```
+
+Camera only: `ros2 launch software/launch/camera.launch.py` (from the repository root).
 
 ### Arduino firmware
 
