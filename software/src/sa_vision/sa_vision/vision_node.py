@@ -6,6 +6,7 @@ All parameters come from config/vision.yaml (no defaults in code).
 """
 import rclpy
 from cv_bridge import CvBridge
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
@@ -108,14 +109,14 @@ class VisionNode(Node):
 
 
 def main(args=None):
+    # Ctrl-C reaches the node twice (terminal and launch), so no explicit
+    # destroy_node(): a second SIGINT there would end in a traceback.
     rclpy.init(args=args)
-    node = VisionNode()
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
+        rclpy.spin(VisionNode())
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.destroy_node()
         rclpy.try_shutdown()
 
 
