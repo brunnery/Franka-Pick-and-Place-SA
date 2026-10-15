@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from sa_vision.camera_controls import load_controls, readback_command, v4l2_commands
 from sa_vision.params import D_SOURCES, distance_range, load_vision_config
@@ -17,6 +18,8 @@ def test_vision_yaml_provides_all_nut_parameters():
     assert len(config.d_from_size_range_mm) == 2
     assert len(config.nut.across_flats_range_mm) == 2
     assert config.reference_image
+    params = yaml.safe_load((PACKAGE / "config" / "vision.yaml").read_text())
+    assert params["vision_node"]["ros__parameters"]["centre_median_frames"] >= 1
 
 
 def test_camera_yaml_switches_automatic_modes_off_before_manual_values():

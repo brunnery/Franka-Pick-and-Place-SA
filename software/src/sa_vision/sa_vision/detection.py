@@ -95,6 +95,7 @@ class NutDetection:
     u: float = math.nan
     v: float = math.nan
     across_flats_mm: float = math.nan
+    across_flats_px: float = math.nan
     size: str = ""
     distance_mm: float = math.nan    # d used for the result (given, or estimated from the size)
     distance_from_size: bool = False  # True: d = f * s_target / s_px, s is assumed, not measured
@@ -427,6 +428,7 @@ def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
     detection.status = "ok"
     detection.u, detection.v = best.centre
     detection.across_flats_mm = best.across_flats_mm
+    detection.across_flats_px = best.across_flats_px
     detection.size = best.size
     detection.distance_mm = best.distance_mm
     detection.area_px = best.area_px

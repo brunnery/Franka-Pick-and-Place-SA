@@ -4,6 +4,7 @@ from sa_vision.debug_draw import (AMBIGUOUS_COLOUR, FAILURE_COLOUR, NUT_COLOUR,
                                   STEP_BRIGHT_COLOUR, STEP_CORE_COLOUR, draw_debug, draw_steps,
                                   info_line, nut_label, threshold_view)
 from sa_vision.detection import detect_nut
+from sa_vision.temporal import FilteredCentre
 from test_detection import (DISTANCE_MM, FOCAL_PX, M8_TARGET, HAND_HELD_RANGE_MM, PARAMS,
                             nut_image, table)
 
@@ -48,6 +49,7 @@ def test_ambiguous_candidates_are_drawn_yellow():
 def test_info_line_names_method_rate_and_distance_source():
     fixed = detect_nut(table(), FOCAL_PX, DISTANCE_MM, PARAMS)
     assert info_line(fixed, 14.94) == "A (local median) | 14.9 fps | d = 340 mm (yaml)"
+    assert info_line(fixed, 14.94, 5).endswith("| median 5")
     estimated = detect_nut(nut_image((640.0, 360.0)), FOCAL_PX, None, M8_TARGET,
                            background=table(), distance_range_mm=HAND_HELD_RANGE_MM)
     assert info_line(estimated, None) == "A' (reference image) | offline | d estimated from size"
@@ -68,3 +70,16 @@ def test_threshold_view_marks_bright_body_and_dark_core():
     assert colour_pixels(view, STEP_BRIGHT_COLOUR) > 1000  # bright nut body
     assert colour_pixels(view, STEP_CORE_COLOUR) > 500     # dark hole
     assert view[50, 50].tolist() == [0, 0, 0]              # bare table
+
+
+def test_label_uses_the_filtered_distance_and_shows_the_window():
+    result = detect_nut(nut_image((640.0, 360.0)), FOCAL_PX, DISTANCE_MM, PARAMS)
+    settling = FilteredCentre(640.0, 360.0, 333.0, 2, 5)
+    lines = nut_label(result, (1.0, 2.0), settling)
+    assert lines[1] == "d = 333 mm"
+    assert lines[-1] == "median 2/5 frames  settling"
+    assert nut_label(result, None, FilteredCentre(640.0, 360.0, 333.0, 5, 5))[-1] == \
+        "median 5/5 frames"
+    image = bgr(nut_image((640.0, 360.0)))
+    out = draw_debug(image, result, PRINCIPAL_POINT, 15.0, (1.0, 2.0), settling, 5)
+    assert out.shape == image.shape

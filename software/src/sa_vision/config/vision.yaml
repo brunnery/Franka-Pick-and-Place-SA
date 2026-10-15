@@ -16,6 +16,11 @@ vision_node:
     # (I/B, threshold, morphology + candidates, result), each tile scaled by debug_steps_scale
     debug_view: steps
     debug_steps_scale: 0.75
+    # Temporal median of the centre (THEORY 2.7): median of u, v, d over the last n valid
+    # frames; valid only once n frames agree. The window starts over after an invalid frame
+    # or a jump larger than ratio * s_px (camera or nut moved). 1 = no filter.
+    centre_median_frames: 5
+    centre_reset_jump_ratio: 0.25
     # Image of the empty work area from the observation pose with the fixed exposure
     # (method A'), recorded with `ros2 run sa_vision capture_reference`. Relative to the
     # working directory (repository root). Missing file or "" = local median only (A).

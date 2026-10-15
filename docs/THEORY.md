@@ -203,8 +203,18 @@ The size is then *assumed*, not measured: a size filter on $\hat s$ would be cir
 
 **Debug image** (`/vision/debug`): the camera frame ($x_\text{cam}$ right, $y_\text{cam}$ down) is drawn as a legend at the top left, the robot frame ($x_\text{robo} = -y_\text{cam}$, $y_\text{robo} = -x_\text{cam}$, gripper pointing down) at the bottom right; the principal point $(c_x, c_y)$ is marked with a cross and joined to the nut centre. At the top right, for a detected nut, it shows $\hat s$, $d$ and the offset of the nut from the optical axis in the robot frame, $(\Delta x_\text{robo}, \Delta y_\text{robo}) = (-Y_C, -X_C)$ with $(X_C, Y_C)$ from Section 3.2, i.e. the distance the robot would have to move to bring the optical axis over the nut.
 
-### 2.7 Temporal robustness – **planned**
-The centre is the **median** over $n$ consecutive frames. The median rejects single-frame outliers from reflections, which the exponential filter of the BA ($\alpha = 0.25$) only damps.
+### 2.7 Temporal robustness – **used** (`sa_vision/temporal.py`)
+Pixels at the rim of the nut lie close to the threshold of Section 2.2, so they flip between foreground and background from frame to frame, even with a still camera (sensor noise, JPEG compression). Each flip at the outer boundary moves the convex hull and with it the centre. Measured on 60 frames of a still camera with an M8 locknut ($s_\text{px} \approx 145$, $d \approx 180$ mm): the single-frame centre jitters with a standard deviation of 0.9 px (range 3.4 px, about 0.08 mm and 0.3 mm on the table).
+
+Spatial remedies were tried and **dropped**: smoothing the binary mask (Gaussian blur and threshold at one half, $\sigma$ up to $0.08\,s_\text{px}$) left the jitter at 0.8–0.9 px and rounds the hexagon corners, which raises $s/e$ towards the circle; a least-squares fit of a regular hexagon to the outline reached 0.6 px. The flipping pixels change the outline itself, which no spatial model can restore.
+
+The published centre is therefore the **median over the last $n$ valid frames** ($n = 5$, `centre_median_frames`), separately for $u$, $v$ and $d$:
+
+$$
+\hat u_t = \operatorname{median}(u_{t-n+1}, \dots, u_t)
+$$
+
+On the same 60 frames this gives a standard deviation of 0.08 px (range 0.3 px). Unlike the exponential filter of the BA ($\alpha = 0.25$), the median ignores single-frame outliers instead of averaging them in. The result is valid only once the window holds $n$ frames. The window starts over after an invalid frame and when the new centre lies more than $0.25\,s_\text{px}$ from the current median (`centre_reset_jump_ratio`), so a moved camera or nut is never mixed with the old position. Cost: a delay of $n$ frames (0.25 s at 20 fps), irrelevant at the robot, where the camera stands still during the observation.
 
 ---
 

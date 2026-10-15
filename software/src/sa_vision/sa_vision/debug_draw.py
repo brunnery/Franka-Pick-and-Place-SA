@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from sa_vision.detection import BACKGROUND_REFERENCE, NutDetection, NutParams, failure_reason
+from sa_vision.temporal import FilteredCentre
 
 # BGR colours
 CAMERA_AXES_COLOUR = (255, 140, 0)    # blue
@@ -22,7 +23,9 @@ REJECTED_COLOUR = (160, 160, 160)
 NUT_COLOUR = (0, 200, 0)              # green
 AMBIGUOUS_COLOUR = (0, 220, 255)      # yellow: passed all filters, but not the only one
 HOLE_COLOUR = (255, 0, 255)
-CENTRE_COLOUR = (0, 0, 255)
+CENTRE_COLOUR = (0, 0, 255)           # red: centre used (median over frames)
+RAW_CENTRE_COLOUR = (90, 90, 90)      # grey: centre of this frame alone
+SETTLING_COLOUR = (0, 140, 255)       # orange: median window not yet full
 FAILURE_COLOUR = (0, 0, 255)          # red
 TEXT_COLOUR = (0, 0, 0)
 TEXT_BACKGROUND = (255, 255, 255)
@@ -32,6 +35,7 @@ AXIS_LENGTH = 90
 AXIS_TIP = 0.15                       # arrow head length / arrow length
 AXIS_LABEL_GAP = 8
 MARKER_SIZE = 30
+RAW_MARKER_SIZE = 14
 PRINCIPAL_POINT_MARKER_SIZE = 20
 FRAME_INSET = 20                      # frame origins: distance from the image corner
 FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -108,38 +112,50 @@ def _text_top_right(image: np.ndarray, lines: Sequence[str], baseline: int, colo
               thickness)
 
 
-def info_line(detection: NutDetection, fps: Optional[float]) -> str:
-    """Method, frame rate and source of d, e.g. "A' (reference) | 14.9 fps | d = 300 mm"."""
+def info_line(detection: NutDetection, fps: Optional[float],
+              median_window: Optional[int] = None) -> str:
+    """Method, frame rate, source of d and median window,
+    e.g. "A' (reference image) | 14.9 fps | d = 300 mm (yaml) | median 5"."""
     method = ("A' (reference image)" if detection.background == BACKGROUND_REFERENCE
               else "A (local median)")
     rate = f"{fps:.1f} fps" if fps is not None else "offline"
     distance = ("d estimated from size" if detection.distance_from_size
                 else f"d = {detection.distance_mm:.0f} mm (yaml)")
-    return f"{method} | {rate} | {distance}"
+    median = f" | median {median_window}" if median_window else ""
+    return f"{method} | {rate} | {distance}{median}"
 
 
-def nut_label(detection: NutDetection,
-              robot_offset_mm: Optional[Tuple[float, float]]) -> Sequence[str]:
-    """Text for a detected nut (top right): s, d and the offset in the robot frame."""
+def nut_label(detection: NutDetection, robot_offset_mm: Optional[Tuple[float, float]],
+              filtered: Optional[FilteredCentre] = None) -> Sequence[str]:
+    """Text for a detected nut (top right): s, d, the offset in the robot frame and the
+    median window. d and the offset are those of the filtered centre if there is one."""
+    distance = filtered.distance_mm if filtered is not None else detection.distance_mm
     if detection.distance_from_size:
         lines = [f"s = {detection.across_flats_mm:.1f} mm (assumed)",
-                 f"d = {detection.distance_mm:.0f} mm (from size)"]
+                 f"d = {distance:.0f} mm (from size)"]
     else:
         lines = [f"s = {detection.across_flats_mm:.1f} mm {detection.size}".rstrip(),
-                 f"d = {detection.distance_mm:.0f} mm"]
+                 f"d = {distance:.0f} mm"]
     if robot_offset_mm is not None:
         lines += [f"dx_robo = {robot_offset_mm[0]:+.1f} mm",
                   f"dy_robo = {robot_offset_mm[1]:+.1f} mm"]
+    if filtered is not None:
+        state = "" if filtered.settled else "  settling"
+        lines.append(f"median {filtered.frames}/{filtered.window} frames{state}")
     return lines
 
 
 def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
                principal_point: Tuple[float, float], fps: Optional[float] = None,
-               robot_offset_mm: Optional[Tuple[float, float]] = None) -> np.ndarray:
+               robot_offset_mm: Optional[Tuple[float, float]] = None,
+               filtered: Optional[FilteredCentre] = None,
+               median_window: Optional[int] = None) -> np.ndarray:
     """Copy of the image with frames, candidates, the nut or the failure reason.
 
     robot_offset_mm: offset of the nut from the optical axis in the robot frame
     (dx_robo, dy_robo), i.e. the distance the robot would have to move.
+    filtered: median centre over the last frames; drawn as the red cross, the centre
+    of this frame alone then as a small grey cross.
     """
     out = image_bgr.copy()
     height, width = out.shape[:2]
@@ -167,10 +183,17 @@ def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
         for candidate in accepted:
             cv2.drawContours(out, [candidate.outer], -1, NUT_COLOUR, LINE)
             cv2.drawContours(out, [candidate.hole], -1, HOLE_COLOUR, 1)
-        centre = (int(round(detection.u)), int(round(detection.v)))
+        raw = (int(round(detection.u)), int(round(detection.v)))
+        centre = raw
+        if filtered is not None:
+            centre = (int(round(filtered.u)), int(round(filtered.v)))
+            cv2.drawMarker(out, raw, RAW_CENTRE_COLOUR, cv2.MARKER_CROSS, RAW_MARKER_SIZE, 1)
         cv2.line(out, origin, centre, ROBOT_AXES_COLOUR, 1, cv2.LINE_AA)
-        cv2.drawMarker(out, centre, CENTRE_COLOUR, cv2.MARKER_CROSS, MARKER_SIZE, LINE)
-        _text_top_right(out, nut_label(detection, robot_offset_mm), first_baseline, TEXT_COLOUR)
+        settled = filtered is None or filtered.settled
+        cv2.drawMarker(out, centre, CENTRE_COLOUR if settled else SETTLING_COLOUR,
+                       cv2.MARKER_CROSS, MARKER_SIZE, LINE)
+        _text_top_right(out, nut_label(detection, robot_offset_mm, filtered), first_baseline,
+                        TEXT_COLOUR)
     else:
         for candidate in detection.candidates:
             if candidate.accepted:
@@ -181,7 +204,7 @@ def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
         _text_top_right(out, [failure_reason(detection)], top + TEXT_LINE_HEIGHT + 8,
                         FAILURE_COLOUR, thickness=LINE)
 
-    _text(out, [info_line(detection, fps)], (TEXT_MARGIN, first_baseline))
+    _text(out, [info_line(detection, fps, median_window)], (TEXT_MARGIN, first_baseline))
     return out
 
 
@@ -247,12 +270,15 @@ def candidates_view(detection: NutDetection, shape: Tuple[int, int]) -> np.ndarr
 def draw_steps(image_bgr: np.ndarray, detection: NutDetection,
                principal_point: Tuple[float, float], params: NutParams, scale: float,
                fps: Optional[float] = None,
-               robot_offset_mm: Optional[Tuple[float, float]] = None) -> np.ndarray:
+               robot_offset_mm: Optional[Tuple[float, float]] = None,
+               filtered: Optional[FilteredCentre] = None,
+               median_window: Optional[int] = None) -> np.ndarray:
     """2x2 mosaic of the steps, each tile scaled by scale: I/B | threshold / morphology | result."""
     shape = image_bgr.shape[:2]
     tiles = [ratio_view(detection, shape), threshold_view(detection, params, shape),
              candidates_view(detection, shape),
-             draw_debug(image_bgr, detection, principal_point, fps, robot_offset_mm)]
+             draw_debug(image_bgr, detection, principal_point, fps, robot_offset_mm, filtered,
+                        median_window)]
     size = (int(round(shape[1] * scale)), int(round(shape[0] * scale)))
     resized = []
     for tile, title in zip(tiles, STEP_TITLES):

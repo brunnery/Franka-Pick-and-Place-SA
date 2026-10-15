@@ -21,6 +21,7 @@ from sa_vision import geometry
 from sa_vision.debug_draw import draw_debug, draw_steps
 from sa_vision.detection import NutParams, detect_nut
 from sa_vision.params import distance_range, nut_params
+from sa_vision.temporal import CentreMedian
 
 MM_TO_M = 1e-3
 FPS_SMOOTHING = 0.1  # weight of the newest frame interval in the displayed frame rate
@@ -58,6 +59,8 @@ class VisionNode(Node):
         self.declare_parameter("publish_debug", Parameter.Type.BOOL)
         self.declare_parameter("debug_view", Parameter.Type.STRING)
         self.declare_parameter("debug_steps_scale", Parameter.Type.DOUBLE)
+        self.declare_parameter("centre_median_frames", Parameter.Type.INTEGER)
+        self.declare_parameter("centre_reset_jump_ratio", Parameter.Type.DOUBLE)
         self.declare_parameter("reference_image", Parameter.Type.STRING)
         for name, kind in DETECTION_PARAMETERS.items():
             self.declare_parameter(f"nut.{name}", kind)
@@ -67,6 +70,8 @@ class VisionNode(Node):
         self.distance_range()  # an unknown d_source fails at start, not per frame
         if self.get_parameter("debug_view").value not in DEBUG_VIEWS:
             raise ValueError(f"debug_view must be one of {DEBUG_VIEWS}")
+        self.centre_filter = CentreMedian(self.get_parameter("centre_median_frames").value,
+                                          self.get_parameter("centre_reset_jump_ratio").value)
         self.k = None
         self.dist = None
         self.last_frame_time = None
@@ -124,13 +129,16 @@ class VisionNode(Node):
         params = self.nut_params()
         result = detect_nut(image, focal_px, distance_mm, params, self.background,
                             self.distance_range())
+        filtered = self.centre_filter.update(result)
+        settled = filtered is not None and filtered.settled
 
+        # The published centre is the median over the last frames; it is valid only once
+        # the window is full (THEORY 2.7).
         out = Detection()
         out.header = msg.header
-        out.valid = result.valid
-        out.status = result.status
-        out.u, out.v = result.u, result.v
-        out.plane_distance = result.distance_mm * MM_TO_M  # NaN if estimated and invalid
+        out.valid = settled
+        out.status = (f"settling {filtered.frames}/{filtered.window}"
+                      if filtered is not None and not settled else result.status)
         out.across_flats_mm = result.across_flats_mm
         out.size = result.size
         out.area_px = result.area_px
@@ -138,30 +146,35 @@ class VisionNode(Node):
         out.width_ratio = result.width_ratio
         out.compactness = result.compactness
         out.num_candidates = result.num_accepted
-        if result.valid:
-            out.u_undistorted, out.v_undistorted = geometry.undistort_pixel(
-                result.u, result.v, self.k, self.dist)
-            x, y, z = geometry.pixel_to_camera_point(
-                out.u_undistorted, out.v_undistorted, self.k, out.plane_distance)
-            out.point_camera.x, out.point_camera.y, out.point_camera.z = x, y, z
+        nan = float("nan")
+        robot_offset = None
+        if filtered is not None:
+            u_undistorted, v_undistorted = geometry.undistort_pixel(
+                filtered.u, filtered.v, self.k, self.dist)
+            point = geometry.pixel_to_camera_point(u_undistorted, v_undistorted, self.k,
+                                                   filtered.distance_mm * MM_TO_M)
+            robot_offset = geometry.camera_to_robot_xy(point[0] / MM_TO_M, point[1] / MM_TO_M)
+        if settled:
+            out.u, out.v = filtered.u, filtered.v
+            out.u_undistorted, out.v_undistorted = u_undistorted, v_undistorted
+            out.plane_distance = filtered.distance_mm * MM_TO_M
+            out.point_camera.x, out.point_camera.y, out.point_camera.z = point
         else:
-            nan = float("nan")
-            out.u_undistorted = out.v_undistorted = nan
+            out.u = out.v = out.u_undistorted = out.v_undistorted = nan
+            out.plane_distance = result.distance_mm * MM_TO_M  # NaN if estimated
             out.point_camera.x = out.point_camera.y = out.point_camera.z = nan
         self.detection_pub.publish(out)
 
         if self.get_parameter("publish_debug").value:
-            robot_offset = None
-            if result.valid:
-                robot_offset = geometry.camera_to_robot_xy(out.point_camera.x / MM_TO_M,
-                                                           out.point_camera.y / MM_TO_M)
             principal_point = (self.k[0, 2], self.k[1, 2])
+            window = self.centre_filter.window
             if self.get_parameter("debug_view").value == "steps":
                 debug = draw_steps(image, result, principal_point, params,
                                    self.get_parameter("debug_steps_scale").value, self.fps,
-                                   robot_offset)
+                                   robot_offset, filtered, window)
             else:
-                debug = draw_debug(image, result, principal_point, self.fps, robot_offset)
+                debug = draw_debug(image, result, principal_point, self.fps, robot_offset,
+                                   filtered, window)
             debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
             debug_msg.header = msg.header
             self.debug_pub.publish(debug_msg)
