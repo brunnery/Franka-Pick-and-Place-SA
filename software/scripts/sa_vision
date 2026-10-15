@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Start camera (fixed exposure), vision_node and the debug viewer (/vision/debug) with
+# one command. Run from a normal terminal (GUI). Arguments go to vision.launch.py:
+#   sa_vision [view:=false] [params_file:=<yaml>]
+# Install once:  ln -s <repo>/software/scripts/sa_vision ~/.local/bin/sa_vision
+# Needs a built workspace: cd software && colcon build --symlink-install
+
+REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+DISTRO="${ROS_DISTRO:-$(ls /opt/ros | head -n 1)}"
+WORKSPACE_SETUP="$REPO/software/install/setup.bash"
+if [ ! -f "$WORKSPACE_SETUP" ]; then
+    echo "Workspace not built: cd $REPO/software && colcon build --symlink-install" >&2
+    exit 1
+fi
+
+export PYTHONNOUSERSITE=1  # NumPy 2 in ~/.local breaks the ROS OpenCV
+source "/opt/ros/$DISTRO/setup.bash"
+source "$WORKSPACE_SETUP"
+cd "$REPO"  # reference_image in vision.yaml is relative to the repository root
+exec ros2 launch software/launch/vision.launch.py "$@"

@@ -5,6 +5,7 @@ Publishes:   vision/detection (sa_interfaces/Detection), vision/debug (sensor_ms
 All parameters come from config/vision.yaml (no defaults in code).
 """
 from pathlib import Path
+import time
 
 import cv2
 import rclpy
@@ -19,9 +20,10 @@ from sa_interfaces.msg import Detection
 from sa_vision import geometry
 from sa_vision.debug_draw import draw_debug
 from sa_vision.detection import NutParams, detect_nut
-from sa_vision.params import nut_params
+from sa_vision.params import distance_range, nut_params
 
 MM_TO_M = 1e-3
+FPS_SMOOTHING = 0.1  # weight of the newest frame interval in the displayed frame rate
 
 DETECTION_PARAMETERS = {
     "blur_kernel_px": Parameter.Type.INTEGER,
@@ -49,6 +51,8 @@ DETECTION_PARAMETERS = {
 class VisionNode(Node):
     def __init__(self):
         super().__init__("vision_node")
+        self.declare_parameter("d_source", Parameter.Type.STRING)
+        self.declare_parameter("d_from_size_range_mm", Parameter.Type.DOUBLE_ARRAY)
         self.declare_parameter("object_plane_distance_mm", Parameter.Type.DOUBLE)
         self.declare_parameter("publish_debug", Parameter.Type.BOOL)
         self.declare_parameter("reference_image", Parameter.Type.STRING)
@@ -57,8 +61,11 @@ class VisionNode(Node):
 
         self.background = self.load_reference(self.get_parameter("reference_image").value)
         self.bridge = CvBridge()
+        self.distance_range()  # an unknown d_source fails at start, not per frame
         self.k = None
         self.dist = None
+        self.last_frame_time = None
+        self.fps = None
         self.detection_pub = self.create_publisher(Detection, "vision/detection", 10)
         # Reliable with depth 1: rqt_image_view subscribes reliable, old frames are useless.
         self.debug_pub = self.create_publisher(Image, "vision/debug", 1)
@@ -75,9 +82,22 @@ class VisionNode(Node):
                 raise RuntimeError(f"Cannot read reference image {path}")
             self.get_logger().info(f"Background: reference image {Path(path).resolve()}")
             return image
-        self.get_logger().warn(f"No reference image at '{path}', background is estimated "
-                               "from each frame. Record one with capture_reference.")
+        self.get_logger().warn(f"No reference image at '{path}', only the local median is "
+                               "used (method A). Record one with capture_reference.")
         return None
+
+    def distance_range(self):
+        """(d_min, d_max) if d is estimated from the nut size, None if d comes from the YAML."""
+        return distance_range(self.get_parameter("d_source").value,
+                              self.get_parameter("d_from_size_range_mm").value)
+
+    def update_fps(self):
+        now = time.monotonic()
+        if self.last_frame_time is not None and now > self.last_frame_time:
+            rate = 1.0 / (now - self.last_frame_time)
+            self.fps = rate if self.fps is None else (
+                FPS_SMOOTHING * rate + (1.0 - FPS_SMOOTHING) * self.fps)
+        self.last_frame_time = now
 
     def nut_params(self) -> NutParams:
         return nut_params({name: self.get_parameter(f"nut.{name}").value
@@ -92,17 +112,19 @@ class VisionNode(Node):
     def on_image(self, msg: Image):
         if self.k is None:
             return
+        self.update_fps()
         distance_mm = self.get_parameter("object_plane_distance_mm").value
         focal_px = 0.5 * (self.k[0, 0] + self.k[1, 1])
         image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        result = detect_nut(image, focal_px, distance_mm, self.nut_params(), self.background)
+        result = detect_nut(image, focal_px, distance_mm, self.nut_params(), self.background,
+                            self.distance_range())
 
         out = Detection()
         out.header = msg.header
         out.valid = result.valid
         out.status = result.status
         out.u, out.v = result.u, result.v
-        out.plane_distance = distance_mm * MM_TO_M
+        out.plane_distance = result.distance_mm * MM_TO_M  # NaN if estimated and invalid
         out.across_flats_mm = result.across_flats_mm
         out.size = result.size
         out.area_px = result.area_px
@@ -123,12 +145,12 @@ class VisionNode(Node):
         self.detection_pub.publish(out)
 
         if self.get_parameter("publish_debug").value:
-            label = ""
+            robot_offset = None
             if result.valid:
-                p = out.point_camera
-                label = (f"P_C = ({p.x / MM_TO_M:.1f}, {p.y / MM_TO_M:.1f}, "
-                         f"{p.z / MM_TO_M:.1f}) mm")
-            debug = draw_debug(image, result, (self.k[0, 2], self.k[1, 2]), label)
+                robot_offset = geometry.camera_to_robot_xy(out.point_camera.x / MM_TO_M,
+                                                           out.point_camera.y / MM_TO_M)
+            debug = draw_debug(image, result, (self.k[0, 2], self.k[1, 2]), self.fps,
+                               robot_offset)
             debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
             debug_msg.header = msg.header
             self.debug_pub.publish(debug_msg)

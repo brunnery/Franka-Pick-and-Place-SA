@@ -192,6 +192,17 @@ The ratio is therefore not a usable size-independent constant. It is only checke
 
 **Result on the 27 test images** (hand labels: 23 images with an M8 nut, 5 of them with an additional large nut, 4 empty images; $d = 340$ mm assumed for all, background estimated, no reference image): with target M8, 20 of 23 M8 nuts found and no false detection; without a target, 25 of 28 nuts accepted as candidates and no false candidate (the 5 images with two nuts are then correctly invalid). Missed: a nut in an overexposed corner, a nut at the image border whose true distance (≈ 270 mm) lies outside the size window at the assumed 340 mm, and a nut seen obliquely with its side faces ($s/e$ = 0.77). **These thresholds were chosen on the same images**, so the rates are optimistic; a fair rate needs a second, independent image set from the observation pose at the robot.
 
+### 2.6b Source of the distance $d$ – **used** (`d_source` in `vision.yaml`)
+The metric quantities need the distance $d$ from the camera to the nut top face.
+- **`yaml`**: $d$ is a known value, `object_plane_distance_mm`; at the robot it will come from forward kinematics (Section 3). The size $\hat s = s_\text{px} d / f$ is then *measured*.
+- **`from_size`** (hand-held tests without the robot, at any height): if the nut size $s^\ast$ is known (`target_across_flats_mm`), the pinhole relation is inverted,
+$$
+\hat d = \frac{f\, s^\ast}{s_\text{px}}
+$$
+The size is then *assumed*, not measured: a size filter on $\hat s$ would be circular ($\hat s = s^\ast$ for every candidate). The size filter is therefore relaxed to a plausibility check of the implied distance, $\hat d \in [d_\text{min}, d_\text{max}]$ (`d_from_size_range_mm`, 200–500 mm), i.e. $s_\text{px} \in [f s^\ast (1-t)/d_\text{max},\ f s^\ast (1+t)/d_\text{min}]$. Consequences: a nut of another size is taken for an M8 at another distance (an M12 next to an M8 gives "2 candidates" instead of being rejected), and every error in $s_\text{px}$ goes directly into $\hat d$: $\delta \hat d / \hat d = -\delta s_\text{px} / s_\text{px}$. The bias of about +2.5 px found for $s_\text{px}$ (Section 2.6a) gives about 3 % too small $\hat d$ at 340 mm, and through Section 4 a lateral error of $X \cdot 0.03$ (0.9 mm at $X = 30$ mm). The debug image states "d estimated from size". On the 27 test images the implied distances were 273–390 mm, consistent with the estimate of 15.10.; 19 of 23 M8 nuts passed all filters, 14 images gave a valid single detection (the 5 images with the large nut give "2 candidates").
+
+**Debug image** (`/vision/debug`): the camera frame ($x_\text{cam}$ right, $y_\text{cam}$ down) and the robot frame ($x_\text{robo} = -y_\text{cam}$, $y_\text{robo} = -x_\text{cam}$, gripper pointing down) are drawn in the principal point $(c_x, c_y)$. For a detected nut it shows $\hat s$, $d$ and the offset of the nut from the optical axis in the robot frame, $(\Delta x_\text{robo}, \Delta y_\text{robo}) = (-Y_C, -X_C)$ with $(X_C, Y_C)$ from Section 3.2, i.e. the distance the robot would have to move to bring the optical axis over the nut.
+
 ### 2.7 Temporal robustness – **planned**
 The centre is the **median** over $n$ consecutive frames. The median rejects single-frame outliers from reflections, which the exponential filter of the BA ($\alpha = 0.25$) only damps.
 

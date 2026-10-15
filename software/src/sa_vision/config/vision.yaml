@@ -2,8 +2,14 @@
 # Theory behind each filter: docs/THEORY.md, Section 2.
 vision_node:
   ros__parameters:
-    # Distance camera centre -> nut top face along the optical axis (d in THEORY 3.2).
-    # Later from forward kinematics; for now set by hand to the observation height.
+    # Source of d (THEORY 2.6b): "yaml" = object_plane_distance_mm (at the robot, later from
+    # forward kinematics); "from_size" = d = f * target_across_flats_mm / s_px for hand-held
+    # tests at any height. With from_size the nut size is assumed, not measured, and the
+    # size filter only checks that d lies in d_from_size_range_mm.
+    d_source: from_size
+    d_from_size_range_mm: [200.0, 500.0]
+    # Distance camera centre -> nut top face along the optical axis (d in THEORY 3.2),
+    # used with d_source "yaml".
     object_plane_distance_mm: 300.0
     publish_debug: true
     # Image of the empty work area from the observation pose with the fixed exposure

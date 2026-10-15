@@ -28,6 +28,15 @@ def undistort_pixel(u: float, v: float, k: np.ndarray, dist: Sequence[float]) ->
     return float(undistorted[0, 0, 0]), float(undistorted[0, 0, 1])
 
 
+def camera_to_robot_xy(x_cam: float, y_cam: float) -> Tuple[float, float]:
+    """Offset in the camera frame -> offset in the robot base frame (x, y).
+
+    Valid for the fixed end-effector orientation with the gripper pointing down
+    (CLAUDE.md): x_robo = -y_cam, y_robo = -x_cam.
+    """
+    return -y_cam, -x_cam
+
+
 def pixel_ray(u: float, v: float, k: np.ndarray) -> np.ndarray:
     """Viewing ray r_C = K^-1 (u, v, 1)^T of an undistorted pixel (z component 1)."""
     return np.linalg.solve(k, np.array([u, v, 1.0]))

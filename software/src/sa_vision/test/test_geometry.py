@@ -2,8 +2,9 @@ import cv2
 import numpy as np
 import pytest
 
-from sa_vision.geometry import (camera_matrix, intersect_ray_plane, pixel_ray,
-                                pixel_to_camera_point, pixel_to_plane_point, undistort_pixel)
+from sa_vision.geometry import (camera_matrix, camera_to_robot_xy, intersect_ray_plane,
+                                pixel_ray, pixel_to_camera_point, pixel_to_plane_point,
+                                undistort_pixel)
 
 # Calibration of 14.10.2026 (calibration/hd_camera.yaml)
 K = camera_matrix([2077.155838, 0.0, 695.441022, 0.0, 2083.725681, 405.574535, 0.0, 0.0, 1.0])
@@ -93,3 +94,9 @@ def test_plane_point_with_tilted_camera_reprojects_to_pixel():
 def test_plane_above_camera_returns_none():
     t_ref_cam = pose(rot_x(np.pi), [0.0, 0.0, 300.0])
     assert pixel_to_plane_point(CX, CY, K, t_ref_cam, 400.0) is None
+
+
+def test_camera_to_robot_mapping_of_claude_md():
+    # x_robo = -y_cam, y_robo = -x_cam (gripper pointing down)
+    assert camera_to_robot_xy(10.0, 0.0) == (-0.0, -10.0)
+    assert camera_to_robot_xy(0.0, 5.0) == (-5.0, -0.0)

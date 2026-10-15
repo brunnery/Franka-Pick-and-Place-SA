@@ -5,6 +5,8 @@
   [--calibration calibration/hd_camera.yaml] [--distance-mm 300]
   [--reference <png>] [--target-mm 13]
 
+d_source of vision.yaml applies; --distance-mm forces a fixed d.
+
 Prints one line per image and writes the debug overlay (same as /vision/debug)
 plus the binary mask next to it. Without a reference image (reference_image of
 vision.yaml or --reference) the background is estimated from each image.
@@ -39,7 +41,7 @@ def main():
     parser.add_argument("images", nargs="+", type=Path)
     parser.add_argument("--params", type=Path, default=DEFAULT_PARAMS)
     parser.add_argument("--calibration", type=Path, default=DEFAULT_CALIBRATION)
-    parser.add_argument("--distance-mm", type=float, help="override object_plane_distance_mm")
+    parser.add_argument("--distance-mm", type=float, help="fixed d in mm (overrides d_source)")
     parser.add_argument("--reference", type=Path, help="override reference_image")
     parser.add_argument("--target-mm", type=float,
                         help="override target_across_flats_mm (0 = any size)")
@@ -60,11 +62,16 @@ def main():
     if args.debug_dir:
         args.debug_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"d = {distance_mm:.0f} mm, f = {focal_px:.0f} px, "
+    distance_range = config.distance_range_mm
+    if args.distance_mm is not None:  # an explicit d always wins over the estimate
+        distance_range = None
+    d_text = (f"d from size in {distance_range} mm" if distance_range
+              else f"d = {distance_mm:.0f} mm")
+    print(f"{d_text}, f = {focal_px:.0f} px, "
           f"target s = {params.target_across_flats_mm:g} mm, params: {args.params}, "
           f"background: {reference_path if background is not None else 'estimated'}")
     print(f"{'image':32s} {'valid':5s} {'u':>7s} {'v':>7s} {'s_mm':>5s} {'size':4s} "
-          f"{'s/e':>4s} {'hole':>4s}  status | rejected: reason(s_mm)")
+          f"{'d_mm':>5s} {'s/e':>4s} {'hole':>4s}  status | rejected: reason(s_mm or d)")
     num_valid = 0
     min_report_mm = REPORT_MIN_SIZE_RATIO * params.across_flats_range_mm[0]
     for path in sorted(args.images):
@@ -72,21 +79,26 @@ def main():
         if image is None:
             print(f"{path.name:32s} cannot read")
             continue
-        result = detect_nut(image, focal_px, distance_mm, params, background)
+        result = detect_nut(image, focal_px, distance_mm, params, background, distance_range)
         num_valid += result.valid
         hole_ratio = result.hole_area_px / result.area_px if result.valid else float("nan")
-        reasons = ", ".join(f"{c.rejected}({c.across_flats_mm:.1f})" for c in result.candidates
-                            if c.rejected and c.across_flats_mm >= min_report_mm)
+        # Rejected candidates with s in mm, or with the implied d if d comes from the size
+        reasons = ", ".join(
+            f"{c.rejected}(d={c.distance_mm:.0f})" if result.distance_from_size
+            else f"{c.rejected}({c.across_flats_mm:.1f})"
+            for c in result.candidates if c.rejected and (
+                result.distance_from_size or c.across_flats_mm >= min_report_mm))
         print(f"{path.name:32s} {str(result.valid):5s} {result.u:7.1f} {result.v:7.1f} "
-              f"{result.across_flats_mm:5.1f} {result.size:4s} {result.width_ratio:4.2f} "
-              f"{hole_ratio:4.2f}  {result.status}" + (f" | {reasons}" if reasons else ""))
+              f"{result.across_flats_mm:5.1f} {result.size:4s} {result.distance_mm:5.0f} "
+              f"{result.width_ratio:4.2f} {hole_ratio:4.2f}  {result.status}"
+              + (f" | {reasons}" if reasons else ""))
         if args.debug_dir:
-            label = ""
+            robot_offset = None
             if result.valid:
                 uu, vu = geometry.undistort_pixel(result.u, result.v, k, dist)
-                p = geometry.pixel_to_camera_point(uu, vu, k, distance_mm)
-                label = f"P_C = ({p[0]:.1f}, {p[1]:.1f}, {p[2]:.1f}) mm"
-            overlay = draw_debug(image, result, (k[0, 2], k[1, 2]), label)
+                p = geometry.pixel_to_camera_point(uu, vu, k, result.distance_mm)
+                robot_offset = geometry.camera_to_robot_xy(p[0], p[1])
+            overlay = draw_debug(image, result, (k[0, 2], k[1, 2]), None, robot_offset)
             cv2.imwrite(str(args.debug_dir / path.name), overlay)
             if result.mask is not None:
                 cv2.imwrite(str(args.debug_dir / f"{path.stem}_mask.png"), result.mask)

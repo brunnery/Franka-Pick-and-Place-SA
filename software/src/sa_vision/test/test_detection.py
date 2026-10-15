@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from sa_vision.detection import (NutParams, caliper_widths, classify_size, clip_roi,
-                                 compactness, detect_nut, estimate_background, hexagon_area,
-                                 mm_to_px)
+                                 compactness, detect_nut, estimate_background, failure_reason,
+                                 hexagon_area, mm_to_px)
 
 FOCAL_PX = 2080.0
 DISTANCE_MM = 340.0
@@ -252,6 +252,64 @@ def test_roi_excludes_second_nut_and_keeps_full_image_coordinates():
     assert result.valid, result.status
     assert (result.u, result.v) == pytest.approx((900.0, 360.0), abs=0.5)
     assert result.mask.shape == (300, 400)
+
+
+HAND_HELD_RANGE_MM = (200.0, 500.0)
+M8_TARGET = with_params(target_across_flats_mm=13.0)
+
+
+def test_distance_from_size_of_the_target_nut():
+    # distance_mm is ignored in this mode; the nut is drawn as seen from 340 mm
+    result = detect_nut(nut_image((640.0, 360.0)), FOCAL_PX, None, M8_TARGET,
+                        distance_range_mm=HAND_HELD_RANGE_MM)
+    assert result.valid, result.status
+    assert result.distance_from_size
+    assert result.distance_mm == pytest.approx(DISTANCE_MM, abs=3.0 / SCALE * DISTANCE_MM / 13.0)
+    assert result.across_flats_mm == 13.0  # assumed, not measured
+    assert result.size == ""
+
+
+def test_distance_from_size_rejects_implausible_distance():
+    result = detect_nut(nut_image((640.0, 360.0)), FOCAL_PX, None, M8_TARGET,
+                        distance_range_mm=(400.0, 500.0))  # nut implies d = 340 mm
+    assert not result.valid
+    assert [c.rejected for c in result.candidates] == ["size"]
+    assert failure_reason(result).startswith("wrong size (d would be 3")
+
+
+def test_distance_from_size_cannot_tell_nut_sizes_apart():
+    # Limitation: without a known d a M12 nut looks like a closer M8 nut
+    image = table()
+    draw_nut(image, (400.0, 360.0), across_flats_mm=13.0)
+    draw_nut(image, (900.0, 360.0), across_flats_mm=18.0)
+    result = detect_nut(image, FOCAL_PX, None, M8_TARGET, distance_range_mm=HAND_HELD_RANGE_MM)
+    assert not result.valid
+    assert failure_reason(result) == "2 candidates"
+
+
+def test_distance_from_size_needs_a_target():
+    with pytest.raises(ValueError):
+        detect_nut(table(), FOCAL_PX, None, PARAMS, distance_range_mm=HAND_HELD_RANGE_MM)
+
+
+def test_failure_reasons():
+    assert failure_reason(detect_nut(nut_image((640.0, 360.0)), FOCAL_PX, DISTANCE_MM,
+                                     PARAMS)) == ""
+    assert failure_reason(detect_nut(table(), FOCAL_PX, DISTANCE_MM, PARAMS)) == "nothing in view"
+    image = table()
+    draw_nut(image, (640.0, 360.0), hole=False)
+    assert failure_reason(detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS)) == "no hole"
+    wrong = detect_nut(nut_image((640.0, 360.0), across_flats_mm=30.0), FOCAL_PX, DISTANCE_MM,
+                       PARAMS)
+    assert failure_reason(wrong).startswith("wrong size (s = 3")
+
+
+def test_failure_reason_prefers_the_candidate_that_got_furthest():
+    # A large dark blob (wrong size) and a hexagon without hole: the hexagon decides
+    image = table()
+    fill(image, [(50, 50), (450, 50), (450, 350), (50, 350)], 40)
+    draw_nut(image, (900.0, 360.0), hole=False)
+    assert failure_reason(detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS)) == "no hole"
 
 
 @pytest.mark.parametrize("across_flats_mm, size", [
