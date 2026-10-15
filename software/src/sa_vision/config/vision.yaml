@@ -6,21 +6,37 @@ vision_node:
     # Later from forward kinematics; for now set by hand to the observation height.
     object_plane_distance_mm: 300.0
     publish_debug: true
+    # Image of the empty work area from the observation pose with the fixed exposure
+    # (method A'), recorded with `ros2 run sa_vision capture_reference`. Relative to the
+    # working directory (repository root). Missing file or "" = local median only (A).
+    reference_image: data/reference/nut_area.png
 
     nut:
       # Region of interest [x, y, width, height]; all 0 = full image.
       roi: [0, 0, 0, 0]
       # Pre-processing
       blur_kernel_px: 5            # Gaussian kernel, odd
-      morph_kernel_px: 5           # elliptic structuring element for opening/closing
+      morph_kernel_px: 7           # elliptic structuring element for closing/opening
+      morph_close_iterations: 2    # joins highlights and dark facets of one nut
       morph_open_iterations: 1     # removes specks
-      morph_close_iterations: 1    # fills gaps from highlights
-      # Geometry of the M6 nut (DIN 934) -> expected size in px from f and d
-      across_flats_mm: 10.0
-      hole_diameter_mm: 5.0        # visible bright hole (thread minor diameter ~4.9 mm)
-      # Filters
-      area_tolerance: 0.35         # outer area within expected * (1 +- tol)
-      hole_ratio_tolerance: 0.5    # hole/outer area within expected * (1 +- tol)
-      min_compactness: 0.75        # 4 pi A / P^2; regular hexagon 0.907
-      max_centre_offset_ratio: 0.15  # |hole centre - outer centre| / across-flats in px
-      centre_source: hole          # "hole" or "outer"
+      # Local table brightness B: median filter with a window of ratio * largest accepted
+      # s in px, at 1/downscale resolution. 1.25 also absorbs most of the nut's soft
+      # shadow (chosen on the 27 test images of 15.10.: 2.0 lets the shadow through).
+      background_downscale: 8
+      background_window_ratio: 1.25
+      # Ratio image I/B: 1 on the table. Bare metal is brighter (highlights) or darker.
+      brighter_threshold: 0.06     # foreground if I/B > 1.06
+      darker_threshold: 0.25       # foreground if I/B < 0.75
+      core_threshold: 0.28         # dark core (thread hole) if I/B < 0.72
+      # Size (width across flats s, measured as s_px * d / f)
+      across_flats_range_mm: [7.0, 19.0]  # M4 ... M12 (ISO 4032 / DIN 934)
+      target_across_flats_mm: 13.0  # M8; 0 = any size in the range, then exactly one nut
+      size_tolerance: 0.15         # accepted s: target (or range) * (1 +- tol)
+      size_class_tolerance: 0.05   # thread size only if all standard s within +-5 % agree
+                                   # (17 vs 18 mm differ by 5.6 %)
+      # Shape filters (scale-invariant)
+      min_width_ratio: 0.78        # s/e: hexagon 0.866, square 0.707 (stud base)
+      max_width_ratio: 0.95        # circle (washer) 1.0
+      min_hole_ratio: 0.15         # dark core area / silhouette area; measured 0.19-0.80
+      max_hole_ratio: 0.85
+      max_centre_offset_ratio: 0.25  # |core centre - silhouette centre| / s_px; measured <= 0.18

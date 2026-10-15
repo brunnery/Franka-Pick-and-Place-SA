@@ -25,6 +25,8 @@ setup(
             "vision_node = sa_vision.vision_node:main",
             "capture_images = sa_vision.capture_images:main",
             "evaluate_images = sa_vision.evaluate_images:main",
+            "capture_reference = sa_vision.capture_reference:main",
+            "apply_camera_controls = sa_vision.camera_controls:main",
         ],
     },
 )

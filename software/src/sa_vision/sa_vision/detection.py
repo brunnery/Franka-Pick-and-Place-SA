@@ -1,9 +1,12 @@
-"""Nut detection on a bright background. Pure NumPy/OpenCV, no ROS.
+"""Nut detection on a bright table, independent of the nut size. Pure NumPy/OpenCV, no ROS.
 
-Pipeline (docs/THEORY.md, Section 2): greyscale -> Gaussian blur -> inverted
-Otsu threshold -> opening/closing -> two-level contours (outer boundaries and
-holes) -> filters on area, hole ratio, compactness and concentricity -> centre
-from image moments.
+Pipeline (docs/THEORY.md, Section 2): greyscale -> Gaussian blur -> divide by the
+reference image of the empty work area, if there is one -> divide by a local median
+(table brightness near the nut) -> two-sided threshold (bare metal is brighter or
+clearly darker than the table) -> closing/opening -> outer contours -> convex hull as
+silhouette -> filters on metric size, width ratio s/e, dark core (thread hole) and
+concentricity -> centre from the silhouette moments, width across flats in mm and
+the thread size if it is unambiguous.
 """
 from dataclasses import dataclass, field
 import math
@@ -12,43 +15,70 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
-CENTRE_SOURCES = ("hole", "outer")
+# Width across flats s [mm] of hex nuts, ISO 4032 and DIN 934 (they differ for M10 and M12)
+STANDARD_ACROSS_FLATS = (
+    (7.0, "M4"), (8.0, "M5"), (10.0, "M6"), (13.0, "M8"),
+    (16.0, "M10"), (17.0, "M10"), (18.0, "M12"), (19.0, "M12"),
+)
+BACKGROUND_REFERENCE = "reference"
+BACKGROUND_ESTIMATED = "estimated"
+# Grey value of the bare table after dividing by the reference image (headroom for highlights)
+REFERENCE_GREY = 128.0
 
 
 @dataclass(frozen=True)
 class NutParams:
     """Tunable detection parameters (config/vision.yaml)."""
 
-    blur_kernel_px: int            # Gaussian kernel size, odd
-    morph_kernel_px: int           # elliptic structuring element size
-    morph_open_iterations: int
-    morph_close_iterations: int
-    roi: Tuple[int, int, int, int]  # (x, y, width, height) in px, all 0 = full image
-    across_flats_mm: float         # nut width across flats s
-    hole_diameter_mm: float        # visible diameter of the threaded hole
-    area_tolerance: float          # accepted outer area: expected * (1 +- tol)
-    hole_ratio_tolerance: float    # accepted hole/outer ratio: expected * (1 +- tol)
-    min_compactness: float         # 4 pi A / P^2 of the outer contour
-    max_centre_offset_ratio: float  # |hole centre - outer centre| / s_px
-    centre_source: str             # "hole" or "outer"
+    blur_kernel_px: int              # Gaussian kernel size, odd
+    morph_kernel_px: int             # elliptic structuring element size
+    morph_close_iterations: int      # joins highlights and dark facets of one nut
+    morph_open_iterations: int       # removes specks
+    roi: Tuple[int, int, int, int]   # (x, y, width, height) in px, all 0 = full image
+    background_downscale: int        # local median is computed at 1/this resolution
+    background_window_ratio: float   # median window / largest accepted s in px
+    brighter_threshold: float        # foreground if I/B > 1 + this
+    darker_threshold: float          # foreground if I/B < 1 - this
+    core_threshold: float            # dark core (thread hole) if I/B < 1 - this
+    across_flats_range_mm: Tuple[float, float]  # smallest and largest nut, s in mm
+    target_across_flats_mm: float    # accept only this s (mm); 0 = any s within the range
+    size_tolerance: float            # accepted s: target (or range) * (1 +- tol)
+    size_class_tolerance: float      # thread size only if all standard s within +-tol agree
+    min_width_ratio: float           # s/e of the silhouette: hexagon 0.866, square 0.707
+    max_width_ratio: float           # circle 1.0
+    min_hole_ratio: float            # dark core area / silhouette area
+    max_hole_ratio: float
+    max_centre_offset_ratio: float   # |core centre - silhouette centre| / s_px
 
 
 @dataclass
 class Candidate:
-    """One outer contour and the result of the filters (for debugging)."""
+    """One silhouette and the result of the filters (for debugging)."""
 
-    outer: np.ndarray               # contour in full-image pixel coordinates
-    hole: Optional[np.ndarray]      # largest hole of the contour, if any
+    outer: np.ndarray                # convex hull in full-image pixel coordinates
+    hole: Optional[np.ndarray]       # dark core, if it was evaluated and found
     centre: Optional[Tuple[float, float]]
     area_px: float
     hole_area_px: float
+    across_flats_px: float           # s: minimum width of the silhouette
+    across_corners_px: float         # e: maximum width (diameter) of the silhouette
+    across_flats_mm: float
     compactness: float
     centre_offset_px: float
-    rejected: str                   # empty if all filters passed
+    size: str                        # thread size, empty if not unambiguous
+    rejected: str                    # empty if all filters passed
 
     @property
     def accepted(self) -> bool:
         return not self.rejected
+
+    @property
+    def width_ratio(self) -> float:
+        return self.across_flats_px / self.across_corners_px if self.across_corners_px else 0.0
+
+    @property
+    def hole_ratio(self) -> float:
+        return self.hole_area_px / self.area_px if self.area_px else 0.0
 
 
 @dataclass
@@ -57,11 +87,13 @@ class NutDetection:
     status: str
     u: float = math.nan
     v: float = math.nan
+    across_flats_mm: float = math.nan
+    size: str = ""
     area_px: float = math.nan
     hole_area_px: float = math.nan
+    width_ratio: float = math.nan
     compactness: float = math.nan
-    expected_area_px: float = math.nan
-    threshold: float = math.nan
+    background: str = ""
     roi: Tuple[int, int, int, int] = (0, 0, 0, 0)
     candidates: List[Candidate] = field(default_factory=list)
     mask: Optional[np.ndarray] = None  # binary foreground of the ROI
@@ -76,18 +108,33 @@ def hexagon_area(across_flats: float) -> float:
     return math.sqrt(3.0) / 2.0 * across_flats ** 2
 
 
-def circle_area(diameter: float) -> float:
-    return math.pi / 4.0 * diameter ** 2
-
-
 def mm_to_px(length_mm: float, focal_px: float, distance_mm: float) -> float:
     """Image length of an object length at distance d (pinhole): l * f / d."""
     return length_mm * focal_px / distance_mm
 
 
-def expected_area_px(area_mm2: float, focal_px: float, distance_mm: float) -> float:
-    """Image area of an object area at distance d: A * (f / d)^2."""
-    return area_mm2 * (focal_px / distance_mm) ** 2
+def px_to_mm(length_px: float, focal_px: float, distance_mm: float) -> float:
+    """Object length at distance d from its image length: l_px * d / f."""
+    return length_px * distance_mm / focal_px
+
+
+def classify_size(across_flats_mm: float, tolerance: float) -> str:
+    """Thread size whose standard s lies within +-tolerance (relative), if it is unique.
+
+    Returns "" when no standard size or several thread sizes match (e.g. 17.5 mm
+    lies between M10 DIN 934 and M12 ISO 4032).
+    """
+    sizes = {size for s, size in STANDARD_ACROSS_FLATS
+             if abs(across_flats_mm - s) <= tolerance * s}
+    return sizes.pop() if len(sizes) == 1 else ""
+
+
+def accepted_size_range(params: NutParams) -> Tuple[float, float]:
+    """Window for s in mm: around the target, or around the configured range."""
+    low, high = params.across_flats_range_mm
+    if params.target_across_flats_mm > 0.0:
+        low = high = params.target_across_flats_mm
+    return low * (1.0 - params.size_tolerance), high * (1.0 + params.size_tolerance)
 
 
 def clip_roi(roi: Tuple[int, int, int, int], shape: Tuple[int, ...]) -> Tuple[int, int, int, int]:
@@ -107,21 +154,56 @@ def to_gray(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
 
-def segment(gray: np.ndarray, params: NutParams) -> Tuple[np.ndarray, float]:
-    """Binary foreground (dark object = 255) and the Otsu threshold."""
+def _blur(gray: np.ndarray, params: NutParams) -> np.ndarray:
     if params.blur_kernel_px > 1:
-        gray = cv2.GaussianBlur(gray, (params.blur_kernel_px, params.blur_kernel_px), 0)
-    threshold, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        return cv2.GaussianBlur(gray, (params.blur_kernel_px, params.blur_kernel_px), 0)
+    return gray
+
+
+def _odd(value: float) -> int:
+    n = max(int(math.ceil(value)), 1)
+    return n if n % 2 else n + 1
+
+
+def estimate_background(gray: np.ndarray, window_px: float, downscale: int) -> np.ndarray:
+    """Local table brightness: median filter over a window somewhat larger than the nut.
+
+    The median ignores objects that cover less than half of the window. Near the
+    nut the window also contains its soft shadow, which pulls the estimate towards
+    the shadow level and so suppresses the shadow in I/B. Computed on a downscaled
+    image for speed and interpolated back.
+    """
+    height, width = gray.shape
+    downscale = max(downscale, 1)
+    small = cv2.resize(gray, (max(width // downscale, 1), max(height // downscale, 1)),
+                       interpolation=cv2.INTER_AREA)
+    kernel = _odd(window_px / downscale)
+    largest = _odd(min(small.shape)) - 2  # largest odd kernel that fits into the image
+    kernel = min(kernel, largest)
+    if kernel >= 3:
+        small = cv2.medianBlur(small, kernel)
+    return cv2.resize(small, (width, height), interpolation=cv2.INTER_LINEAR)
+
+
+def ratio_image(gray: np.ndarray, background: np.ndarray) -> np.ndarray:
+    """I / B: 1 on the bare table, independent of the illumination level."""
+    return gray.astype(np.float32) / np.maximum(background.astype(np.float32), 1.0)
+
+
+def segment(ratio: np.ndarray, params: NutParams) -> np.ndarray:
+    """Binary foreground (255): pixels clearly brighter or darker than the table."""
+    mask = ((ratio > 1.0 + params.brighter_threshold)
+            | (ratio < 1.0 - params.darker_threshold)).astype(np.uint8) * 255
     if params.morph_kernel_px > 1:
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (params.morph_kernel_px, params.morph_kernel_px))
-        if params.morph_open_iterations > 0:
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel,
-                                    iterations=params.morph_open_iterations)
         if params.morph_close_iterations > 0:
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel,
                                     iterations=params.morph_close_iterations)
-    return mask, float(threshold)
+        if params.morph_open_iterations > 0:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel,
+                                    iterations=params.morph_open_iterations)
+    return mask
 
 
 def contour_centre(contour: np.ndarray) -> Optional[Tuple[float, float]]:
@@ -140,93 +222,133 @@ def compactness(contour: np.ndarray) -> float:
     return 4.0 * math.pi * cv2.contourArea(contour) / perimeter ** 2
 
 
-def _evaluate(outer: np.ndarray, holes: List[np.ndarray], area_range: Tuple[float, float],
-              ratio_range: Tuple[float, float], max_offset_px: float,
+def caliper_widths(hull: np.ndarray) -> Tuple[float, float]:
+    """Minimum and maximum width of a convex polygon (rotating calipers).
+
+    The minimum width is attained with one caliper flush with an edge; for a hexagon
+    it is the width across flats s. The maximum width is the diameter (across
+    corners e for a hexagon).
+    """
+    points = hull.reshape(-1, 2).astype(float)
+    if len(points) < 3:
+        return 0.0, 0.0
+    edges = np.roll(points, -1, axis=0) - points
+    lengths = np.linalg.norm(edges, axis=1)
+    edges, lengths = edges[lengths > 0], lengths[lengths > 0]
+    normals = np.stack([-edges[:, 1], edges[:, 0]], axis=1) / lengths[:, None]
+    projections = points @ normals.T
+    min_width = float((projections.max(axis=0) - projections.min(axis=0)).min())
+    differences = points[:, None, :] - points[None, :, :]
+    max_width = float(np.sqrt((differences ** 2).sum(axis=2).max()))
+    return min_width, max_width
+
+
+def _dark_core(hull: np.ndarray, ratio: np.ndarray, offset: Tuple[int, int],
+               threshold: float) -> Optional[np.ndarray]:
+    """Largest region inside the silhouette that is clearly darker than the table."""
+    x, y, w, h = cv2.boundingRect(hull)
+    local = hull - np.array([x, y])
+    inside = np.zeros((h, w), np.uint8)
+    cv2.drawContours(inside, [local], -1, 255, -1)
+    x0, y0 = x - offset[0], y - offset[1]
+    window = ratio[y0:y0 + h, x0:x0 + w]
+    core = ((window < 1.0 - threshold) & (inside > 0)).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(core, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
+                                   offset=(x, y))
+    if not contours:
+        return None
+    return max(contours, key=cv2.contourArea)
+
+
+def _evaluate(contour: np.ndarray, ratio: np.ndarray, offset: Tuple[int, int],
+              focal_px: float, distance_mm: float, size_range: Tuple[float, float],
               params: NutParams) -> Candidate:
-    area = cv2.contourArea(outer)
-    hole = max(holes, key=cv2.contourArea) if holes else None
-    hole_area = cv2.contourArea(hole) if hole is not None else 0.0
-    outer_centre = contour_centre(outer)
-    hole_centre = contour_centre(hole) if hole is not None else None
-    offset = (math.dist(outer_centre, hole_centre)
-              if outer_centre is not None and hole_centre is not None else math.nan)
-    centre = hole_centre if params.centre_source == "hole" else outer_centre
-    comp = compactness(outer)
+    hull = cv2.convexHull(contour)
+    area = cv2.contourArea(hull)
+    s_px, e_px = caliper_widths(hull)
+    s_mm = px_to_mm(s_px, focal_px, distance_mm)
+    centre = contour_centre(hull)
+    candidate = Candidate(hull, None, centre, area, 0.0, s_px, e_px, s_mm, compactness(hull),
+                          math.nan, classify_size(s_mm, params.size_class_tolerance), "")
 
-    if not area_range[0] <= area <= area_range[1]:
-        rejected = "area"
-    elif hole is None:
-        rejected = "no hole"
-    elif not ratio_range[0] <= hole_area / area <= ratio_range[1]:
-        rejected = "hole ratio"
-    elif comp < params.min_compactness:
-        rejected = "compactness"
-    elif not offset <= max_offset_px:
-        rejected = "centre offset"
+    if not size_range[0] <= s_mm <= size_range[1]:
+        candidate.rejected = "size"
+    elif not params.min_width_ratio <= candidate.width_ratio <= params.max_width_ratio:
+        candidate.rejected = "width ratio"
     elif centre is None:
-        rejected = "degenerate"
-    else:
-        rejected = ""
-    return Candidate(outer, hole, centre, area, hole_area, comp, offset, rejected)
+        candidate.rejected = "degenerate"
+    if candidate.rejected:
+        return candidate
+
+    hole = _dark_core(hull, ratio, offset, params.core_threshold)
+    hole_centre = contour_centre(hole) if hole is not None else None
+    if hole_centre is None:
+        candidate.rejected = "no hole"
+        return candidate
+    candidate.hole = hole
+    candidate.hole_area_px = cv2.contourArea(hole)
+    candidate.centre_offset_px = math.dist(centre, hole_centre)
+    if not params.min_hole_ratio <= candidate.hole_ratio <= params.max_hole_ratio:
+        candidate.rejected = "hole ratio"
+    elif candidate.centre_offset_px > params.max_centre_offset_ratio * s_px:
+        candidate.rejected = "centre offset"
+    return candidate
 
 
-def detect_nut(image: np.ndarray, focal_px: float, distance_mm: float,
-               params: NutParams) -> NutDetection:
-    """Find exactly one nut (dark ring with a bright hole) in the ROI.
+def detect_nut(image: np.ndarray, focal_px: float, distance_mm: float, params: NutParams,
+               background: Optional[np.ndarray] = None) -> NutDetection:
+    """Find exactly one nut in the ROI.
 
     focal_px: focal length in pixels, distance_mm: camera -> nut top face.
-    The detection is valid only if exactly one contour passes all filters.
+    background: image of the empty work area from the same pose and exposure
+    (method A'); None uses the local median of the image alone (A).
+    The detection is valid only if exactly one silhouette passes all filters.
     """
-    if params.centre_source not in CENTRE_SOURCES:
-        raise ValueError(f"centre_source must be one of {CENTRE_SOURCES}")
+    if background is not None and background.shape[:2] != image.shape[:2]:
+        raise ValueError(f"reference image {background.shape[:2]} does not match the "
+                         f"camera image {image.shape[:2]}")
 
     roi = clip_roi(params.roi, image.shape)
     x, y, w, h = roi
-    expected_area = expected_area_px(hexagon_area(params.across_flats_mm), focal_px, distance_mm)
+    mode = BACKGROUND_ESTIMATED if background is None else BACKGROUND_REFERENCE
     if w == 0 or h == 0:
-        return NutDetection(False, "empty roi", expected_area_px=expected_area, roi=roi)
+        return NutDetection(False, "empty roi", background=mode, roi=roi)
 
-    gray = to_gray(image)[y:y + h, x:x + w]
-    mask, threshold = segment(gray, params)
-    contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE,
-                                           offset=(x, y))
+    size_range = accepted_size_range(params)
+    gray = _blur(to_gray(image)[y:y + h, x:x + w], params)
+    if background is not None:
+        # Divide out static objects, gradients and the table texture first
+        reference = _blur(to_gray(background)[y:y + h, x:x + w], params)
+        gray = np.clip(ratio_image(gray, reference) * REFERENCE_GREY, 0, 255).astype(np.uint8)
+    # Local median at a scale near the nut size: also absorbs most of its soft shadow
+    window_px = params.background_window_ratio * mm_to_px(size_range[1], focal_px, distance_mm)
+    table = estimate_background(gray, window_px, params.background_downscale)
+    ratio = ratio_image(gray, table)
+    mask = segment(ratio, params)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
+                                   offset=(x, y))
+    candidates = [_evaluate(c, ratio, (x, y), focal_px, distance_mm, size_range, params)
+                  for c in contours]
 
-    expected_ratio = circle_area(params.hole_diameter_mm) / hexagon_area(params.across_flats_mm)
-    area_range = (expected_area * (1.0 - params.area_tolerance),
-                  expected_area * (1.0 + params.area_tolerance))
-    ratio_range = (expected_ratio * (1.0 - params.hole_ratio_tolerance),
-                   expected_ratio * (1.0 + params.hole_ratio_tolerance))
-    max_offset_px = params.max_centre_offset_ratio * mm_to_px(
-        params.across_flats_mm, focal_px, distance_mm)
-
-    candidates = []
-    if hierarchy is not None:
-        # hierarchy[i] = [next, previous, first_child, parent]; with RETR_CCOMP the
-        # contours without parent are outer boundaries, their children are holes.
-        links = hierarchy[0]
-        for i, contour in enumerate(contours):
-            if links[i][3] != -1:
-                continue
-            holes = []
-            child = links[i][2]
-            while child != -1:
-                holes.append(contours[child])
-                child = links[child][0]
-            candidates.append(_evaluate(contour, holes, area_range, ratio_range,
-                                        max_offset_px, params))
-
-    detection = NutDetection(False, "", expected_area_px=expected_area, threshold=threshold,
-                             roi=roi, candidates=candidates, mask=mask)
+    detection = NutDetection(False, "", background=mode, roi=roi, candidates=candidates,
+                             mask=mask)
     accepted = [c for c in candidates if c.accepted]
     if len(accepted) != 1:
-        detection.status = "no nut found" if not accepted else f"{len(accepted)} nuts found"
+        if not accepted:
+            detection.status = "no nut found"
+        else:
+            sizes = ", ".join(f"{c.across_flats_mm:.1f}" for c in accepted)
+            detection.status = f"{len(accepted)} nuts found (s = {sizes} mm)"
         return detection
 
     best = accepted[0]
     detection.valid = True
     detection.status = "ok"
     detection.u, detection.v = best.centre
+    detection.across_flats_mm = best.across_flats_mm
+    detection.size = best.size
     detection.area_px = best.area_px
     detection.hole_area_px = best.hole_area_px
+    detection.width_ratio = best.width_ratio
     detection.compactness = best.compactness
     return detection

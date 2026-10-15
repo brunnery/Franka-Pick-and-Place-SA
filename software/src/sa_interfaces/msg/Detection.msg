@@ -17,9 +17,13 @@ float64 v_undistorted
 geometry_msgs/Point point_camera
 float64 plane_distance  # distance camera -> object plane along z_C used for point_camera [m]
 
+# Measured size of the object
+float64 across_flats_mm   # width across flats s = s_px * d / f [mm]
+string size               # thread size (e.g. "M8") if s matches it unambiguously, else ""
+
 # Debug information
-float64 area_px           # area of the outer contour [px^2]
-float64 hole_area_px      # area of the inner hole [px^2]
-float64 expected_area_px  # expected outer area from geometry [px^2]
-float64 compactness       # 4*pi*A/P^2 of the outer contour
-int32 num_candidates      # contours that passed all filters
+float64 area_px           # area of the silhouette (convex hull) [px^2]
+float64 hole_area_px      # area of the dark core (thread hole) [px^2]
+float64 width_ratio       # s / e, width across flats / across corners (hexagon 0.866)
+float64 compactness       # 4*pi*A/P^2 of the silhouette
+int32 num_candidates      # silhouettes that passed all filters

@@ -90,60 +90,88 @@ Consequences for the method:
 
 ## 2. Object detection – **used** (nut, `sa_vision/detection.py`; stud: planned)
 
-Goal: the centre $(u, v)$ of the nut (pick) and of the stud base (place), from a single observation pose, on a white background, without painting the parts (in the BA they were painted matt black).
+Goal: the centre $(u, v)$ of the nut (pick) and of the stud base (place), from a single observation pose, on a white background, without painting the parts (in the BA they were painted matt black). The nut detection does not assume a nut size; it measures it.
 
-### 2.1 Pre-processing
-1. Greyscale conversion.
-2. Gaussian smoothing, $G_\sigma(x,y) = \frac{1}{2\pi\sigma^2} e^{-(x^2+y^2)/2\sigma^2}$, to suppress sensor noise before thresholding.
-3. Region of interest = known work area projected into the image, so the gripper and the table edge cannot produce false detections.
+**Appearance of the bare nut (test images of 15.10.2026, hand-held, 27 images).** The zinc-plated nut reflects specularly. Most of its body is *darker* than the white table (ratio to the table about 0.5–0.8), a few highlights are *brighter* (up to 1.2), and some facets are as bright as the table. The thread hole is dark, not bright: through the bore the camera sees the table in the nut's own shadow (ratio about 0.45–0.7). On a locknut the blue nylon ring merges with the hole into one dark disc. Each nut casts a soft shadow that is 20–40 % darker than the table. The previous segmentation (inverted Otsu threshold, hole as a bright region, Sections 2.2–2.4 of the earlier version) found 0 of 27 nuts on these images; it is **dropped** (see 2.2).
 
-### 2.2 Segmentation: Otsu threshold
-The threshold $t^*$ is chosen automatically by maximising the between-class variance of the grey-level histogram [Otsu 1979]:
+### 2.1 Image acquisition and pre-processing – **used**
+1. **Fixed exposure and white balance** (`software/config/camera.yaml`, set with `v4l2-ctl` before the camera starts). With automatic exposure the brightness depends on the scene content (a bright table drives the gain down), so a reference image of the empty work area and a live image with a nut would not share the same grey levels. Trade-off measured in office light: the automatic mode reaches a table grey value of about 190 at 24 fps; manual exposure needs about 120 ms (4 fps) for the same brightness, 50 ms gives about 110 at 20 fps. The scene is static during the observation, so a low frame rate is acceptable.
+2. Greyscale conversion.
+3. Gaussian smoothing, $G_\sigma(x,y) = \frac{1}{2\pi\sigma^2} e^{-(x^2+y^2)/2\sigma^2}$, to suppress sensor noise before thresholding.
+4. Region of interest = known work area projected into the image, so the gripper and the table edge cannot produce false detections.
+
+### 2.2 Background normalisation and two-sided threshold – **used** (replaces Otsu, **dropped**)
+A global threshold cannot separate an object that is partly brighter and partly darker than the background. In addition, the nut covers only about 1 % of the image, so Otsu's criterion [Otsu 1979] splits the illumination gradient of the table instead of separating the nut (observed on the test images).
+
+The image is therefore divided by the local table brightness $B(u,v)$:
 
 $$
-t^* = \arg\max_t\ \sigma_B^2(t), \qquad \sigma_B^2(t) = \omega_0(t)\,\omega_1(t)\,\big(\mu_0(t) - \mu_1(t)\big)^2
+r(u,v) = \frac{I(u,v)}{B(u,v)}
 $$
 
-$\omega_{0,1}$: class probabilities, $\mu_{0,1}$: class means. Unlike the fixed threshold of the BA (grey value 80), this adapts to lighting changes. The binary image is inverted, so the darker object is foreground.
+With the multiplicative image model $I = \rho\,L$ (reflectance times illumination), $r$ is the reflectance relative to the table and does not depend on the illumination level or on vignetting. The bare table gives $r \approx 1$. A pixel is foreground if
 
-### 2.3 Morphology
-Opening ($A \circ B = (A \ominus B) \oplus B$) removes small specks; closing ($A \bullet B = (A \oplus B) \ominus B$) fills small gaps from specular highlights on the bare metal.
+$$
+r > 1 + \tau_b \quad\text{or}\quad r < 1 - \tau_d \qquad (\tau_b = 0.06,\ \tau_d = 0.25)
+$$
 
-### 2.4 Contours and the nut hole
-Contours are extracted with border following [Suzuki & Abe 1985] in a two-level hierarchy (outer boundaries and holes). The nut is the only object whose outer contour contains a hole of the expected size, because the white table is visible through the thread. This makes the hole a robust feature, and its centre coincides with the nut axis.
+$B$ is computed in two steps:
+1. **Reference image** (method A'): if an image $R$ of the empty work area exists, taken from the same observation pose with the same fixed exposure, the image is first divided by it, $I \leftarrow I / R$. This removes everything static: the gradient of the illumination, the table edge, marks on the table, parts of the robot in view. Recorded with `ros2 run sa_vision capture_reference` (mean of 30 frames).
+2. **Local median** (method A, and applied after step 1 in A'): $B$ is the median of the (divided) image over a square window of side $w = k\, s_\text{max}\, f / d$, with $s_\text{max}$ the largest accepted width across flats and $k = 1.25$. The median ignores objects that cover less than half of the window, so the nut does not enter $B$; the window still follows slow variations of the table brightness. Near the nut, the window also contains the nut's soft shadow, which lowers $B$ there and removes most of the shadow from $r$. A larger window ($k = 2$) lets the shadow through: it then becomes part of the silhouette and the nut fails the shape filter (18 instead of 20 of 23 M8 nuts found). The value $k = 1.25$ was chosen on the same 27 images. For speed the median runs on an image downscaled by 8 and is interpolated back.
 
-### 2.5 Centre from image moments
-For a contour region $R$, the raw moments are $m_{pq} = \sum_{(x,y)\in R} x^p y^q$, and the centroid is
+The step 2 suppression is partial. On synthetic images a shadow of the measured shape is removed up to a depth of about 0.25; the real shadows of up to 0.4 on the test images were removed as well, because they are softer.
+
+### 2.3 Morphology – **used**
+Closing ($A \bullet B = (A \oplus B) \ominus B$, two iterations, elliptic $7 \times 7$ element) first joins highlights, dark facets and the hole into one region; opening ($A \circ B = (A \ominus B) \oplus B$) then removes small specks.
+
+### 2.4 Silhouette and dark core – **used**
+Outer contours are extracted by border following [Suzuki & Abe 1985]. The **silhouette** of a candidate is the convex hull of its contour; the hull fills concavities where a facet happens to have the brightness of the table. The **dark core** is the largest connected region inside the silhouette with $r < 1 - \tau_c$ ($\tau_c = 0.28$). It contains the thread hole, the nylon ring of a locknut and the shaded inner chamfer.
+
+### 2.5 Centre from image moments – **used**
+For a region $R$, the raw moments are $m_{pq} = \sum_{(x,y)\in R} x^p y^q$, and the centroid is
 
 $$
 \bar u = \frac{m_{10}}{m_{00}}, \qquad \bar v = \frac{m_{01}}{m_{00}}
 $$
 
-with $m_{00}$ the area in pixels.
+with $m_{00}$ the area in pixels. The reported nut centre is the centroid of the **silhouette**. The centroid of the dark core is not used: its shape depends on how the light falls into the bore, and it lay up to $0.18\,s$ away from the silhouette centroid on the test images (about 2 mm for the large nut).
 
-### 2.6 Shape filters
-- **Compactness** $C = \dfrac{4\pi A}{P^2}$ ($A$ area, $P$ perimeter). Reference values: circle 1, regular hexagon $\pi / (2\sqrt3) \approx 0.907$, square $\pi/4 \approx 0.785$.
-- **Polygon approximation** (Douglas–Peucker, tolerance as a fraction of $P$): 4 corners and side ratio ≈ 1 for the square stud base.
-- **Expected size from geometry** instead of hand-tuned pixel windows: an object of area $A_\text{mm}$ at distance $d$ appears with
+Known biases, to be measured at the robot (Section 4):
+- A facet with the brightness of the table is missing from the silhouette; edges with little contrast are cut more than edges with high contrast. On the test images the lowest facet was often cut, which moves the centre by a few pixels (estimate 0.5–1 mm) away from that side. Synthetic test: a nut with one half just beyond the dark threshold gives about 1 px offset.
+- With perspective the silhouette is the union of the top face, the visible side faces and the bottom face. For a nut at lateral distance $X$ from the optical axis the top and bottom face differ by $X h / d$ on the object plane (≈ 1.2 mm at $X = 50$, $h = 8$, $d = 340$ mm), so the silhouette centroid lies roughly half of this outside the top-face centre.
 
-$$
-A_\text{px} \approx A_\text{mm} \left(\frac{f}{d}\right)^2
-$$
+### 2.6 Shape filters (scale-invariant) – **used**
+- **Width across flats and across corners** by rotating calipers [Toussaint 1983] on the silhouette: the minimum width of a convex polygon is attained with one caliper flush with an edge; for a hexagon it is the width across flats $s_\text{px}$. The maximum width (the diameter) is the width across corners $e_\text{px}$.
+- **Width ratio** $s/e$: regular hexagon $\sqrt3/2 \approx 0.866$, square $1/\sqrt2 \approx 0.707$, circle 1. Accepted window 0.78–0.95. On the test images, accepted nuts had 0.82–0.91, the parts of the stud (square base, thread) 0.39–0.67. This replaces the compactness filter: compactness $C = 4\pi A / P^2$ (hexagon $\pi/(2\sqrt3) \approx 0.907$, square $\pi/4 \approx 0.785$) did not separate the blurred square stud base ($C = 0.87$) from the nuts ($C = 0.92$–$0.96$); it is still reported for debugging. A round washer is rejected by $s/e \approx 1$.
+- **Dark core present and concentric:** the core area divided by the silhouette area must lie in 0.15–0.85, and the core centroid must lie within $0.25\,s_\text{px}$ of the silhouette centroid. The window is deliberately wide, see 2.6a.
+- **Uniqueness:** a detection is valid only if exactly one silhouette passes all filters (decision 14.10.). Two candidates in the work area are an error, not a guess.
+- **Polygon approximation** for the stud base (Douglas–Peucker, 4 corners, side ratio ≈ 1) – **planned**.
 
-For a hex nut with width across flats $s$: $A_\text{hex} = \frac{\sqrt3}{2} s^2$ (M8, $s = 13$ mm: 146.4 mm²). The accepted area window is a tolerance band around this value, so it stays valid when the observation height changes.
-
-### 2.6a Size-independent nut detection – **planned**
-The method should not be tied to one nut size. Two observations make this possible:
-
+### 2.6a Size-independent nut detection – **used**
 1. **Metric size from the image.** With the distance $d$ known from the robot pose, the measured width across flats is
 $$
 \hat s = \frac{s_\text{px}\, d}{f}
 $$
-and the nut is assigned to the nearest standard size (ISO 4032: M4 7 mm, M5 8 mm, M6 10 mm, M8 13 mm, M10 16 mm, M12 18 mm). The size is therefore an output of the detection, not an assumption. Neighbouring sizes differ by at least 1 mm in $s$, which is about 7 px at $d = 300$ mm, so the assignment is unambiguous as long as $d$ is known to a few percent ($\delta \hat s / \hat s = \delta d / d$).
+The size is an output of the detection, not an assumption, and is always reported in mm. Relative errors in $d$ map one to one: $\delta \hat s / \hat s = \delta d / d$. On the synthetic test images $\hat s$ is about 2.5 px too large (anti-aliased drawing and blur widen high-contrast edges); the bias on real nuts is to be calibrated at the robot.
 
-2. **Scale-invariant shape features.** Compactness and the hole-to-outer area ratio do not depend on scale. For the thread minor diameter $D_1 = d_\text{nom} - 1.0825\,P$ the ratio $\frac{\pi D_1^2 / 4}{A_\text{hex}}$ stays within a narrow band over the common sizes:
+2. **Size window and target size.** Without a target, a candidate is accepted if $\hat s$ lies in $[s_\text{min}(1 - t),\ s_\text{max}(1 + t)]$ with $s_\text{min} = 7$ mm (M4), $s_\text{max} = 19$ mm (M12, DIN 934) and $t = 0.15$; then exactly one nut of any size may be in view. With a target $s^\ast$ (parameter `target_across_flats_mm`, 13 mm for the M8 nut and stud of the task), only $\hat s \in [s^\ast(1 - t),\ s^\ast(1 + t)]$ is accepted, so nuts of other sizes are ignored. The nearest other sizes (10 and 16 mm) differ by 23 %, so $t = 0.15$ leaves margin for the bias of $\hat s$ and for errors in $d$.
 
-| Size | $s$ [mm] | $D_1$ [mm] | hole / outer area |
+3. **Thread size only if unambiguous.** The standard widths across flats are
+
+| Size | ISO 4032 $s$ [mm] | DIN 934 $s$ [mm] |
+|---|---|---|
+| M4 | 7 | 7 |
+| M5 | 8 | 8 |
+| M6 | 10 | 10 |
+| M8 | 13 | 13 |
+| M10 | 16 | 17 |
+| M12 | 18 | 19 |
+
+A thread size is assigned only if all standard values within $\pm 5\,\%$ of $\hat s$ belong to the same thread size, otherwise the size is left empty. M10 DIN (17 mm) and M12 ISO (18 mm) differ by only 5.6 %, so for example $\hat s = 17.5$ mm stays unassigned. The large plain nut in the test images measured about 1.46 times the M8 nut, i.e. about 19 mm (M12, DIN 934).
+
+4. **Hole ratio: theory and measurement.** For the thread minor diameter $D_1 = d_\text{nom} - 1.0825\,P$ the area ratio $\frac{\pi D_1^2 / 4}{A_\text{hex}}$, with $A_\text{hex} = \frac{\sqrt3}{2} s^2$, stays within a narrow band over the common sizes:
+
+| Size | $s$ [mm] | $D_1$ [mm] | hole / hexagon area (theory) |
 |---|---|---|---|
 | M4 | 7 | 3.24 | 0.20 |
 | M5 | 8 | 4.13 | 0.24 |
@@ -152,11 +180,17 @@ and the nut is assigned to the nearest standard size (ISO 4032: M4 7 mm, M5 8 mm
 | M10 | 16 | 8.38 | 0.25 |
 | M12 | 18 | 10.11 | 0.29 |
 
-So one ratio window (about 0.15–0.35, to be confirmed on real images) covers all sizes and still rejects washers, whose hole is much larger relative to the outer contour. The area filter becomes a window $[A_\text{hex}(s_\text{min}),\ A_\text{hex}(s_\text{max})]$ instead of a band around one size. If the task specifies a size, the detection can additionally reject nuts of other sizes.
-- **Hole ratio:** the area ratio hole/outer is expected near $\frac{\pi D^2/4}{A_\text{hex}}$ with the visible hole diameter $D \approx 5$ mm (≈ 0.23). This rejects washers and rings.
-- **Concentricity:** the centroids of the outer contour and of the hole must lie within a fraction of $s\,f/d$ of each other.
-- **Uniqueness:** a detection is valid only if exactly one contour passes all filters. Two candidates in the work area are treated as an error rather than guessed.
-- The reported centre is the hole centroid by default (option: outer centroid). With perspective, the visible hole is the overlap of the top and bottom openings, so its centroid corresponds to roughly half the nut height; for a nut at lateral distance $X$ from the optical axis the top and bottom planes differ by $X h / d$ in the image (≈ 0.8 mm at $X = 50$, $h = 5$, $d = 300$ mm), i.e. the error against the top-face centre is about half of this.
+The plan was one ratio window of about 0.15–0.35 for all sizes. The **measured** ratio of dark core to silhouette is different, because the dark core is not just the bore: it also contains the nylon ring, the shaded chamfer and dark facets, and the silhouette contains side faces:
+
+| Nut (test images 15.10., runs with and without target) | dark core / silhouette (measured) |
+|---|---|
+| M8 locknut with nylon insert | 0.58–0.70 |
+| M8 plain hex nut | 0.34–0.65 |
+| large plain nut (≈ M12) | 0.21–0.30 |
+
+The ratio is therefore not a usable size-independent constant. It is only checked loosely (0.15–0.85, "core present"), and the size is taken from $\hat s$ alone.
+
+**Result on the 27 test images** (hand labels: 23 images with an M8 nut, 5 of them with an additional large nut, 4 empty images; $d = 340$ mm assumed for all, background estimated, no reference image): with target M8, 20 of 23 M8 nuts found and no false detection; without a target, 25 of 28 nuts accepted as candidates and no false candidate (the 5 images with two nuts are then correctly invalid). Missed: a nut in an overexposed corner, a nut at the image border whose true distance (≈ 270 mm) lies outside the size window at the assumed 340 mm, and a nut seen obliquely with its side faces ($s/e$ = 0.77). **These thresholds were chosen on the same images**, so the rates are optimistic; a fair rate needs a second, independent image set from the observation pose at the robot.
 
 ### 2.7 Temporal robustness – **planned**
 The centre is the **median** over $n$ consecutive frames. The median rejects single-frame outliers from reflections, which the exponential filter of the BA ($\alpha = 0.25$) only damps.
@@ -223,6 +257,7 @@ $$
 - Z. Zhang, "A flexible new technique for camera calibration," *IEEE TPAMI*, 22(11), 2000.
 - N. Otsu, "A threshold selection method from gray-level histograms," *IEEE Trans. SMC*, 9(1), 1979.
 - S. Suzuki, K. Abe, "Topological structural analysis of digitized binary images by border following," *CVGIP*, 30(1), 1985.
+- G. T. Toussaint, "Solving geometric problems with the rotating calipers," *Proc. IEEE MELECON*, 1983.
 - D. C. Brown, "Decentering distortion of lenses," *Photogrammetric Engineering*, 32(3), 1966.
 - R. Hartley, A. Zisserman, *Multiple View Geometry in Computer Vision*, 2nd ed., Cambridge University Press, 2004.
 - F. Chaumette, S. Hutchinson, "Visual servo control, Part I: Basic approaches," *IEEE Robotics & Automation Magazine*, 13(4), 2006.

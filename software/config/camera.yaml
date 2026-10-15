@@ -7,3 +7,17 @@
     framerate: 30.0
     camera_name: hd_camera
     frame_id: camera_optical_frame
+    # Fixed exposure and white balance (docs/THEORY.md 2.1), so that the live image and
+    # the reference image of the empty work area share the same brightness. Applied with
+    # v4l2-ctl by `apply_camera_controls` (camera.launch.py) in this order: the automatic
+    # modes first, otherwise the kernel rejects the manual values. Names and ranges:
+    # `v4l2-ctl -d /dev/video0 --list-ctrls`. usb_cam ignores this block.
+    v4l2_controls:
+      auto_exposure: 1                 # 1 = manual, 3 = automatic (aperture priority)
+      exposure_dynamic_framerate: 0    # keep the frame rate fixed
+      white_balance_automatic: 0
+      # Unit 100 us. Provisional (15.10., office light): 500 = 50 ms gives about 20 fps
+      # and a table grey value of about 110; 1200 = 120 ms matches the automatic
+      # brightness (about 190) but only 4 fps. Tune at the observation pose.
+      exposure_time_absolute: 500
+      white_balance_temperature: 4600  # K, value the automatic mode had chosen

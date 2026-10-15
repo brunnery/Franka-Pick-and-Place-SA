@@ -32,7 +32,7 @@ def _text_lines(image: np.ndarray, lines) -> None:
 
 def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
                principal_point: Tuple[float, float], label: str = "") -> np.ndarray:
-    """Copy of the image with ROI, contours, nut centre and principal point (c_x, c_y)."""
+    """Copy of the image with ROI, silhouettes, dark core, nut centre and principal point."""
     out = image_bgr.copy()
     x, y, w, h = detection.roi
     cv2.rectangle(out, (x, y), (x + w - 1, y + h - 1), ROI_COLOUR, LINE)
@@ -52,11 +52,11 @@ def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
         cv2.drawMarker(out, centre, CENTRE_COLOUR, cv2.MARKER_TILTED_CROSS, MARKER_SIZE, LINE)
         cv2.line(out, (cx, cy), centre, PRINCIPAL_POINT_COLOUR, 1, cv2.LINE_AA)
 
-    lines = [f"{detection.status}  (Otsu t={detection.threshold:.0f})"]
+    lines = [f"{detection.status}  (background: {detection.background})"]
     if detection.valid:
         lines.append(f"u={detection.u:.1f} v={detection.v:.1f}  "
-                     f"A={detection.area_px:.0f}/{detection.expected_area_px:.0f} px^2  "
-                     f"C={detection.compactness:.2f}")
+                     f"s={detection.across_flats_mm:.1f} mm {detection.size or '(size ?)'}  "
+                     f"s/e={detection.width_ratio:.2f}")
     if label:
         lines.append(label)
     _text_lines(out, lines)

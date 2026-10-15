@@ -4,6 +4,9 @@ Subscribes:  image_raw (sensor_msgs/Image), camera_info (sensor_msgs/CameraInfo)
 Publishes:   vision/detection (sa_interfaces/Detection), vision/debug (sensor_msgs/Image)
 All parameters come from config/vision.yaml (no defaults in code).
 """
+from pathlib import Path
+
+import cv2
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.executors import ExternalShutdownException
@@ -16,22 +19,30 @@ from sa_interfaces.msg import Detection
 from sa_vision import geometry
 from sa_vision.debug_draw import draw_debug
 from sa_vision.detection import NutParams, detect_nut
+from sa_vision.params import nut_params
 
 MM_TO_M = 1e-3
 
 DETECTION_PARAMETERS = {
     "blur_kernel_px": Parameter.Type.INTEGER,
     "morph_kernel_px": Parameter.Type.INTEGER,
-    "morph_open_iterations": Parameter.Type.INTEGER,
     "morph_close_iterations": Parameter.Type.INTEGER,
+    "morph_open_iterations": Parameter.Type.INTEGER,
     "roi": Parameter.Type.INTEGER_ARRAY,
-    "across_flats_mm": Parameter.Type.DOUBLE,
-    "hole_diameter_mm": Parameter.Type.DOUBLE,
-    "area_tolerance": Parameter.Type.DOUBLE,
-    "hole_ratio_tolerance": Parameter.Type.DOUBLE,
-    "min_compactness": Parameter.Type.DOUBLE,
+    "background_downscale": Parameter.Type.INTEGER,
+    "background_window_ratio": Parameter.Type.DOUBLE,
+    "brighter_threshold": Parameter.Type.DOUBLE,
+    "darker_threshold": Parameter.Type.DOUBLE,
+    "core_threshold": Parameter.Type.DOUBLE,
+    "across_flats_range_mm": Parameter.Type.DOUBLE_ARRAY,
+    "target_across_flats_mm": Parameter.Type.DOUBLE,
+    "size_tolerance": Parameter.Type.DOUBLE,
+    "size_class_tolerance": Parameter.Type.DOUBLE,
+    "min_width_ratio": Parameter.Type.DOUBLE,
+    "max_width_ratio": Parameter.Type.DOUBLE,
+    "min_hole_ratio": Parameter.Type.DOUBLE,
+    "max_hole_ratio": Parameter.Type.DOUBLE,
     "max_centre_offset_ratio": Parameter.Type.DOUBLE,
-    "centre_source": Parameter.Type.STRING,
 }
 
 
@@ -40,9 +51,11 @@ class VisionNode(Node):
         super().__init__("vision_node")
         self.declare_parameter("object_plane_distance_mm", Parameter.Type.DOUBLE)
         self.declare_parameter("publish_debug", Parameter.Type.BOOL)
+        self.declare_parameter("reference_image", Parameter.Type.STRING)
         for name, kind in DETECTION_PARAMETERS.items():
             self.declare_parameter(f"nut.{name}", kind)
 
+        self.background = self.load_reference(self.get_parameter("reference_image").value)
         self.bridge = CvBridge()
         self.k = None
         self.dist = None
@@ -54,10 +67,21 @@ class VisionNode(Node):
         self.create_subscription(Image, "image_raw", self.on_image, qos_profile_sensor_data)
         self.get_logger().info("Waiting for camera_info and image_raw")
 
+    def load_reference(self, path: str):
+        """Reference image of the empty work area (method A'), None = estimate (A)."""
+        if path and Path(path).is_file():
+            image = cv2.imread(path)
+            if image is None:
+                raise RuntimeError(f"Cannot read reference image {path}")
+            self.get_logger().info(f"Background: reference image {Path(path).resolve()}")
+            return image
+        self.get_logger().warn(f"No reference image at '{path}', background is estimated "
+                               "from each frame. Record one with capture_reference.")
+        return None
+
     def nut_params(self) -> NutParams:
-        values = {name: self.get_parameter(f"nut.{name}").value for name in DETECTION_PARAMETERS}
-        values["roi"] = tuple(values["roi"])
-        return NutParams(**values)
+        return nut_params({name: self.get_parameter(f"nut.{name}").value
+                           for name in DETECTION_PARAMETERS})
 
     def on_camera_info(self, msg: CameraInfo):
         if self.k is None:
@@ -71,7 +95,7 @@ class VisionNode(Node):
         distance_mm = self.get_parameter("object_plane_distance_mm").value
         focal_px = 0.5 * (self.k[0, 0] + self.k[1, 1])
         image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        result = detect_nut(image, focal_px, distance_mm, self.nut_params())
+        result = detect_nut(image, focal_px, distance_mm, self.nut_params(), self.background)
 
         out = Detection()
         out.header = msg.header
@@ -79,9 +103,11 @@ class VisionNode(Node):
         out.status = result.status
         out.u, out.v = result.u, result.v
         out.plane_distance = distance_mm * MM_TO_M
+        out.across_flats_mm = result.across_flats_mm
+        out.size = result.size
         out.area_px = result.area_px
         out.hole_area_px = result.hole_area_px
-        out.expected_area_px = result.expected_area_px
+        out.width_ratio = result.width_ratio
         out.compactness = result.compactness
         out.num_candidates = result.num_accepted
         if result.valid:
