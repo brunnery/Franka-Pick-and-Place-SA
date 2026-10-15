@@ -55,7 +55,7 @@ Portbelegung ist **vorläufig** → in Firmware nur an einer Stelle definiert (K
 | **Flansch-Mitte → Mitte Bodenplatte Gripper (TCP, liegt auf Tisch auf)** | Δx = 0, Δy = 0, Δz = 113.823 mm (CAD: 0.1/0.1 → 0) | CAD, Stand 08.10.26 ✅ |
 | Iris-Zähne über Gripper-Unterseite | 3.5 mm | CAD |
 | Mutter | **M8** (SW 13 mm, Höhe ≈ 6.5 mm, ISO 4032). Ziel: Detektion grössenunabhängig (M4–M12) | nachgemessen 15.10.26 (F15 sagte M6) |
-| Stiftschraube | quadratische Basis 10×10 mm, H 20 mm, Gewinde 19 mm | F15 (Höhen → F22) |
+| Stiftschraube | **M8**, quadratische Basis 10×10 mm, H 20 mm, Gewinde 19 mm | F15 (Höhen → F22), M8 bestätigt 15.10. |
 | Kamera-Intrinsics | 1280×720: f ≈ 2077 px, (c_x, c_y) = (695, 406), FOV 34°×20° → `calibration/hd_camera.yaml` | Kalibrierung 14.10.26 ✅ |
 
 Gripper-Verhalten: **alles zeitgesteuert, kein Feedback**. Halten = Iris-Motoren laufen weiter in Schliessrichtung (in der BA ohne Überhitzung erprobt).
@@ -268,7 +268,7 @@ Antwort:
 | 14.10. | Workspace `software/` mit `sa_interfaces` (`Detection.msg`) + `sa_vision`; altes Gerüst (`main.py`, `franka_pick_place/`) entfernt | §7 |
 | 14.10. | YAML **pro Paket** (`sa_vision/config/vision.yaml`) statt zentral in `sa_tasks/config` | Paket eigenständig start- und testbar, sa_tasks existiert noch nicht |
 | 14.10. | `vision_node` liefert Pixel (roh + entzerrt) und Punkt im **Kamera-Frame** mit d aus YAML; Basis-Frame erst mit FK (sa_tasks) | Roboter/TF noch nicht verfügbar; `geometry.py` hat den allgemeinen Strahl-Ebene-Schnitt bereits |
-| 15.10. | Testmutter ist **M8**, nicht M6. Detektion soll **grössenunabhängig** sein: Sechskant + Loch erkennen, Schlüsselweite in mm aus s_px·d/f messen und der nächsten ISO-Grösse zuordnen | Verhältnis Loch/Aussenfläche ist über M4–M12 fast konstant (0.20–0.29) → ein Filter für alle Grössen; Grösse kommt als Messwert heraus statt als Annahme. Prüfen: Stiftschraube M8? Iris-Bereich? |
+| 15.10. | Testmutter ist **M8**, nicht M6. Detektion soll **grössenunabhängig** sein: Sechskant + Loch erkennen, Schlüsselweite in mm aus s_px·d/f messen und der nächsten ISO-Grösse zuordnen | Verhältnis Loch/Aussenfläche ist über M4–M12 fast konstant (0.20–0.29) → ein Filter für alle Grössen; Grösse kommt als Messwert heraus statt als Annahme. Stiftschraube M8 und Greifen mit der Iris bestätigt (15.10.) |
 | 14.10. | Detektion nur gültig bei **genau einem** Kandidaten; Mittelpunkt = Loch-Schwerpunkt; Zusatzfilter Konzentrizität Loch/Aussen | lieber Retry als falsche Mutter greifen |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
 | 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |
