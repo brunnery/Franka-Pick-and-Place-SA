@@ -1,8 +1,9 @@
 """Debug images for the detection result (/vision/debug). Pure OpenCV, no ROS.
 
-draw_debug: camera and robot frame in the principal point, the nut with its width
-across flats, d and the offset the robot would have to move, or "NO NUT" with the
-reason, and an info line with method, frame rate and source of d.
+draw_debug: info line (method, frame rate, source of d) and camera frame at the top
+left, robot frame at the bottom right, the nut with a line from the principal point,
+and at the top right its width across flats, d and the offset the robot would have
+to move, or "NO NUT" with the reason.
 draw_steps: 2x2 mosaic of the intermediate steps (I/B, threshold, morphology with
 candidates, result) to find where the detection fails.
 """
@@ -31,7 +32,8 @@ AXIS_LENGTH = 90
 AXIS_TIP = 0.15                       # arrow head length / arrow length
 AXIS_LABEL_GAP = 8
 MARKER_SIZE = 30
-LABEL_GAP = 12                        # between the nut and its text block
+PRINCIPAL_POINT_MARKER_SIZE = 20
+FRAME_INSET = 20                      # frame origins: distance from the image corner
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 FONT_SCALE = 0.7
 REJECTION_FONT_SCALE = 0.5
@@ -79,16 +81,31 @@ def _axis(image: np.ndarray, origin: Tuple[int, int], direction: Tuple[int, int]
     x -= width if direction[0] < 0 else 0
     y = tip[1] + direction[1] * AXIS_LABEL_GAP + (height // 2 if direction[1] == 0 else 0)
     y += height if direction[1] > 0 else 0
+    x = min(max(x, TEXT_MARGIN), image.shape[1] - TEXT_MARGIN - width)  # stay inside
     _text(image, [label], (x, y), colour)
 
 
-def draw_frames(image: np.ndarray, principal_point: Tuple[float, float]) -> None:
-    """Camera frame (x right, y down) and robot frame (x_robo = -y_cam, y_robo = -x_cam)."""
-    origin = tuple(int(round(c)) for c in principal_point)
-    _axis(image, origin, (1, 0), "x_cam", CAMERA_AXES_COLOUR)
-    _axis(image, origin, (0, 1), "y_cam", CAMERA_AXES_COLOUR)
-    _axis(image, origin, (0, -1), "x_robo", ROBOT_AXES_COLOUR)
-    _axis(image, origin, (-1, 0), "y_robo", ROBOT_AXES_COLOUR)
+def draw_frames(image: np.ndarray) -> None:
+    """Axis legends: camera frame (x right, y down) at the top left, below the info line,
+    robot frame (x_robo = -y_cam, y_robo = -x_cam) at the bottom right."""
+    height, width = image.shape[:2]
+    camera = (TEXT_MARGIN + FRAME_INSET, TEXT_MARGIN + TEXT_LINE_HEIGHT + FRAME_INSET)
+    _axis(image, camera, (1, 0), "x_cam", CAMERA_AXES_COLOUR)
+    _axis(image, camera, (0, 1), "y_cam", CAMERA_AXES_COLOUR)
+    robot = (width - TEXT_MARGIN - FRAME_INSET, height - TEXT_MARGIN - FRAME_INSET)
+    _axis(image, robot, (0, -1), "x_robo", ROBOT_AXES_COLOUR)
+    _axis(image, robot, (-1, 0), "y_robo", ROBOT_AXES_COLOUR)
+
+
+def _text_top_right(image: np.ndarray, lines: Sequence[str], baseline: int, colour,
+                    scale: float = FONT_SCALE, line_height: int = TEXT_LINE_HEIGHT,
+                    thickness: int = LINE - 1) -> None:
+    """Text lines right-aligned at the right image border."""
+    width = image.shape[1]
+    for i, text in enumerate(lines):
+        x = width - TEXT_MARGIN - _text_width([text], scale)
+        _text(image, [text], (x, baseline + i * line_height), colour, scale, line_height,
+              thickness)
 
 
 def info_line(detection: NutDetection, fps: Optional[float]) -> str:
@@ -103,7 +120,7 @@ def info_line(detection: NutDetection, fps: Optional[float]) -> str:
 
 def nut_label(detection: NutDetection,
               robot_offset_mm: Optional[Tuple[float, float]]) -> Sequence[str]:
-    """Text next to a detected nut: s, d and the offset in the robot frame."""
+    """Text for a detected nut (top right): s, d and the offset in the robot frame."""
     if detection.distance_from_size:
         lines = [f"s = {detection.across_flats_mm:.1f} mm (assumed)",
                  f"d = {detection.distance_mm:.0f} mm (from size)"]
@@ -139,8 +156,11 @@ def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
             _text(out, [candidate.rejected], (bx, by - 4), REJECTED_COLOUR,
                   REJECTION_FONT_SCALE, thickness=1)
 
-    draw_frames(out, principal_point)
+    draw_frames(out)
     origin = tuple(int(round(c)) for c in principal_point)
+    cv2.drawMarker(out, origin, CAMERA_AXES_COLOUR, cv2.MARKER_CROSS,
+                   PRINCIPAL_POINT_MARKER_SIZE, 1)
+    first_baseline = TEXT_MARGIN + TEXT_LINE_HEIGHT - 8
 
     if detection.valid:
         accepted = [c for c in detection.candidates if c.accepted]
@@ -150,27 +170,18 @@ def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
         centre = (int(round(detection.u)), int(round(detection.v)))
         cv2.line(out, origin, centre, ROBOT_AXES_COLOUR, 1, cv2.LINE_AA)
         cv2.drawMarker(out, centre, CENTRE_COLOUR, cv2.MARKER_CROSS, MARKER_SIZE, LINE)
-        lines = nut_label(detection, robot_offset_mm)
-        bx, by, bw, bh = cv2.boundingRect(accepted[0].outer)
-        text_width = _text_width(lines)
-        tx = bx + bw + LABEL_GAP
-        if tx + text_width > width - TEXT_MARGIN:  # no room on the right: left of the nut
-            tx = max(bx - LABEL_GAP - text_width, TEXT_MARGIN)
-        block_height = TEXT_LINE_HEIGHT * len(lines)
-        ty = min(max(by + TEXT_LINE_HEIGHT, 2 * TEXT_LINE_HEIGHT + TEXT_MARGIN),
-                 height - block_height - TEXT_MARGIN)
-        _text(out, lines, (tx, ty))
+        _text_top_right(out, nut_label(detection, robot_offset_mm), first_baseline, TEXT_COLOUR)
     else:
         for candidate in detection.candidates:
             if candidate.accepted:
                 cv2.drawContours(out, [candidate.outer], -1, AMBIGUOUS_COLOUR, LINE)
-        top = TEXT_MARGIN + TEXT_LINE_HEIGHT + FAILURE_LINE_HEIGHT
-        _text(out, ["NO NUT"], (TEXT_MARGIN, top), FAILURE_COLOUR, FAILURE_FONT_SCALE,
-              thickness=LINE + 1)
-        _text(out, [failure_reason(detection)], (TEXT_MARGIN, top + TEXT_LINE_HEIGHT + 8),
-              FAILURE_COLOUR, thickness=LINE)
+        top = TEXT_MARGIN + FAILURE_LINE_HEIGHT - 8
+        _text_top_right(out, ["NO NUT"], top, FAILURE_COLOUR, FAILURE_FONT_SCALE,
+                        thickness=LINE + 1)
+        _text_top_right(out, [failure_reason(detection)], top + TEXT_LINE_HEIGHT + 8,
+                        FAILURE_COLOUR, thickness=LINE)
 
-    _text(out, [info_line(detection, fps)], (TEXT_MARGIN, TEXT_MARGIN + TEXT_LINE_HEIGHT - 8))
+    _text(out, [info_line(detection, fps)], (TEXT_MARGIN, first_baseline))
     return out
 
 
