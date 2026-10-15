@@ -12,6 +12,10 @@ vision_node:
     # used with d_source "yaml".
     object_plane_distance_mm: 300.0
     publish_debug: true
+    # /vision/debug: "overlay" = result only, "steps" = 2x2 mosaic of the intermediate steps
+    # (I/B, threshold, morphology + candidates, result), each tile scaled by debug_steps_scale
+    debug_view: steps
+    debug_steps_scale: 0.75
     # Image of the empty work area from the observation pose with the fixed exposure
     # (method A'), recorded with `ros2 run sa_vision capture_reference`. Relative to the
     # working directory (repository root). Missing file or "" = local median only (A).

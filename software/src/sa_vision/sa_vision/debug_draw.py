@@ -1,15 +1,17 @@
-"""Debug overlay for the detection result (/vision/debug). Pure OpenCV, no ROS.
+"""Debug images for the detection result (/vision/debug). Pure OpenCV, no ROS.
 
-Shows the camera frame and the robot frame in the principal point, the nut with its
-width across flats, d and the offset the robot would have to move, or "NO NUT" with
-the reason, and an info line with method, frame rate and source of d.
+draw_debug: camera and robot frame in the principal point, the nut with its width
+across flats, d and the offset the robot would have to move, or "NO NUT" with the
+reason, and an info line with method, frame rate and source of d.
+draw_steps: 2x2 mosaic of the intermediate steps (I/B, threshold, morphology with
+candidates, result) to find where the detection fails.
 """
 from typing import Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from sa_vision.detection import BACKGROUND_REFERENCE, NutDetection, failure_reason
+from sa_vision.detection import BACKGROUND_REFERENCE, NutDetection, NutParams, failure_reason
 
 # BGR colours
 CAMERA_AXES_COLOUR = (255, 140, 0)    # blue
@@ -37,6 +39,20 @@ FAILURE_FONT_SCALE = 1.6
 TEXT_MARGIN = 10
 TEXT_LINE_HEIGHT = 28
 FAILURE_LINE_HEIGHT = 52
+# Step mosaic
+RATIO_DISPLAY_RANGE = (0.5, 1.5)      # I/B shown from black to white, table = mid grey
+STEP_BRIGHT_COLOUR = (0, 220, 255)    # yellow: brighter than the table
+STEP_DARK_COLOUR = (255, 120, 0)      # blue: darker than the table
+STEP_CORE_COLOUR = (0, 0, 255)        # red: dark enough for the core (thread hole)
+STEP_MASK_GREY = 90                   # foreground after morphology
+STEP_LABEL_MIN_AREA_PX = 300          # rejected candidates smaller than this get no label
+STEP_TITLE_FONT_SCALE = 0.8
+STEP_TITLES = (
+    "1  I/B  (table = grey, brighter = white, darker = black)",
+    "2  threshold  (yellow brighter, blue darker, red core)",
+    "3  morphology + candidates  (grey = reason)",
+    "4  result",
+)
 
 
 def _text(image: np.ndarray, lines: Sequence[str], origin: Tuple[int, int],
@@ -156,3 +172,81 @@ def draw_debug(image_bgr: np.ndarray, detection: NutDetection,
 
     _text(out, [info_line(detection, fps)], (TEXT_MARGIN, TEXT_MARGIN + TEXT_LINE_HEIGHT - 8))
     return out
+
+
+def _roi_to_frame(roi_image: np.ndarray, roi: Tuple[int, int, int, int],
+                  shape: Tuple[int, int]) -> np.ndarray:
+    """BGR image of the full frame with the ROI image at its place, black elsewhere."""
+    frame = np.zeros((shape[0], shape[1], 3), np.uint8)
+    x, y, w, h = roi
+    if roi_image is not None and w > 0 and h > 0:
+        frame[y:y + h, x:x + w] = roi_image
+    return frame
+
+
+def ratio_view(detection: NutDetection, shape: Tuple[int, int]) -> np.ndarray:
+    """Step 1: I/B as grey levels."""
+    if detection.ratio is None:
+        return _roi_to_frame(None, detection.roi, shape)
+    low, high = RATIO_DISPLAY_RANGE
+    grey = np.clip((detection.ratio - low) / (high - low) * 255.0, 0, 255).astype(np.uint8)
+    return _roi_to_frame(cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR), detection.roi, shape)
+
+
+def threshold_view(detection: NutDetection, params: NutParams,
+                   shape: Tuple[int, int]) -> np.ndarray:
+    """Step 2: pixel classes of the two-sided threshold, before morphology."""
+    if detection.ratio is None:
+        return _roi_to_frame(None, detection.roi, shape)
+    r = detection.ratio
+    view = np.zeros(r.shape + (3,), np.uint8)
+    view[r > 1.0 + params.brighter_threshold] = STEP_BRIGHT_COLOUR
+    view[r < 1.0 - params.darker_threshold] = STEP_DARK_COLOUR
+    view[r < 1.0 - params.core_threshold] = STEP_CORE_COLOUR
+    return _roi_to_frame(view, detection.roi, shape)
+
+
+def candidates_view(detection: NutDetection, shape: Tuple[int, int]) -> np.ndarray:
+    """Step 3: foreground after morphology, every candidate with its result."""
+    mask = None
+    if detection.mask is not None:
+        mask = cv2.cvtColor((detection.mask > 0).astype(np.uint8) * STEP_MASK_GREY,
+                            cv2.COLOR_GRAY2BGR)
+    view = _roi_to_frame(mask, detection.roi, shape)
+    ambiguous = detection.num_accepted > 1
+    for candidate in detection.candidates:
+        if candidate.accepted:
+            colour = AMBIGUOUS_COLOUR if ambiguous else NUT_COLOUR
+            cv2.drawContours(view, [candidate.outer], -1, colour, LINE)
+            if candidate.hole is not None:
+                cv2.drawContours(view, [candidate.hole], -1, HOLE_COLOUR, 1)
+            continue
+        cv2.drawContours(view, [candidate.outer], -1, REJECTED_COLOUR, 1)
+        if candidate.area_px >= STEP_LABEL_MIN_AREA_PX:
+            bx, by, _, _ = cv2.boundingRect(candidate.outer)
+            label = f"{candidate.rejected} s/e={candidate.width_ratio:.2f}"
+            if candidate.rejected == "size":
+                label = (f"size d={candidate.distance_mm:.0f}" if detection.distance_from_size
+                         else f"size s={candidate.across_flats_mm:.1f}")
+            cv2.putText(view, label, (bx, max(by - 6, 12)), FONT, REJECTION_FONT_SCALE,
+                        TEXT_BACKGROUND, 1, cv2.LINE_AA)
+    return view
+
+
+def draw_steps(image_bgr: np.ndarray, detection: NutDetection,
+               principal_point: Tuple[float, float], params: NutParams, scale: float,
+               fps: Optional[float] = None,
+               robot_offset_mm: Optional[Tuple[float, float]] = None) -> np.ndarray:
+    """2x2 mosaic of the steps, each tile scaled by scale: I/B | threshold / morphology | result."""
+    shape = image_bgr.shape[:2]
+    tiles = [ratio_view(detection, shape), threshold_view(detection, params, shape),
+             candidates_view(detection, shape),
+             draw_debug(image_bgr, detection, principal_point, fps, robot_offset_mm)]
+    size = (int(round(shape[1] * scale)), int(round(shape[0] * scale)))
+    resized = []
+    for tile, title in zip(tiles, STEP_TITLES):
+        tile = cv2.resize(tile, size, interpolation=cv2.INTER_AREA)
+        _text(tile, [title], (TEXT_MARGIN, size[1] - TEXT_MARGIN), TEXT_COLOUR,
+              STEP_TITLE_FONT_SCALE)
+        resized.append(tile)
+    return np.vstack([np.hstack(resized[:2]), np.hstack(resized[2:])])

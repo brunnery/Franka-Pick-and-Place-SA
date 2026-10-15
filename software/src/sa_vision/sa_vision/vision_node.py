@@ -18,12 +18,13 @@ from sensor_msgs.msg import CameraInfo, Image
 
 from sa_interfaces.msg import Detection
 from sa_vision import geometry
-from sa_vision.debug_draw import draw_debug
+from sa_vision.debug_draw import draw_debug, draw_steps
 from sa_vision.detection import NutParams, detect_nut
 from sa_vision.params import distance_range, nut_params
 
 MM_TO_M = 1e-3
 FPS_SMOOTHING = 0.1  # weight of the newest frame interval in the displayed frame rate
+DEBUG_VIEWS = ("overlay", "steps")
 
 DETECTION_PARAMETERS = {
     "blur_kernel_px": Parameter.Type.INTEGER,
@@ -55,6 +56,8 @@ class VisionNode(Node):
         self.declare_parameter("d_from_size_range_mm", Parameter.Type.DOUBLE_ARRAY)
         self.declare_parameter("object_plane_distance_mm", Parameter.Type.DOUBLE)
         self.declare_parameter("publish_debug", Parameter.Type.BOOL)
+        self.declare_parameter("debug_view", Parameter.Type.STRING)
+        self.declare_parameter("debug_steps_scale", Parameter.Type.DOUBLE)
         self.declare_parameter("reference_image", Parameter.Type.STRING)
         for name, kind in DETECTION_PARAMETERS.items():
             self.declare_parameter(f"nut.{name}", kind)
@@ -62,6 +65,8 @@ class VisionNode(Node):
         self.background = self.load_reference(self.get_parameter("reference_image").value)
         self.bridge = CvBridge()
         self.distance_range()  # an unknown d_source fails at start, not per frame
+        if self.get_parameter("debug_view").value not in DEBUG_VIEWS:
+            raise ValueError(f"debug_view must be one of {DEBUG_VIEWS}")
         self.k = None
         self.dist = None
         self.last_frame_time = None
@@ -116,7 +121,8 @@ class VisionNode(Node):
         distance_mm = self.get_parameter("object_plane_distance_mm").value
         focal_px = 0.5 * (self.k[0, 0] + self.k[1, 1])
         image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        result = detect_nut(image, focal_px, distance_mm, self.nut_params(), self.background,
+        params = self.nut_params()
+        result = detect_nut(image, focal_px, distance_mm, params, self.background,
                             self.distance_range())
 
         out = Detection()
@@ -149,8 +155,13 @@ class VisionNode(Node):
             if result.valid:
                 robot_offset = geometry.camera_to_robot_xy(out.point_camera.x / MM_TO_M,
                                                            out.point_camera.y / MM_TO_M)
-            debug = draw_debug(image, result, (self.k[0, 2], self.k[1, 2]), self.fps,
-                               robot_offset)
+            principal_point = (self.k[0, 2], self.k[1, 2])
+            if self.get_parameter("debug_view").value == "steps":
+                debug = draw_steps(image, result, principal_point, params,
+                                   self.get_parameter("debug_steps_scale").value, self.fps,
+                                   robot_offset)
+            else:
+                debug = draw_debug(image, result, principal_point, self.fps, robot_offset)
             debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
             debug_msg.header = msg.header
             self.debug_pub.publish(debug_msg)

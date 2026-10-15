@@ -19,7 +19,7 @@ import cv2
 import yaml
 
 from sa_vision import geometry
-from sa_vision.debug_draw import draw_debug
+from sa_vision.debug_draw import draw_debug, draw_steps
 from sa_vision.detection import detect_nut
 from sa_vision.params import load_vision_config
 
@@ -46,6 +46,8 @@ def main():
     parser.add_argument("--target-mm", type=float,
                         help="override target_across_flats_mm (0 = any size)")
     parser.add_argument("--debug-dir", type=Path, help="write overlays and masks here")
+    parser.add_argument("--steps", action="store_true",
+                        help="write the 2x2 mosaic of the steps instead of the overlay")
     args = parser.parse_args()
 
     config = load_vision_config(args.params)
@@ -98,7 +100,11 @@ def main():
                 uu, vu = geometry.undistort_pixel(result.u, result.v, k, dist)
                 p = geometry.pixel_to_camera_point(uu, vu, k, result.distance_mm)
                 robot_offset = geometry.camera_to_robot_xy(p[0], p[1])
-            overlay = draw_debug(image, result, (k[0, 2], k[1, 2]), None, robot_offset)
+            if args.steps:
+                overlay = draw_steps(image, result, (k[0, 2], k[1, 2]), params, 1.0, None,
+                                     robot_offset)
+            else:
+                overlay = draw_debug(image, result, (k[0, 2], k[1, 2]), None, robot_offset)
             cv2.imwrite(str(args.debug_dir / path.name), overlay)
             if result.mask is not None:
                 cv2.imwrite(str(args.debug_dir / f"{path.stem}_mask.png"), result.mask)

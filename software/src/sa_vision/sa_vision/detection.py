@@ -105,7 +105,8 @@ class NutDetection:
     background: str = ""
     roi: Tuple[int, int, int, int] = (0, 0, 0, 0)
     candidates: List[Candidate] = field(default_factory=list)
-    mask: Optional[np.ndarray] = None  # binary foreground of the ROI
+    mask: Optional[np.ndarray] = None  # binary foreground of the ROI (after morphology)
+    ratio: Optional[np.ndarray] = None  # I/B of the ROI (debug view)
 
     @property
     def num_accepted(self) -> int:
@@ -244,10 +245,15 @@ def ratio_image(gray: np.ndarray, background: np.ndarray) -> np.ndarray:
     return gray.astype(np.float32) / np.maximum(background.astype(np.float32), 1.0)
 
 
-def segment(ratio: np.ndarray, params: NutParams) -> np.ndarray:
-    """Binary foreground (255): pixels clearly brighter or darker than the table."""
-    mask = ((ratio > 1.0 + params.brighter_threshold)
+def threshold(ratio: np.ndarray, params: NutParams) -> np.ndarray:
+    """Binary foreground (255) before morphology: clearly brighter or darker than the table."""
+    return ((ratio > 1.0 + params.brighter_threshold)
             | (ratio < 1.0 - params.darker_threshold)).astype(np.uint8) * 255
+
+
+def segment(ratio: np.ndarray, params: NutParams) -> np.ndarray:
+    """Foreground after closing (joins the parts of one nut) and opening (removes specks)."""
+    mask = threshold(ratio, params)
     if params.morph_kernel_px > 1:
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (params.morph_kernel_px, params.morph_kernel_px))
@@ -400,7 +406,7 @@ def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
                             params) for c in contours]
 
     detection = NutDetection(False, "", background=mode, roi=roi, candidates=candidates,
-                             mask=mask, distance_from_size=from_size)
+                             mask=mask, ratio=ratio, distance_from_size=from_size)
     if not from_size:
         detection.distance_mm = distance_mm
     accepted = [c for c in candidates if c.accepted]
