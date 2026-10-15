@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Semester thesis (ETH): FR3 + eye-in-hand USB camera + 3D-printed iris gripper picks an M6 nut, places it on a fixed stud and screws it on.
+Semester thesis (ETH): FR3 + eye-in-hand USB camera + 3D-printed iris gripper picks a hex nut (test part: M8; method should work for common metric sizes), places it on a fixed stud and screws it on.
 **Full context, design decisions and open questions: `docs/PLAN.md` – read it before larger changes and update it (decision log) when a design choice changes.**
 Deadline 31.10.2026 – prefer the simplest thing that raises the success rate.
 **Theory for the report: `docs/THEORY.md`.** Whenever a formula, model or principle is decided or used in code, add or update it there (English, report-ready, with status used/planned/dropped) and commit it together with the code change.

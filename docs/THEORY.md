@@ -82,7 +82,7 @@ with Levenberg–Marquardt, initialised from the closed-form homography solution
 Two calibrations from overlapping sample sets differed by less than 0.4 % in $f$ and less than 1 px in $(c_x, c_y)$, which indicates a stable estimate.
 
 Consequences for the method:
-- **Ground resolution** $d/f$: 0.096 mm/px at $d = 200$ mm, 0.144 mm/px at 300 mm, 0.193 mm/px at 400 mm. The M6 nut (10 mm across flats) spans about 69 px at 300 mm.
+- **Ground resolution** $d/f$: 0.096 mm/px at $d = 200$ mm, 0.144 mm/px at 300 mm, 0.193 mm/px at 400 mm. The M8 test nut (13 mm across flats) spans about 90 px at 300 mm, an M4 nut (7 mm) still about 48 px.
 - **Narrow field of view:** at $d = 300$ mm the image covers only about 185 × 104 mm on the table. Each work area must fit into this footprint from its observation pose.
 - **Principal point offset:** the optical axis meets the image at $(695, 406)$, i.e. 55 px right of and 46 px below the image centre $(640, 360)$. At $d = 300$ mm this is about 8 mm and 7 mm on the table. Centring an object on the geometric image centre, as in the BA, therefore does not place it on the optical axis; the back-projection in Section 3 uses $(c_x, c_y)$ and avoids this bias.
 
@@ -130,7 +130,29 @@ $$
 A_\text{px} \approx A_\text{mm} \left(\frac{f}{d}\right)^2
 $$
 
-For the M6 nut (across flats $s = 10$ mm): $A_\text{hex} = \frac{\sqrt3}{2} s^2 \approx 86.6\ \text{mm}^2$. The accepted area window is a tolerance band around this value, so it stays valid when the observation height changes.
+For a hex nut with width across flats $s$: $A_\text{hex} = \frac{\sqrt3}{2} s^2$ (M8, $s = 13$ mm: 146.4 mm²). The accepted area window is a tolerance band around this value, so it stays valid when the observation height changes.
+
+### 2.6a Size-independent nut detection – **planned**
+The method should not be tied to one nut size. Two observations make this possible:
+
+1. **Metric size from the image.** With the distance $d$ known from the robot pose, the measured width across flats is
+$$
+\hat s = \frac{s_\text{px}\, d}{f}
+$$
+and the nut is assigned to the nearest standard size (ISO 4032: M4 7 mm, M5 8 mm, M6 10 mm, M8 13 mm, M10 16 mm, M12 18 mm). The size is therefore an output of the detection, not an assumption. Neighbouring sizes differ by at least 1 mm in $s$, which is about 7 px at $d = 300$ mm, so the assignment is unambiguous as long as $d$ is known to a few percent ($\delta \hat s / \hat s = \delta d / d$).
+
+2. **Scale-invariant shape features.** Compactness and the hole-to-outer area ratio do not depend on scale. For the thread minor diameter $D_1 = d_\text{nom} - 1.0825\,P$ the ratio $\frac{\pi D_1^2 / 4}{A_\text{hex}}$ stays within a narrow band over the common sizes:
+
+| Size | $s$ [mm] | $D_1$ [mm] | hole / outer area |
+|---|---|---|---|
+| M4 | 7 | 3.24 | 0.20 |
+| M5 | 8 | 4.13 | 0.24 |
+| M6 | 10 | 4.92 | 0.22 |
+| M8 | 13 | 6.65 | 0.24 |
+| M10 | 16 | 8.38 | 0.25 |
+| M12 | 18 | 10.11 | 0.29 |
+
+So one ratio window (about 0.15–0.35, to be confirmed on real images) covers all sizes and still rejects washers, whose hole is much larger relative to the outer contour. The area filter becomes a window $[A_\text{hex}(s_\text{min}),\ A_\text{hex}(s_\text{max})]$ instead of a band around one size. If the task specifies a size, the detection can additionally reject nuts of other sizes.
 - **Hole ratio:** the area ratio hole/outer is expected near $\frac{\pi D^2/4}{A_\text{hex}}$ with the visible hole diameter $D \approx 5$ mm (≈ 0.23). This rejects washers and rings.
 - **Concentricity:** the centroids of the outer contour and of the hole must lie within a fraction of $s\,f/d$ of each other.
 - **Uniqueness:** a detection is valid only if exactly one contour passes all filters. Two candidates in the work area are treated as an error rather than guessed.
