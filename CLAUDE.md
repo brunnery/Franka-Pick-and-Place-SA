@@ -6,6 +6,7 @@ Deadline 31.10.2026 – prefer the simplest thing that raises the success rate.
 **Theory for the report: `docs/THEORY.md`.** Whenever a formula, model or principle is decided or used in code, add or update it there (English, report-ready, with status used/planned/dropped) and commit it together with the code change.
 
 ## Conventions
+- **The bachelor thesis (BA) is not a source.** Do not take code, parameters, frames, offsets or methods from it; design from the current hardware and this repo. BA numbers appear only as a comparison in the report.
 - Code, comments, logs, commit messages: English. Planning docs (`docs/PLAN.md`): German.
 - ROS2 workspace in `software/` (rclpy, ament_python; interfaces in ament_cmake). Must work on Humble and Jazzy.
 - Pure logic (detection, geometry, serial protocol, state transitions) must not import rclpy → unit-testable with pytest on any laptop.
