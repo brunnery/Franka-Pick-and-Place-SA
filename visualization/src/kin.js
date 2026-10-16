@@ -14,7 +14,7 @@ const Q_HI = [2.9007, 1.8361, 2.9007, -0.1169, 2.8763, 4.6216, 3.0508];
 const Q_HOME = [0, -0.785, 0, -2.356, 0, 1.571, 0.785];
 const FLANGE_Z = 0.107;            // link7 -> flange
 const FLANGE_YAW = -Math.PI / 4;   // same mounting yaw as the Franka Hand
-const GRIP_LEN = 0.1563;           // gripper flange face -> iris face (CAD)
+const GRIP_LEN = 0.118823;         // flange contact face -> gripper bottom plate (TCP), CAD 16.10.2026
 const TCP_IN_GRIPPER = 0.0027;     // nut centre above the iris face (nut bottom 0.2 mm above the face)
 const TCP_Z = GRIP_LEN - TCP_IN_GRIPPER;
 

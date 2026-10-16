@@ -45,13 +45,20 @@ for n,g in s.geometry.items():
     out.add_geometry(colorize(g,[0.7,0.7,0.7,1]), node_name=names[i], geom_name=names[i])
 out.export('viz/assets/setup.glb', include_normals=True)
 
-# ---------- Iris wheel gripper (Iris_wheel_gripper.step) ----------
-ROLE={0:'iris_ring',1:'post_l',2:'post_r',3:'bottom_plate',4:'top_box',5:'flange_adapter',6:'shaft',7:'gear_mid',
-      8:'frame',9:'socket',10:'gear_top',11:'housing_l',12:'housing_r',13:'motor_mount',14:'clip_a',15:'clip_b',16:'camera',
-      17:'wheel_l',18:'wheel_r',19:'blade_0',20:'blade_1',21:'blade_2',22:'blade_3',23:'blade_4',24:'blade_5'}
+# ---------- Iris gripper ("Iris main file_new design.step", CAD 16.10.2026) ----------
+# Solid index -> role, from the order in the STEP export (step_to_glb.py prints the list).
+ROLE={0:'iris_ring',1:'post_l',2:'post_r',3:'bottom_plate',4:'top_box',5:'flange_adapter',6:'shaft',7:'frame',
+      8:'socket',9:'housing_l',10:'camera',11:'wheel_l',12:'wheel_r',13:'gear_top',14:'gear_mid',15:'housing_r',
+      16:'top_box_2',17:'clip_a',18:'blade_0',19:'blade_1',20:'blade_2',21:'blade_3',22:'blade_4',23:'blade_5',
+      24:'motor_mount'}
+# The export uses the robot base axes (camera at +x, z up from the table side, bottom plate at z = 2 mm).
+# The viewer expects the earlier export frame: camera at -y and the bottom plate at z = 0.
+# Rotate by -90 deg about z and shift down by 2 mm. The flange contact face then lies at z = 118.823 mm
+# (GRIP_LEN in src/kin.js); the 2 mm centring cylinder above it reaches into the arm.
+EXPORT_TO_VIEWER = trimesh.transformations.translation_matrix([0, 0, -2.0]) @ trimesh.transformations.rotation_matrix(-np.pi/2, [0, 0, 1])
 s=trimesh.load('cad/Iris_wheel.glb')
 out=trimesh.Scene()
 for n,g in s.geometry.items():
-    i=int(n.split('_')[0]); g=g.copy(); g.apply_scale(0.001); g=dec(g,0.6)
+    i=int(n.split('_')[0]); g=g.copy(); g.apply_transform(EXPORT_TO_VIEWER); g.apply_scale(0.001); g=dec(g,0.6)
     out.add_geometry(colorize(g,[0.7,0.7,0.7,1]), node_name=ROLE[i], geom_name=ROLE[i])
 out.export('viz/assets/gripper_iris.glb', include_normals=True)

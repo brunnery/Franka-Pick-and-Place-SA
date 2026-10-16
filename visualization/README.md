@@ -6,7 +6,7 @@ It needs an internet connection once to load three.js from the jsDelivr CDN.
 What it shows:
 
 - `cad/export/Setup.step`: base plate, the two fixtures, the M6 nut and the screw, to scale
-- `cad/export/Iris main file_new design.step`: the iris wheel gripper (six blades, two drive wheels), mounted on the FR3 flange
+- `cad/export/Iris main file_new design.step`: the iris wheel gripper (six blades, two drive wheels), mounted on the FR3 flange (new mount, CAD 16.10.2026; flange contact face to bottom plate 118.8 mm)
 - the Franka FR3 arm (visual meshes from [franka_description](https://github.com/frankarobotics/franka_description), Apache-2.0)
 
 The sequence is: approach the nut, lower, close the iris, lift, move to the screw, lower onto the thread,
@@ -14,7 +14,9 @@ screw the nut on (15 turns, 1 mm pitch, the arm follows 15 mm down), open the ir
 The joint angles come from a damped least-squares IK with the FR3 kinematics and joint limits, with the tool kept vertical.
 
 The robot base sits at x = -200 mm in plate coordinates (the placeholder arm in `Setup.step` sits at x = +50 mm).
-With the 156 mm gripper, the nut and the screw are too close to the base at +50 mm to be reached with a vertical tool.
+With the 119 mm gripper, the nut and the screw are too close to the base at +50 mm to be reached with a vertical tool.
+
+The gripper STEP is exported in the robot base axes (camera at +x, bottom plate at z = 2 mm). `build_assets.py` turns it by −90° about z and shifts it 2 mm down, so the viewer gets the camera at −y and the bottom plate at z = 0 as before; `GRIP_LEN` in `src/kin.js` is the flange contact face to the bottom plate. The solid order of the STEP sets the part roles (`ROLE` in `build_assets.py`). If a new export changes the order, check the list printed by `step_to_glb.py`.
 
 ## Files
 
@@ -36,7 +38,7 @@ pip install cadquery-ocp trimesh pycollada fast_simplification
 # 2. convert them and rebuild the assets (paths in build_assets.py)
 python tools/step_to_glb.py "../cad/export/Setup.step" cad/Setup.glb
 python tools/step_to_glb.py "../cad/export/Iris main file_new design.step" cad/Iris_wheel.glb
-python tools/build_assets.py
+python tools/build_assets.py   # only assets/gripper_iris.glb changes for a gripper update
 # 3. rebuild the page
 python tools/build_viewer.py
 ```

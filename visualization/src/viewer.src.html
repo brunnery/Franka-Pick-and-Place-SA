@@ -182,9 +182,9 @@ aside h2 { margin: 0 0 10px; font-family: var(--font-display); font-size: 11px; 
     </section>
     <section>
       <h2>Modell</h2>
-      <p class="note"><b>Setup, Greifer, Mutter und Schraube</b> kommen aus <span style="font-family:var(--font-mono)">cad/export</span> (Setup.step, Iris_wheel_gripper.step), massstabsgetreu in mm.</p>
+      <p class="note"><b>Setup, Greifer, Mutter und Schraube</b> kommen aus <span style="font-family:var(--font-mono)">cad/export</span> (Setup.step, Iris main file_new design.step, Stand 16.10.2026), massstabsgetreu in mm.</p>
       <p class="note"><b>Iris:</b> Die sechs Lamellen drehen um ihre Stifte, bei 20.5° liegen sie an den Schlüsselflächen der Mutter (SW 10) an. Beim Aufschrauben dreht die ganze Iris mit der Mutter, angetrieben über die beiden Räder.</p>
-      <p class="note"><b>Roboterbasis bei x = −200 mm</b> statt bei +50 mm wie der Platzhalterarm. Mit 156 mm Greiferlänge liegen Mutter und Schraube sonst zu nah an der Basis und sind mit senkrechtem Greifer nicht erreichbar.</p>
+      <p class="note"><b>Roboterbasis bei x = −200 mm</b> statt bei +50 mm wie der Platzhalterarm. Mit 119 mm Greiferlänge (Flansch bis Bodenplatte) liegen Mutter und Schraube sonst zu nah an der Basis und sind mit senkrechtem Greifer nicht erreichbar.</p>
       <p class="note"><b>Bewegung:</b> inverse Kinematik mit den FR3-Parametern und Gelenkgrenzen, Greifer immer senkrecht. Aufschrauben mit 15 Umdrehungen bei 1 mm Steigung (M6), der Arm folgt 15 mm nach unten.</p>
       <p class="note">FR3-Meshes: franka_description, Franka Robotics GmbH, Apache-2.0.</p>
     </section>
@@ -376,17 +376,17 @@ for (let i = 0; i < 7; i++) {
   parent.add(fixed); const j = new THREE.Object3D(); fixed.add(j); j.add(links[i + 1]); jointNodes.push(j); parent = j;
 }
 const flange = new THREE.Object3D(); flange.position.z = 0.107; flange.rotation.z = -Math.PI / 4; parent.add(flange);
-const gripRoot = new THREE.Object3D(); gripRoot.rotation.x = Math.PI; gripRoot.position.z = 0.1563; flange.add(gripRoot);
+const gripRoot = new THREE.Object3D(); gripRoot.rotation.x = Math.PI; gripRoot.position.z = GRIP_LEN; flange.add(gripRoot);
 gripRoot.add(gripScene);
 const tcp = new THREE.Object3D(); tcp.position.z = TCP_IN_GRIPPER; gripRoot.add(tcp);
 
 // --- gripper parts
 const G = n => gripScene.getObjectByName(n);
-const housing = [G('housing_l'), G('housing_r')];
+const housing = [G('housing_l'), G('housing_r')].filter(Boolean);
 const gripMats = {
   post_l: M.pla, post_r: M.pla, bottom_plate: M.pla, frame: M.plaLight, motor_mount: M.pla, top_box: M.black,
   flange_adapter: M.alu, shaft: M.steel, gear_mid: M.plaLight, gear_top: M.plaLight, socket: M.plaLight,
-  clip_a: M.steel, clip_b: M.steel, camera: M.plaAccent, iris_ring: M.plaAccent, wheel_l: M.rubber, wheel_r: M.rubber,
+  clip_a: M.steel, clip_b: M.steel, top_box_2: M.black, camera: M.plaAccent, iris_ring: M.plaAccent, wheel_l: M.rubber, wheel_r: M.rubber,
 };
 for (const [n, m] of Object.entries(gripMats)) if (G(n)) setMat(G(n), m);
 const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x8fa3b5, roughness: 0.15, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
