@@ -19,13 +19,14 @@ from sensor_msgs.msg import CameraInfo, Image
 from sa_interfaces.msg import Detection
 from sa_vision import geometry
 from sa_vision.debug_draw import draw_debug, draw_steps
-from sa_vision.detection import NutParams, detect_nut
+from sa_vision.detection import BACKGROUND_MISMATCH, NutParams, detect_nut
 from sa_vision.params import distance_range, nut_params
 from sa_vision.temporal import CentreMedian
 
 MM_TO_M = 1e-3
 FPS_SMOOTHING = 0.1  # weight of the newest frame interval in the displayed frame rate
 DEBUG_VIEWS = ("overlay", "steps")
+REFERENCE_WARN_PERIOD_S = 5.0
 
 DETECTION_PARAMETERS = {
     "blur_kernel_px": Parameter.Type.INTEGER,
@@ -35,6 +36,8 @@ DETECTION_PARAMETERS = {
     "roi": Parameter.Type.INTEGER_ARRAY,
     "segmentation": Parameter.Type.STRING,
     "edge_threshold": Parameter.Type.DOUBLE,
+    "edge_group_ratio": Parameter.Type.DOUBLE,
+    "reference_match_range": Parameter.Type.DOUBLE_ARRAY,
     "background_downscale": Parameter.Type.INTEGER,
     "background_window_ratio": Parameter.Type.DOUBLE,
     "brighter_threshold": Parameter.Type.DOUBLE,
@@ -131,6 +134,11 @@ class VisionNode(Node):
         params = self.nut_params()
         result = detect_nut(image, focal_px, distance_mm, params, self.background,
                             self.distance_range())
+        if result.background == BACKGROUND_MISMATCH:
+            self.get_logger().warn(
+                f"Reference image ignored: live / reference brightness "
+                f"{result.reference_brightness:.2f} (lighting changed?). Record a new one with "
+                f"capture_reference.", throttle_duration_sec=REFERENCE_WARN_PERIOD_S)
         filtered = self.centre_filter.update(result)
         settled = filtered is not None and filtered.settled
 

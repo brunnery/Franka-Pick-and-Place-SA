@@ -38,6 +38,7 @@ def nut_params(values: dict) -> NutParams:
     values = dict(values)
     values["roi"] = tuple(values["roi"])
     values["across_flats_range_mm"] = tuple(values["across_flats_range_mm"])
+    values["reference_match_range"] = tuple(values["reference_match_range"])
     return NutParams(**values)
 
 

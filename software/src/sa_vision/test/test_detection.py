@@ -26,7 +26,8 @@ ACROSS_FLATS_TOLERANCE_MM = 3.0 / SCALE
 
 PARAMS = NutParams(
     blur_kernel_px=5, morph_kernel_px=7, morph_close_iterations=2, morph_open_iterations=1,
-    roi=(0, 0, 0, 0), segmentation="threshold", edge_threshold=0.35, background_downscale=8, background_window_ratio=1.25,
+    roi=(0, 0, 0, 0), segmentation="threshold", edge_threshold=0.35, edge_group_ratio=0.1,
+    reference_match_range=(0.8, 1.25), background_downscale=8, background_window_ratio=1.25,
     brighter_threshold=0.06, darker_threshold=0.25, core_threshold=0.28,
     across_flats_range_mm=(7.0, 19.0), target_across_flats_mm=0.0, size_tolerance=0.15,
     size_class_tolerance=0.05, min_width_ratio=0.78, max_width_ratio=0.95,
@@ -180,6 +181,32 @@ def test_edges_find_facets_close_to_the_table_brightness():
     result = detect_nut(image, FOCAL_PX, DISTANCE_MM, EDGES)
     assert result.valid, result.status
     assert (result.u, result.v) == pytest.approx((640.0, 360.0), abs=1.0)
+
+
+def test_edges_bridge_a_gap_in_the_outline():
+    # One flank without contrast (it lies on its own hard shadow): the edge ring is open.
+    # Grouping by proximity still collects the rest of the outline into one candidate.
+    image = table()
+    draw_nut(image, (640.0, 360.0))
+    s_px = 13.0 * SCALE
+    gap = hexagon_corners((640.0, 360.0), s_px)[[0, 1]]  # one flank
+    cv2.line(image, tuple(np.round(gap[0]).astype(int)), tuple(np.round(gap[1]).astype(int)),
+             int(table()[360, 640]), 9)
+    result = detect_nut(image, FOCAL_PX, DISTANCE_MM, EDGES)
+    assert result.valid, result.status
+    assert (result.u, result.v) == pytest.approx((640.0, 360.0), abs=3.0)
+
+
+def test_reference_from_other_lighting_is_ignored():
+    image = nut_image((640.0, 360.0))
+    darker = np.round(table() * 0.5).astype(np.uint8)  # recorded with half the light
+    result = detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS, background=darker)
+    assert result.background == "reference mismatch"
+    assert result.reference_brightness == pytest.approx(2.0, rel=0.05)
+    assert result.valid, result.status
+    matching = detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS, background=table())
+    assert matching.background == "reference"
+    assert matching.reference_brightness == pytest.approx(1.0, abs=0.01)
 
 
 def test_unknown_segmentation_raises():

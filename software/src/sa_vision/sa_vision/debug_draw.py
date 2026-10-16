@@ -12,7 +12,8 @@ from typing import Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from sa_vision.detection import BACKGROUND_REFERENCE, NutDetection, NutParams, failure_reason
+from sa_vision.detection import (BACKGROUND_MISMATCH, BACKGROUND_REFERENCE, SEGMENTATION_EDGES,
+                                 NutDetection, NutParams, edges, failure_reason)
 from sa_vision.temporal import FilteredCentre
 
 # BGR colours
@@ -50,13 +51,14 @@ RATIO_DISPLAY_RANGE = (0.5, 1.5)      # I/B shown from black to white, table = m
 STEP_BRIGHT_COLOUR = (0, 220, 255)    # yellow: brighter than the table
 STEP_DARK_COLOUR = (255, 120, 0)      # blue: darker than the table
 STEP_CORE_COLOUR = (0, 0, 255)        # red: dark enough for the core (thread hole)
+STEP_EDGE_COLOUR = (255, 255, 255)    # white: edge pixel (segmentation "edges")
 STEP_MASK_GREY = 90                   # foreground after morphology
 STEP_LABEL_MIN_AREA_PX = 300          # rejected candidates smaller than this get no label
 STEP_TITLE_FONT_SCALE = 0.8
 STEP_TITLES = (
     "1  I/B  (table = grey, brighter = white, darker = black)",
-    "2  threshold  (yellow brighter, blue darker, red core)",
-    "3  morphology + candidates  (grey = reason)",
+    "2  foreground  (threshold: yellow brighter, blue darker; edges: white; red core)",
+    "3  foreground + candidates  (grey = reason)",
     "4  result",
 )
 
@@ -118,6 +120,8 @@ def info_line(detection: NutDetection, fps: Optional[float],
     e.g. "A' (reference image) | 14.9 fps | d = 300 mm (yaml) | median 5"."""
     method = ("A' (reference image)" if detection.background == BACKGROUND_REFERENCE
               else "A (local median)")
+    if detection.background == BACKGROUND_MISMATCH:
+        method = f"A (reference ignored, brightness x{detection.reference_brightness:.2f})"
     rate = f"{fps:.1f} fps" if fps is not None else "offline"
     distance = ("d estimated from size" if detection.distance_from_size
                 else f"d = {detection.distance_mm:.0f} mm (yaml)")
@@ -229,11 +233,15 @@ def ratio_view(detection: NutDetection, shape: Tuple[int, int]) -> np.ndarray:
 
 def threshold_view(detection: NutDetection, params: NutParams,
                    shape: Tuple[int, int]) -> np.ndarray:
-    """Step 2: pixel classes of the two-sided threshold, before morphology."""
+    """Step 2: pixel classes of the two-sided threshold or the edge pixels, plus the core."""
     if detection.ratio is None:
         return _roi_to_frame(None, detection.roi, shape)
     r = detection.ratio
     view = np.zeros(r.shape + (3,), np.uint8)
+    if params.segmentation == SEGMENTATION_EDGES:
+        view[r < 1.0 - params.core_threshold] = STEP_CORE_COLOUR
+        view[edges(r, params) > 0] = STEP_EDGE_COLOUR
+        return _roi_to_frame(view, detection.roi, shape)
     view[r > 1.0 + params.brighter_threshold] = STEP_BRIGHT_COLOUR
     view[r < 1.0 - params.darker_threshold] = STEP_DARK_COLOUR
     view[r < 1.0 - params.core_threshold] = STEP_CORE_COLOUR

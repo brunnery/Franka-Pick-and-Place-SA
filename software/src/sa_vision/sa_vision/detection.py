@@ -3,8 +3,9 @@
 Pipeline (docs/THEORY.md, Section 2): greyscale -> Gaussian blur -> divide by the
 reference image of the empty work area, if there is one -> divide by a local median
 (table brightness near the nut) -> foreground: either a two-sided threshold (bare
-metal is brighter or clearly darker than the table) or the gradient magnitude of
-I/B (sharp metal edges, not soft shadows) -> closing/opening -> outer contours -> convex hull as
+metal is brighter or clearly darker than the table) followed by closing/opening and
+outer contours, or the gradient magnitude of I/B (sharp metal edges, not soft
+shadows) with edge pixels grouped by proximity -> convex hull as
 silhouette -> filters on metric size, width ratio s/e, dark core (thread hole) and
 concentricity -> centre from the silhouette moments, width across flats in mm and
 the thread size if it is unambiguous.
@@ -23,6 +24,7 @@ STANDARD_ACROSS_FLATS = (
 )
 BACKGROUND_REFERENCE = "reference"
 BACKGROUND_ESTIMATED = "estimated"
+BACKGROUND_MISMATCH = "reference mismatch"  # reference given but ignored (lighting changed)
 SEGMENTATION_THRESHOLD = "threshold"
 SEGMENTATION_EDGES = "edges"
 SEGMENTATIONS = (SEGMENTATION_THRESHOLD, SEGMENTATION_EDGES)
@@ -47,6 +49,8 @@ class NutParams:
     roi: Tuple[int, int, int, int]   # (x, y, width, height) in px, all 0 = full image
     segmentation: str                # "threshold" (I/B level) or "edges" (gradient of I/B)
     edge_threshold: float            # edges: foreground if |Sobel 3x3 of I/B| > this
+    edge_group_ratio: float          # edges: pixels closer than this * largest s_px form one candidate
+    reference_match_range: Tuple[float, float]  # use the reference only if median(I/R) is inside
     background_downscale: int        # local median is computed at 1/this resolution
     background_window_ratio: float   # median window / largest accepted s in px
     brighter_threshold: float        # foreground if I/B > 1 + this
@@ -110,9 +114,11 @@ class NutDetection:
     width_ratio: float = math.nan
     compactness: float = math.nan
     background: str = ""
+    reference_brightness: float = math.nan  # median of I/R: 1 if the lighting matches the reference
     roi: Tuple[int, int, int, int] = (0, 0, 0, 0)
     candidates: List[Candidate] = field(default_factory=list)
-    mask: Optional[np.ndarray] = None  # binary foreground of the ROI (after morphology)
+    mask: Optional[np.ndarray] = None  # foreground of the ROI (threshold: after morphology,
+                                       # edges: the dilated edge groups)
     ratio: Optional[np.ndarray] = None  # I/B of the ROI (debug view)
 
     @property
@@ -259,7 +265,7 @@ def threshold(ratio: np.ndarray, params: NutParams) -> np.ndarray:
 
 
 def edges(ratio: np.ndarray, params: NutParams) -> np.ndarray:
-    """Binary foreground (255) before morphology: strong gradient of I/B.
+    """Edge pixels (255): strong gradient of I/B.
 
     Metal edges (outline, facets, chamfer, hole) are sharp; the soft shadow of the
     nut and a slowly varying table brightness have a small gradient and drop out.
@@ -269,39 +275,41 @@ def edges(ratio: np.ndarray, params: NutParams) -> np.ndarray:
     return (np.hypot(gx, gy) > params.edge_threshold).astype(np.uint8) * 255
 
 
-def fill_holes(mask: np.ndarray) -> np.ndarray:
-    """Fill the inside of every outer contour (an edge outline becomes a region)."""
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    filled = np.zeros_like(mask)
-    cv2.drawContours(filled, contours, -1, 255, -1)
-    return filled
-
-
 def segment(ratio: np.ndarray, params: NutParams) -> np.ndarray:
-    """Foreground after closing (joins the parts of one nut) and opening (removes specks).
-
-    Edges: the closed outline is filled before the opening, otherwise a thin edge
-    ring of a nut with little texture would be removed as a speck.
-    """
-    if params.segmentation not in SEGMENTATIONS:
-        raise ValueError(f"segmentation must be one of {SEGMENTATIONS}, "
-                         f"not '{params.segmentation}'")
-    if params.segmentation == SEGMENTATION_EDGES:
-        mask = edges(ratio, params)
-    else:
-        mask = threshold(ratio, params)
+    """Threshold foreground after closing (joins the parts of one nut) and opening (removes specks)."""
+    mask = threshold(ratio, params)
     if params.morph_kernel_px > 1:
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (params.morph_kernel_px, params.morph_kernel_px))
         if params.morph_close_iterations > 0:
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel,
                                     iterations=params.morph_close_iterations)
-        if params.segmentation == SEGMENTATION_EDGES:
-            mask = fill_holes(mask)
         if params.morph_open_iterations > 0:
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel,
                                     iterations=params.morph_open_iterations)
     return mask
+
+
+def edge_groups(ratio: np.ndarray, params: NutParams, group_px: float
+                ) -> Tuple[np.ndarray, List[np.ndarray]]:
+    """Edge pixels grouped by proximity: (mask of the groups, edge pixels of each group).
+
+    Edge pixels closer than about group_px belong to one candidate (dilation with a
+    disc of that diameter, then connected components). The candidate keeps only the
+    edge pixels themselves, so the dilation does not widen its convex hull. A gap in
+    the outline (a flank without contrast against its shadow) then no longer splits
+    the nut, unlike a closing + fill of the outline.
+    """
+    edge = edges(ratio, params)
+    size = _odd(group_px)
+    groups = cv2.dilate(edge, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+    count, labels = cv2.connectedComponents(groups)
+    ys, xs = np.nonzero(edge)
+    members = labels[ys, xs]
+    order = np.argsort(members, kind="stable")
+    points = np.stack([xs, ys], axis=1)[order].astype(np.int32).reshape(-1, 1, 2)
+    splits = np.searchsorted(members[order], np.arange(1, count))
+    return groups, [p for p in np.split(points, splits)[1:] if len(p) >= 3]
 
 
 def contour_centre(contour: np.ndarray) -> Optional[Tuple[float, float]]:
@@ -422,28 +430,46 @@ def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
 
     roi = clip_roi(params.roi, image.shape)
     x, y, w, h = roi
+    if params.segmentation not in SEGMENTATIONS:
+        raise ValueError(f"segmentation must be one of {SEGMENTATIONS}, "
+                         f"not '{params.segmentation}'")
     mode = BACKGROUND_ESTIMATED if background is None else BACKGROUND_REFERENCE
     if w == 0 or h == 0:
         return NutDetection(False, "empty roi", background=mode, roi=roi)
 
     size_range_px = accepted_size_range_px(params, focal_px, distance_mm, distance_range_mm)
     gray = _blur(to_gray(image)[y:y + h, x:x + w], params)
+    reference_brightness = math.nan
     if background is not None:
-        # Divide out static objects, gradients and the table texture first
+        # Divide out static objects, gradients and the table texture first, but only if
+        # the lighting still matches: otherwise I/R is far from 1 everywhere and the
+        # reference adds structure instead of removing it.
         reference = _blur(to_gray(background)[y:y + h, x:x + w], params)
-        gray = np.clip(ratio_image(gray, reference) * REFERENCE_GREY, 0, 255).astype(np.uint8)
+        divided = ratio_image(gray, reference)
+        reference_brightness = float(np.median(divided))
+        low, high = params.reference_match_range
+        if low <= reference_brightness <= high:
+            gray = np.clip(divided * REFERENCE_GREY, 0, 255).astype(np.uint8)
+        else:
+            mode = BACKGROUND_MISMATCH
     # Local median at a scale near the nut size: also absorbs most of its soft shadow
     window_px = params.background_window_ratio * size_range_px[1]
     table = estimate_background(gray, window_px, params.background_downscale)
     ratio = ratio_image(gray, table)
-    mask = segment(ratio, params)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
-                                   offset=(x, y))
+    if params.segmentation == SEGMENTATION_EDGES:
+        mask, contours = edge_groups(ratio, params,
+                                     params.edge_group_ratio * size_range_px[1])
+        contours = [c + np.array([x, y], np.int32) for c in contours]
+    else:
+        mask = segment(ratio, params)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
+                                       offset=(x, y))
     candidate_distance = None if from_size else distance_mm
     candidates = [_evaluate(c, ratio, (x, y), focal_px, candidate_distance, size_range_px,
                             params) for c in contours]
 
-    detection = NutDetection(False, "", background=mode, roi=roi, candidates=candidates,
+    detection = NutDetection(False, "", background=mode, reference_brightness=reference_brightness,
+                             roi=roi, candidates=candidates,
                              mask=mask, ratio=ratio, distance_from_size=from_size)
     if not from_size:
         detection.distance_mm = distance_mm
