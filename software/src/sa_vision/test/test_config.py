@@ -46,3 +46,18 @@ def test_distance_range_depends_on_d_source():
     assert distance_range("from_size", [200.0, 500.0]) == (200.0, 500.0)
     with pytest.raises(ValueError):
         distance_range("fk", [200.0, 500.0])
+
+
+def test_vision_node_declares_every_detection_parameter():
+    # vision_node imports rclpy, so read its parameter table from the source instead
+    import ast
+    import dataclasses
+    from pathlib import Path
+
+    from sa_vision.detection import NutParams
+    source = Path(__file__).resolve().parents[1] / "sa_vision" / "vision_node.py"
+    tree = ast.parse(source.read_text())
+    table = next(node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                 and any(getattr(t, "id", "") == "DETECTION_PARAMETERS" for t in node.targets))
+    declared = {key.value for key in table.keys}
+    assert declared == {field.name for field in dataclasses.fields(NutParams)}

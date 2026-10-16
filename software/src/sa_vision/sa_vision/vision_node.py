@@ -33,6 +33,8 @@ DETECTION_PARAMETERS = {
     "morph_close_iterations": Parameter.Type.INTEGER,
     "morph_open_iterations": Parameter.Type.INTEGER,
     "roi": Parameter.Type.INTEGER_ARRAY,
+    "segmentation": Parameter.Type.STRING,
+    "edge_threshold": Parameter.Type.DOUBLE,
     "background_downscale": Parameter.Type.INTEGER,
     "background_window_ratio": Parameter.Type.DOUBLE,
     "brighter_threshold": Parameter.Type.DOUBLE,
