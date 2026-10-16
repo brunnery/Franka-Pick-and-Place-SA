@@ -29,6 +29,11 @@ vision_node:
     nut:
       # Region of interest [x, y, width, height]; all 0 = full image.
       roi: [0, 0, 0, 0]
+      # Foreground (THEORY 2.2): "edges" = gradient of I/B > edge_threshold (sharp metal
+      # edges; soft shadows drop out), "threshold" = I/B level, brighter/darker_threshold.
+      # Bench set 16.10. (diffuse lamp, reference image): edges 26/26, threshold 4/26.
+      segmentation: edges
+      edge_threshold: 0.35         # |Sobel 3x3 of I/B|; bench 16.10.: 0.25 -> 24/26, 0.35 -> 26/26
       # Pre-processing
       blur_kernel_px: 5            # Gaussian kernel, odd
       morph_kernel_px: 7           # elliptic structuring element for closing/opening

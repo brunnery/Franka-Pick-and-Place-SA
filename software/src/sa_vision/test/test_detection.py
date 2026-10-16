@@ -26,7 +26,7 @@ ACROSS_FLATS_TOLERANCE_MM = 3.0 / SCALE
 
 PARAMS = NutParams(
     blur_kernel_px=5, morph_kernel_px=7, morph_close_iterations=2, morph_open_iterations=1,
-    roi=(0, 0, 0, 0), background_downscale=8, background_window_ratio=1.25,
+    roi=(0, 0, 0, 0), segmentation="threshold", edge_threshold=0.35, background_downscale=8, background_window_ratio=1.25,
     brighter_threshold=0.06, darker_threshold=0.25, core_threshold=0.28,
     across_flats_range_mm=(7.0, 19.0), target_across_flats_mm=0.0, size_tolerance=0.15,
     size_class_tolerance=0.05, min_width_ratio=0.78, max_width_ratio=0.95,
@@ -139,6 +139,53 @@ def test_soft_shadow_does_not_enlarge_the_silhouette(use_reference):
     assert result.valid, result.status
     assert result.across_flats_mm == pytest.approx(13.0, abs=ACROSS_FLATS_TOLERANCE_MM)
     assert result.width_ratio == pytest.approx(math.sqrt(3.0) / 2.0, abs=0.04)
+
+
+EDGES = dataclasses.replace(PARAMS, segmentation="edges")
+# The gradient (Sobel 3x3 after the blur) is above edge_threshold about 1.5 px beyond the
+# drawn outline on each side, so s comes out about 3 px larger than with the threshold.
+EDGES_ACROSS_FLATS_TOLERANCE_MM = 6.0 / SCALE
+
+
+@pytest.mark.parametrize("centre, angle", [((640.0, 360.0), 0.0), ((300.3, 200.7), 17.0)])
+def test_edges_centre_and_size_of_single_nut(centre, angle):
+    image = table()
+    draw_nut(image, centre, angle_deg=angle)
+    result = detect_nut(image, FOCAL_PX, DISTANCE_MM, EDGES)
+    assert result.valid, result.status
+    assert (result.u, result.v) == pytest.approx(centre, abs=0.5)
+    assert result.across_flats_mm == pytest.approx(13.0, abs=EDGES_ACROSS_FLATS_TOLERANCE_MM)
+
+
+def test_edges_ignore_a_deep_soft_shadow():
+    # Lamp from one side (bench set of 16.10.): the shadow is deeper than the threshold
+    # method tolerates (about 0.3), but its gradient stays below edge_threshold.
+    image = table()
+    cast_soft_shadow(image, (640.0, 360.0), depth=0.45)
+    draw_nut(image, (640.0, 360.0))
+    assert not detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS).valid
+    result = detect_nut(image, FOCAL_PX, DISTANCE_MM, EDGES)
+    assert result.valid, result.status
+    assert (result.u, result.v) == pytest.approx((640.0, 360.0), abs=1.0)
+    assert result.width_ratio == pytest.approx(math.sqrt(3.0) / 2.0, abs=0.04)
+
+
+def test_edges_find_facets_close_to_the_table_brightness():
+    # Diffuse light: a half with 0.85 of the table brightness is neither darker than
+    # 1 - darker_threshold nor brighter than 1 + brighter_threshold, so the threshold
+    # method sees only the bright half (not a hexagon). Its outline is still a clear edge.
+    image = table()
+    draw_nut(image, (640.0, 360.0), lower_half=int(0.85 * table()[360, 640]))
+    assert not detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS).valid
+    result = detect_nut(image, FOCAL_PX, DISTANCE_MM, EDGES)
+    assert result.valid, result.status
+    assert (result.u, result.v) == pytest.approx((640.0, 360.0), abs=1.0)
+
+
+def test_unknown_segmentation_raises():
+    with pytest.raises(ValueError):
+        detect_nut(nut_image((640.0, 360.0)), FOCAL_PX, DISTANCE_MM,
+                   with_params(segmentation="otsu"))
 
 
 def test_bgr_input_and_noise():

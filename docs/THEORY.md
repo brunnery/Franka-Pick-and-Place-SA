@@ -95,7 +95,7 @@ Goal: the centre $(u, v)$ of the nut (pick) and of the stud base (place), from a
 **Appearance of the bare nut (test images of 15.10.2026, hand-held, 27 images).** The zinc-plated nut reflects specularly. Most of its body is *darker* than the white table (ratio to the table about 0.5–0.8), a few highlights are *brighter* (up to 1.2), and some facets are as bright as the table. The thread hole is dark, not bright: through the bore the camera sees the table in the nut's own shadow (ratio about 0.45–0.7). On a locknut the blue nylon ring merges with the hole into one dark disc. Each nut casts a soft shadow that is 20–40 % darker than the table. The previous segmentation (inverted Otsu threshold, hole as a bright region, Sections 2.2–2.4 of the earlier version) found 0 of 27 nuts on these images; it is **dropped** (see 2.2).
 
 ### 2.1 Image acquisition and pre-processing – **used**
-1. **Fixed exposure and white balance** (`software/config/camera.yaml`, set with `v4l2-ctl` before the camera starts). With automatic exposure the brightness depends on the scene content (a bright table drives the gain down), so a reference image of the empty work area and a live image with a nut would not share the same grey levels. Trade-off measured in office light: the automatic mode reaches a table grey value of about 190 at 24 fps; manual exposure needs about 120 ms (4 fps) for the same brightness, 50 ms gives about 110 at 20 fps. The scene is static during the observation, so a low frame rate is acceptable.
+1. **Fixed exposure and white balance** (`software/config/camera.yaml`, set with `v4l2-ctl` before the camera starts). With automatic exposure the brightness depends on the scene content (a bright table drives the gain down), so a reference image of the empty work area and a live image with a nut would not share the same grey levels. Trade-off measured in office light: the automatic mode reaches a table grey value of about 190 at 24 fps; manual exposure needs about 120 ms (4 fps) for the same brightness, 50 ms gives about 110 at 20 fps. The scene is static during the observation, so a low frame rate is acceptable. The exposure must not clip the table: a clipped table (grey value 255) hides the highlights of the nut and makes the division by the reference image meaningless. Bench setup of 16.10.2026 (diffuse lamp, $d \approx 420$ mm): 10 ms gives a table median of 180 without clipping, 15 ms clips 6 % and 25 ms clips 60–94 % of the pixels. Target: table grey value 170–200, no clipping.
 2. Greyscale conversion.
 3. Gaussian smoothing, $G_\sigma(x,y) = \frac{1}{2\pi\sigma^2} e^{-(x^2+y^2)/2\sigma^2}$, to suppress sensor noise before thresholding.
 4. Region of interest = known work area projected into the image, so the gripper and the table edge cannot produce false detections.
@@ -121,8 +121,23 @@ $B$ is computed in two steps:
 
 The step 2 suppression is partial. On synthetic images a shadow of the measured shape is removed up to a depth of about 0.25; the real shadows of up to 0.4 on the test images were removed as well, because they are softer.
 
+### 2.2a Gradient-based foreground – **used** (default since 16.10.2026, `segmentation: edges`)
+The level threshold of 2.2 assumes that the nut differs from the table in brightness. Under the diffuse lamp of the bench setup this is wrong: the flats of the zinc-plated nut reflect the lamp and reach 0.85–1.0 of the table brightness, while the soft shadow beside the nut is the darkest area after the thread hole. The level threshold then segments hole plus shadow and misses the flats, and the silhouette fails the shape filter (4 of 26 nuts found on the bench set, Section 2.8).
+
+The foreground is therefore taken from the **gradient magnitude** of the ratio image,
+
+$$
+g(u,v) = \sqrt{(S_x * r)^2 + (S_y * r)^2} > \tau_g \qquad (\tau_g = 0.35)
+$$
+
+with the $3 \times 3$ Sobel kernels $S_x, S_y$ (they include a smoothing factor, so a step of height $\Delta r$ gives a peak of about $4\,\Delta r$ before the blur). The physical argument: the outline of the nut, its facet edges, the chamfer and the hole are sharp edges, whereas a shadow cast by an extended (diffuse) light source has a penumbra that is wide compared with the pixel size, so its gradient stays small. Because $g$ is computed on $r = I/B$, the threshold is relative and independent of the illumination level. After the closing of 2.3, the outer contours of the edge mask are **filled** before the opening, otherwise the thin edge ring of a nut with little texture would be removed as a speck.
+
+Known bias: the gradient exceeds $\tau_g$ about 1.5 px beyond the true outline on each side (blur and Sobel support), so $s_\text{px}$ is about 3 px too large on synthetic images (0.5 mm at $d = 340$ mm). On the bench set the measured width across flats was $13.30 \pm 0.34$ mm for the nominal 13 mm. The centre is not affected, because the widening is symmetric.
+
+Trade-off: on the 27 hand-held images of 15.10. (no lamp, no reference image, varying height) the edge method finds 12 of 27 nuts against 20 of 27 with the level threshold; there the nut is dark on a bright table and the level threshold works well. The level threshold remains available (`segmentation: threshold`). The edge method is the default because the bench conditions (fixed camera, fixed exposure, reference image, lamp) are those of the robot.
+
 ### 2.3 Morphology – **used**
-Closing ($A \bullet B = (A \oplus B) \ominus B$, two iterations, elliptic $7 \times 7$ element) first joins highlights, dark facets and the hole into one region; opening ($A \circ B = (A \ominus B) \oplus B$) then removes small specks.
+Closing ($A \bullet B = (A \oplus B) \ominus B$, two iterations, elliptic $7 \times 7$ element) first joins highlights, dark facets and the hole into one region; opening ($A \circ B = (A \ominus B) \oplus B$) then removes small specks. With the edge foreground (2.2a) the outlines are filled between the two steps.
 
 ### 2.4 Silhouette and dark core – **used**
 Outer contours are extracted by border following [Suzuki & Abe 1985]. The **silhouette** of a candidate is the convex hull of its contour; the hull fills concavities where a facet happens to have the brightness of the table. The **dark core** is the largest connected region inside the silhouette with $r < 1 - \tau_c$ ($\tau_c = 0.28$). It contains the thread hole, the nylon ring of a locknut and the shaded inner chamfer.
@@ -216,6 +231,33 @@ $$
 
 On the same 60 frames this gives a standard deviation of 0.08 px (range 0.3 px). Unlike the exponential filter of the BA ($\alpha = 0.25$), the median ignores single-frame outliers instead of averaging them in. The result is valid only once the window holds $n$ frames. The window starts over after an invalid frame and when the new centre lies more than $0.25\,s_\text{px}$ from the current median (`centre_reset_jump_ratio`), so a moved camera or nut is never mixed with the old position. Cost: a delay of $n$ frames (0.25 s at 20 fps), irrelevant at the robot, where the camera stands still during the observation.
 
+### 2.8 Bench evaluation on a printed grid – **used** (`sa_vision/grid_fit.py`, `evaluate_grid`)
+Without the robot, the observation conditions are reproduced on a stand: camera fixed above the table looking down, fixed exposure, reference image, $d$ known. A printed sheet carries a grid of $7 \times 4$ marks with a pitch of 30 mm (`tools/make_grid_sheet.py`, scale checked with a ruler). The nut is placed on each mark in turn (random rotation, one image per mark).
+
+**Fit.** For a camera looking straight down, the undistorted normalised image coordinates $\mathbf n_i = ((u_i - c_x)/f_x,\ (v_i - c_y)/f_y)$ of the nut centres and the sheet coordinates $\mathbf p_i$ of the marks follow a similarity
+
+$$
+\mathbf n_i = \frac{1}{d}\,\mathbf R(\theta)\,\mathbf p_i + \mathbf t
+$$
+
+with unknown sheet rotation $\theta$, offset $\mathbf t$ and scale $1/d$. It is fitted in closed form by least squares [Umeyama 1991]. The residuals multiplied by $d$ are the position errors on the object plane in mm; $d$ itself comes out of the fit. A full plane homography (8 parameters, DLT [Hartley & Zisserman]) additionally absorbs a tilt between the sheet and the optical axis; its residuals are the part of the error that no plane mapping explains.
+
+**Results, bench set of 16.10.2026** (diffuse lamp, exposure 10 ms, reference image, M8 locknut, marks 24 and 25 hidden by the gripper):
+
+| Quantity | Level threshold (2.2) | Edges (2.2a) |
+|---|---|---|
+| Nuts detected on the grid | 4 / 26 | **26 / 26** |
+| Extra images as expected (3 empty, 2 stud only, 2 stud + M8, 2 M8 + large nut, 2 M8 cut by the border) | 7 / 11 | **11 / 11** |
+| Position error, similarity (RMS / max) | – | 1.45 / 2.55 mm |
+| Position error, homography (RMS) | – | 1.18 mm |
+| Width across flats at the fitted $d$ | – | 13.30 ± 0.34 mm |
+
+The error vectors show no systematic pattern (no radial or one-sided trend), so the remaining error is dominated by the placement of the nut by hand on a mark hidden under it, and the 1.45 mm RMS is an upper bound of the detection error.
+
+**Calibration check with the printed crosses.** The crosses of the reference image have exact sheet positions and need no manual placement. Fitting 19 of them (intensity-weighted centroids): homography residual 0.06 mm RMS, so intrinsics and distortion model are consistent over the field of view; similarity residual 0.50 mm RMS (max 1.0 mm), i.e. about 0.5 mm of the nut error comes from a slight tilt of the stand camera against the sheet.
+
+**Effective distance.** The fit gives $d = 419.4$ mm from the projection centre to the sheet, whereas the ruler gave 410 mm from the lowest point of the lens. The nut fit is consistent with this ($d = 415.8$ mm to the nut centres, i.e. about 4 mm below the top face of the 8 mm nut). The projection centre therefore lies about 9 mm above the lowest point of the lens, or the focal length is about 2 % off; both have the same effect on the target. The CAD offset of the camera (CLAUDE.md, $\Delta z = 60.223$ mm) refers to the lowest point of the lens, so $d$ from forward kinematics would be about 9 mm too small, an error of 2 % of the lateral distance from the optical axis (2 mm at 100 mm, Section 4). It is calibrated at the robot with one image of the grid sheet from the observation pose (fitted $d$ against $d$ from forward kinematics) and stored as a constant offset.
+
 ---
 
 ## 3. From pixel to robot target – **used** (camera frame, `sa_vision/geometry.py`); base frame and tool target: planned
@@ -269,6 +311,7 @@ $$
 
 - One pixel corresponds to $d/f$ millimetres on the object plane (e.g. $d = 300$ mm, $f = 1000$ px → 0.3 mm/px; actual $f$ after calibration).
 - Height and focal-length errors scale with the lateral distance $X$ from the optical axis. Objects near the image centre are therefore less sensitive, which is an argument for an observation pose above the middle of each work area.
+- The height error includes the position of the projection centre inside the camera, which is not the lowest point of the lens assumed by the CAD offset (about 9 mm higher on the bench, Section 2.8).
 - Systematic errors (CAD offset ${}^{F}\mathbf{T}_{C}$, small camera tilt) appear as a constant offset and are removed by the verification measurement: place the object at a known position, drive to the computed target, measure the residual, store it as $\Delta\mathbf{p}$.
 
 ---
@@ -280,5 +323,6 @@ $$
 - S. Suzuki, K. Abe, "Topological structural analysis of digitized binary images by border following," *CVGIP*, 30(1), 1985.
 - G. T. Toussaint, "Solving geometric problems with the rotating calipers," *Proc. IEEE MELECON*, 1983.
 - D. C. Brown, "Decentering distortion of lenses," *Photogrammetric Engineering*, 32(3), 1966.
+- S. Umeyama, "Least-squares estimation of transformation parameters between two point patterns," *IEEE TPAMI*, 13(4), 1991.
 - R. Hartley, A. Zisserman, *Multiple View Geometry in Computer Vision*, 2nd ed., Cambridge University Press, 2004.
 - F. Chaumette, S. Hutchinson, "Visual servo control, Part I: Basic approaches," *IEEE Robotics & Automation Magazine*, 13(4), 2006.

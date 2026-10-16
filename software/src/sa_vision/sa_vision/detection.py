@@ -2,8 +2,9 @@
 
 Pipeline (docs/THEORY.md, Section 2): greyscale -> Gaussian blur -> divide by the
 reference image of the empty work area, if there is one -> divide by a local median
-(table brightness near the nut) -> two-sided threshold (bare metal is brighter or
-clearly darker than the table) -> closing/opening -> outer contours -> convex hull as
+(table brightness near the nut) -> foreground: either a two-sided threshold (bare
+metal is brighter or clearly darker than the table) or the gradient magnitude of
+I/B (sharp metal edges, not soft shadows) -> closing/opening -> outer contours -> convex hull as
 silhouette -> filters on metric size, width ratio s/e, dark core (thread hole) and
 concentricity -> centre from the silhouette moments, width across flats in mm and
 the thread size if it is unambiguous.
@@ -22,6 +23,9 @@ STANDARD_ACROSS_FLATS = (
 )
 BACKGROUND_REFERENCE = "reference"
 BACKGROUND_ESTIMATED = "estimated"
+SEGMENTATION_THRESHOLD = "threshold"
+SEGMENTATION_EDGES = "edges"
+SEGMENTATIONS = (SEGMENTATION_THRESHOLD, SEGMENTATION_EDGES)
 # Filters in the order they are applied, and how a rejection is shown to the user
 FILTER_ORDER = ("size", "width ratio", "degenerate", "no hole", "hole ratio", "centre offset")
 REJECTION_TEXT = {
@@ -41,6 +45,8 @@ class NutParams:
     morph_close_iterations: int      # joins highlights and dark facets of one nut
     morph_open_iterations: int       # removes specks
     roi: Tuple[int, int, int, int]   # (x, y, width, height) in px, all 0 = full image
+    segmentation: str                # "threshold" (I/B level) or "edges" (gradient of I/B)
+    edge_threshold: float            # edges: foreground if |Sobel 3x3 of I/B| > this
     background_downscale: int        # local median is computed at 1/this resolution
     background_window_ratio: float   # median window / largest accepted s in px
     brighter_threshold: float        # foreground if I/B > 1 + this
@@ -252,15 +258,46 @@ def threshold(ratio: np.ndarray, params: NutParams) -> np.ndarray:
             | (ratio < 1.0 - params.darker_threshold)).astype(np.uint8) * 255
 
 
+def edges(ratio: np.ndarray, params: NutParams) -> np.ndarray:
+    """Binary foreground (255) before morphology: strong gradient of I/B.
+
+    Metal edges (outline, facets, chamfer, hole) are sharp; the soft shadow of the
+    nut and a slowly varying table brightness have a small gradient and drop out.
+    """
+    gx = cv2.Sobel(ratio, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(ratio, cv2.CV_32F, 0, 1, ksize=3)
+    return (np.hypot(gx, gy) > params.edge_threshold).astype(np.uint8) * 255
+
+
+def fill_holes(mask: np.ndarray) -> np.ndarray:
+    """Fill the inside of every outer contour (an edge outline becomes a region)."""
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    filled = np.zeros_like(mask)
+    cv2.drawContours(filled, contours, -1, 255, -1)
+    return filled
+
+
 def segment(ratio: np.ndarray, params: NutParams) -> np.ndarray:
-    """Foreground after closing (joins the parts of one nut) and opening (removes specks)."""
-    mask = threshold(ratio, params)
+    """Foreground after closing (joins the parts of one nut) and opening (removes specks).
+
+    Edges: the closed outline is filled before the opening, otherwise a thin edge
+    ring of a nut with little texture would be removed as a speck.
+    """
+    if params.segmentation not in SEGMENTATIONS:
+        raise ValueError(f"segmentation must be one of {SEGMENTATIONS}, "
+                         f"not '{params.segmentation}'")
+    if params.segmentation == SEGMENTATION_EDGES:
+        mask = edges(ratio, params)
+    else:
+        mask = threshold(ratio, params)
     if params.morph_kernel_px > 1:
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (params.morph_kernel_px, params.morph_kernel_px))
         if params.morph_close_iterations > 0:
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel,
                                     iterations=params.morph_close_iterations)
+        if params.segmentation == SEGMENTATION_EDGES:
+            mask = fill_holes(mask)
         if params.morph_open_iterations > 0:
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel,
                                     iterations=params.morph_open_iterations)
