@@ -4,15 +4,15 @@
 // Motorshield mit Standardadresse 0x60
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 
-Adafruit_DCMotor *motor2 = AFMS.getMotor(2);
+Adafruit_DCMotor *motor1 = AFMS.getMotor(1);
 Adafruit_DCMotor *motor3 = AFMS.getMotor(3);
 Adafruit_DCMotor *motor4 = AFMS.getMotor(4);
 
-const uint8_t SPEED    = 180;   // 0-255, Speed fuer M3 und M2
-const uint8_t SPEED_M4 = 255;   // Speed fuer M4
-
-const uint8_t ZYKLEN_VOR_M4 = 4;      // nach so vielen M3/M2-Zyklen dreht M4
-const unsigned long M4_DAUER = 5000;  // M4 Laufzeit in ms
+const uint8_t SPEED = 80;               // 0-255, langsam fuer den ersten Test
+const unsigned long DAUER = 3000;       // M1/M4 Laufzeit pro Richtung in ms
+const unsigned long PAUSE = 250;        // Pause zwischen Richtungswechseln in ms
+const uint8_t ZYKLEN_M1M4 = 2;          // so oft hin und her vor M3
+const unsigned long DAUER_M3 = 8000;    // M3 Laufzeit in ms
 
 void setup() {
   Serial.begin(9600);
@@ -22,42 +22,39 @@ void setup() {
     while (1);
   }
 
-  motor2->setSpeed(SPEED);
+  motor1->setSpeed(SPEED);
   motor3->setSpeed(SPEED);
-  motor4->setSpeed(SPEED_M4);
+  motor4->setSpeed(SPEED);
 }
 
-// Ein Zyklus M3/M2: 2 s vorwaerts, Pause, 2 s rueckwaerts, Pause
-void zyklusM3M2() {
-  // 2 Sekunden vorwaerts
-  motor3->run(BACKWARD);
-  motor2->run(FORWARD);
-  delay(2000);
-
+void stopp() {
   // kurz anhalten, schont Motoren und Getriebe
+  motor1->run(RELEASE);
   motor3->run(RELEASE);
-  motor2->run(RELEASE);
-  delay(250);
+  motor4->run(RELEASE);
+  delay(PAUSE);
+}
 
-  // 2 Sekunden rueckwaerts
-  motor3->run(FORWARD);
-  motor2->run(BACKWARD);
-  delay(2000);
+// Ein Zyklus M1/M4 gegenlaeufig: 3 s in eine Richtung, 3 s zurueck
+void zyklusM1M4() {
+  motor1->run(BACKWARD);
+  motor4->run(FORWARD);
+  delay(DAUER);
+  stopp();
 
-  motor3->run(RELEASE);
-  motor2->run(RELEASE);
-  delay(250);
+  motor1->run(FORWARD);
+  motor4->run(BACKWARD);
+  delay(DAUER);
+  stopp();
 }
 
 void loop() {
-  // 4 Zyklen M3/M2
-  for (uint8_t i = 0; i < ZYKLEN_VOR_M4; i++) {
-    zyklusM3M2();
+  for (uint8_t i = 0; i < ZYKLEN_M1M4; i++) {
+    zyklusM1M4();
   }
 
-  // danach M4 fuer 5 Sekunden
-  motor4->run(FORWARD);
-  delay(M4_DAUER);
-  motor4->run(RELEASE);
-  delay(250);
+  // danach M3 fuer 8 Sekunden
+  motor3->run(FORWARD);
+  delay(DAUER_M3);
+  stopp();
 }
