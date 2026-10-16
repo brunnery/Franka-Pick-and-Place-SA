@@ -1,6 +1,7 @@
 /**:
   ros__parameters:
-    video_device: /dev/video0
+    # Stable path: /dev/videoN changes when the camera is replugged (was video0, then video2)
+    video_device: /dev/v4l/by-id/usb-Suyin_HD_Camera_200910120001-video-index0
     image_width: 1280
     image_height: 720
     pixel_format: mjpeg2rgb
@@ -11,13 +12,14 @@
     # the reference image of the empty work area share the same brightness. Applied with
     # v4l2-ctl by `apply_camera_controls` (camera.launch.py) in this order: the automatic
     # modes first, otherwise the kernel rejects the manual values. Names and ranges:
-    # `v4l2-ctl -d /dev/video0 --list-ctrls`. usb_cam ignores this block.
+    # `v4l2-ctl -d <video_device> --list-ctrls`. usb_cam ignores this block.
     v4l2_controls:
       auto_exposure: 1                 # 1 = manual, 3 = automatic (aperture priority)
       exposure_dynamic_framerate: 0    # keep the frame rate fixed
       white_balance_automatic: 0
-      # Unit 100 us. Provisional (15.10., office light): 500 = 50 ms gives about 20 fps
-      # and a table grey value of about 110; 1200 = 120 ms matches the automatic
-      # brightness (about 190) but only 4 fps. Tune at the observation pose.
-      exposure_time_absolute: 500
+      # Unit 100 us. Bench setup with the diffuse lamp on, d about 410 mm (16.10.):
+      # 100 gives paper median 180, darkest corner 141, no clipping; 150 clips 6 %,
+      # 250 clips 60-94 %. Aim for a table grey value of 170-200 without clipping, so
+      # highlights of the nut stay measurable. Re-measure when the lighting changes.
+      exposure_time_absolute: 100
       white_balance_temperature: 4600  # K, value the automatic mode had chosen

@@ -25,7 +25,7 @@ def test_vision_yaml_provides_all_nut_parameters():
 def test_camera_yaml_switches_automatic_modes_off_before_manual_values():
     device, controls = load_controls(CAMERA_CONFIG)
     names = list(controls)
-    assert device.startswith("/dev/video")
+    assert device.startswith("/dev/")
     assert controls["auto_exposure"] == 1 and controls["white_balance_automatic"] == 0
     assert names.index("auto_exposure") < names.index("exposure_time_absolute")
     assert names.index("white_balance_automatic") < names.index("white_balance_temperature")
