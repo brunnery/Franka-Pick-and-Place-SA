@@ -2,7 +2,7 @@
 
 > Living document. Every formula, model or principle that the code relies on and that belongs in the report is written down here, in report-ready English, with symbols defined once.
 > Status per section: **used** (in the code), **planned** (decided, not implemented yet), **dropped** (kept for the discussion chapter).
-> Last update: 14.10.2026 (detection and back-projection implemented in `sa_vision`)
+> Last update: 16.10.2026 (new gripper/camera mount, Section 0)
 
 ---
 
@@ -19,11 +19,13 @@
 | $\mathbf{K}$ | camera intrinsic matrix |
 | $d$ | distance from the camera centre to the object plane along $z_C$ |
 
-Fixed transforms (CAD, 08.10.2026, mm):
+Fixed transforms (CAD of the new mount, 16.10.2026, mm, in the flange frame $\{F\}$ with $z_F$ pointing along the tool):
 
 $$
-{}^{F}\mathbf{t}_{C} = (0,\ 44.4,\ 60.223)^\top, \qquad {}^{F}\mathbf{t}_{T} = (0,\ 0,\ 113.823)^\top
+{}^{F}\mathbf{t}_{C} = (0,\ 44.4,\ 57.223)^\top, \qquad {}^{F}\mathbf{t}_{T} = (0,\ 0,\ 118.823)^\top
 $$
+
+The flange origin is the centre of the contact face on the FR3 flange (a centring cylinder of the adapter reaches into the arm). ${}^{F}\mathbf{t}_{C}$ points to the centre of the lowest face of the camera housing; the lens lies 5 mm higher, and the projection centre higher still (Section 2.8). ${}^{F}\mathbf{t}_{T}$ points to the centre of the gripper bottom plate, which rests on the table during the grasp. CAD components below 0.2 mm are set to zero. With the gripper resting on the table, the housing is 61.6 mm above the table. Previous mount (08.10.): $(0,\ 44.4,\ 60.223)^\top$ and $(0,\ 0,\ 113.823)^\top$.
 
 With the gripper pointing down and the camera in front of the flange, the camera axes map to the base axes as $x_B = -y_C$, $y_B = -x_C$, $z_B = -z_C$.
 
@@ -259,7 +261,7 @@ The error vectors show no systematic pattern (no radial or one-sided trend), so 
 
 **Calibration check with the printed crosses.** The crosses of the reference image have exact sheet positions and need no manual placement. Fitting 19 of them (intensity-weighted centroids): homography residual 0.06 mm RMS, so intrinsics and distortion model are consistent over the field of view; similarity residual 0.50 mm RMS (max 1.0 mm), i.e. about 0.5 mm of the nut error comes from a slight tilt of the stand camera against the sheet.
 
-**Effective distance.** The fit gives $d = 419.4$ mm from the projection centre to the sheet, whereas the ruler gave 410 mm from the lowest point of the lens. The nut fit is consistent with this ($d = 415.8$ mm to the nut centres, i.e. about 4 mm below the top face of the 8 mm nut). The projection centre therefore lies about 9 mm above the lowest point of the lens, or the focal length is about 2 % off; both have the same effect on the target. The CAD offset of the camera (CLAUDE.md, $\Delta z = 60.223$ mm) refers to the lowest point of the lens, so $d$ from forward kinematics would be about 9 mm too small, an error of 2 % of the lateral distance from the optical axis (2 mm at 100 mm, Section 4). It is calibrated at the robot with one image of the grid sheet from the observation pose (fitted $d$ against $d$ from forward kinematics) and stored as a constant offset.
+**Effective distance.** The fit gives $d = 419.4$ mm from the projection centre to the sheet, whereas the ruler gave 410 mm from the lowest point of the camera housing. The nut fit is consistent with this ($d = 415.8$ mm to the nut centres, i.e. about 4 mm below the top face of the 8 mm nut). The projection centre therefore lies about 9 mm above the lowest point of the housing (about 4 mm above the lens, which sits 5 mm higher), or the focal length is about 2 % off; both have the same effect on the target. The CAD offset of the camera (Section 0, $\Delta z = 57.223$ mm) refers to the lowest point of the camera housing, the same point the ruler was placed on, so $d$ from forward kinematics would be about 9 mm too small, an error of 2 % of the lateral distance from the optical axis (2 mm at 100 mm, Section 4). It is calibrated at the robot with one image of the grid sheet from the observation pose (fitted $d$ against $d$ from forward kinematics) and stored as a constant offset.
 
 ---
 
@@ -314,7 +316,7 @@ $$
 
 - One pixel corresponds to $d/f$ millimetres on the object plane (e.g. $d = 300$ mm, $f = 1000$ px → 0.3 mm/px; actual $f$ after calibration).
 - Height and focal-length errors scale with the lateral distance $X$ from the optical axis. Objects near the image centre are therefore less sensitive, which is an argument for an observation pose above the middle of each work area.
-- The height error includes the position of the projection centre inside the camera, which is not the lowest point of the lens assumed by the CAD offset (about 9 mm higher on the bench, Section 2.8).
+- The height error includes the position of the projection centre inside the camera, which is not the lowest point of the camera housing assumed by the CAD offset (about 9 mm higher on the bench, Section 2.8).
 - Systematic errors (CAD offset ${}^{F}\mathbf{T}_{C}$, small camera tilt) appear as a constant offset and are removed by the verification measurement: place the object at a known position, drive to the computed target, measure the residual, store it as $\Delta\mathbf{p}$.
 
 ---
