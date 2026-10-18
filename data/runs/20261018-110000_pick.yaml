@@ -1,0 +1,9 @@
+step: pick
+robot: franka
+started: '2026-10-18T10:59:47.290868'
+result: 'failed: no nut found within 10.0 s (last status: nothing found (only specks))'
+duration_s: 13.26
+arrival_errors_mm:
+- - 0.35
+  - -0.04
+  - -2.51

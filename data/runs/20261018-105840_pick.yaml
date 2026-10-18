@@ -1,0 +1,32 @@
+step: pick
+robot: franka
+started: '2026-10-18T10:58:09.724491'
+nut:
+  target: nut
+  position_mm:
+  - 493.82747171045725
+  - -284.63850383039403
+  - 15.95999999999998
+  offset_from_axis_mm: 70.77295654744819
+  plane_distance_mm: 406.68614140131484
+  pixel_undistorted:
+  - 976.2781268815577
+  - 180.79702358944328
+tcp_target_mm:
+- 493.82747171045725
+- -284.63850383039403
+- 9.96
+landed_tcp_mm:
+- 494.14
+- -283.94
+- 20.77
+landed_above_table_mm: 8.81
+result: aborted by user
+duration_s: 30.6
+arrival_errors_mm:
+- - 4.33
+  - -1.75
+  - 2.25
+- - 3.73
+  - 3.13
+  - 10.74

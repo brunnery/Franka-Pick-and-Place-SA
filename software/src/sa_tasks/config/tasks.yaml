@@ -20,7 +20,9 @@ frames:
   flange_orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
   # Constant xy correction of the computed target (base frame), from the verification run:
   # nut at a known position -> drive there -> measure the residual. 0 until measured.
-  target_correction_mm: [0.0, 0.0]
+  # Verification 18.10. (4 runs, compare_runs; run 3 excluded: nut not in its outline):
+  # truth - computed = (-9.0, +8.2) mm mean, residual 2.5-4.5 mm; robot execution 0.2-0.7 mm.
+  target_correction_mm: [-9.0, 8.2]
 
 objects:
   nut:
