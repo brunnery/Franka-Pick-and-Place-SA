@@ -28,13 +28,15 @@ REQUIRED = ("observe_nut", "observe_stud")
 
 
 def describe(t_base_flange: np.ndarray, cfg: dict, poses: config.Poses, k) -> str:
-    rotation_down = config.rotation_down(cfg)
     p = t_base_flange[:3, 3]
+    r = t_base_flange[:3, :3]
     tcp = frames.tcp_position(t_base_flange, cfg["frames"]["flange_to_tcp_mm"])
+    # Where the CAD offset puts the camera, seen from above (check this on the robot!)
+    camera = r @ np.asarray(cfg["frames"]["flange_to_camera_housing_mm"], float)
     lines = [f"flange x {p[0]:7.1f}  y {p[1]:7.1f}  z {p[2]:7.1f} mm | "
-             f"tilt {frames.tilt_deg(t_base_flange[:3, :3]):4.1f} deg, "
-             f"{frames.rotation_angle_deg(t_base_flange[:3, :3], rotation_down):5.1f} deg "
-             f"from the commanded orientation"]
+             f"tilt {frames.tilt_deg(r):4.1f} deg, yaw (flange x axis) {frames.yaw_deg(r):6.1f} deg",
+             f"per CAD the camera is {camera[0]:+.0f} mm in x and {camera[1]:+.0f} mm in y "
+             f"(base frame) from the flange centre (+x = away from the base, +y = left)"]
     if poses.table_z_mm is not None:
         camera = t_base_flange @ config.camera_in_flange(cfg)
         d = frames.distance_along_axis(camera, poses.table_z_mm)

@@ -52,7 +52,11 @@ robot:
   arrival_tolerance_mm: 3.0    # position error that counts as arrived
   arrival_timeout_s: 10.0      # after the end of the path
   arrival_settle_s: 0.5        # error must stay below the tolerance this long
-  max_taught_tilt_deg: 5.0     # taught poses more tilted than this are refused
+  max_taught_tilt_deg: 10.0    # taught poses more tilted than this are refused (they are
+                               # levelled anyway; the check catches gross teaching errors)
+  # Orientation of all motions: the yaw of this taught pose with the tool exactly down, so
+  # the wrist is never turned away from how it was taught. "" = frames.flange_rotation_down.
+  orientation_from: observe_nut
   # Both observation poses use the z of this taught pose ("" = each its own taught z)
   observation_height_from: observe_nut
   state_timeout_s: 5.0         # no robot state within this time -> abort

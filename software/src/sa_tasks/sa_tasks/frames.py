@@ -74,6 +74,21 @@ def rotation_angle_deg(r0: np.ndarray, r1: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))))
 
 
+def level(r_base_flange: np.ndarray) -> np.ndarray:
+    """Same yaw, tool axis exactly down: x_F projected onto the horizontal plane, z_F = -z_B."""
+    x = np.array([r_base_flange[0, 0], r_base_flange[1, 0], 0.0])
+    if np.linalg.norm(x) < 1e-6:
+        raise ValueError("flange x axis is vertical, yaw undefined")
+    x /= np.linalg.norm(x)
+    z = np.array([0.0, 0.0, -1.0])
+    return np.stack([x, np.cross(z, x), z], axis=1)
+
+
+def yaw_deg(r_base_flange: np.ndarray) -> float:
+    """Direction of the flange x axis in the base xy plane (0 = +x_B, 90 = +y_B)."""
+    return float(np.degrees(np.arctan2(r_base_flange[1, 0], r_base_flange[0, 0])))
+
+
 def tilt_deg(r_base_flange: np.ndarray) -> float:
     """Angle between the tool axis z_F and the downward vertical."""
     return float(np.degrees(np.arccos(np.clip(-r_base_flange[2, 2], -1.0, 1.0))))
