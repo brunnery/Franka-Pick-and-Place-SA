@@ -38,7 +38,7 @@ vision:
   timeout_s: 10.0              # no settled detection within this time -> abort
   # Reject detections whose target lies farther from the camera axis than this (outside the
   # work area or at the image border, where perspective errors grow; THEORY 4)
-  max_offset_from_axis_mm: 70.0
+  max_offset_from_axis_mm: 125.0  # image half-width at d = 416 mm: about 128 mm (y), 70 mm (x)
 
 robot:
   backend: franka              # franka | mock (dry run without robot, vision still real)

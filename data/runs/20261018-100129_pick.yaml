@@ -1,0 +1,5 @@
+step: pick
+robot: franka
+started: '2026-10-18T10:00:58.876982'
+result: 'failed: goal not reached within 15.0 s (error 3.6 mm)'
+duration_s: 30.55

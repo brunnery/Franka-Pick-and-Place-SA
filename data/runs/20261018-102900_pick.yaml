@@ -1,0 +1,6 @@
+step: pick
+robot: franka
+started: '2026-10-18T10:28:55.197618'
+result: 'failed: nobody listens on /cartesian_impedance_controller/reference_pose:
+  is the impedance controller running (sa_robot)?'
+duration_s: 5.02
