@@ -9,6 +9,9 @@ from sa_tasks.interfaces import MockGripper, MockRobot, MockVision
 from sa_vision import geometry
 
 CFG = config.load_tasks()
+# The tests check the geometry; the measured correction of tasks.yaml would shift every
+# expected position (test_target_correction_is_added covers it separately)
+CFG["frames"]["target_correction_mm"] = [0.0, 0.0]
 R_DOWN = config.rotation_down(CFG)
 T_FT = CFG["frames"]["flange_to_tcp_mm"]
 K = geometry.camera_matrix([2077.16, 0.0, 695.44, 0.0, 2083.73, 405.57, 0.0, 0.0, 1.0])
