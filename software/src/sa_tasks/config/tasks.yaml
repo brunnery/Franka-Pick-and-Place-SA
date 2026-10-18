@@ -1,0 +1,81 @@
+# Parameters of the pick (step 1) and place/screw (step 2) sequences. Lengths in mm,
+# times in s unless the name says otherwise. Taught poses live in poses.yaml.
+# Theory: docs/THEORY.md, Sections 0, 3 and 5.
+
+frames:
+  # CAD of the new mount (16.10.2026), flange frame: flange contact face -> lowest point of
+  # the camera housing, and -> centre of the gripper bottom plate (TCP).
+  flange_to_camera_housing_mm: [0.0, 44.4, 57.223]
+  flange_to_tcp_mm: [0.0, 0.0, 118.823]
+  # The projection centre lies above the lowest point of the housing (bench 16.10.: about
+  # 9 mm, THEORY 2.8). Calibrate at the robot with the grid sheet from the observation pose.
+  projection_centre_above_housing_mm: 9.0
+  # Flange orientation for every motion: gripper down, camera in front (+x_base).
+  # Rows of R_base_flange; columns are the flange axes: x_F = +y_B, y_F = +x_B, z_F = -z_B.
+  flange_rotation_down: [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]
+  # Constant xy correction of the computed target (base frame), from the verification run:
+  # nut at a known position -> drive there -> measure the residual. 0 until measured.
+  target_correction_mm: [0.0, 0.0]
+
+objects:
+  nut:
+    height_mm: 8.0             # M8 locknut; top face for the size filter of the detection
+    centre_height_mm: 4.0      # height of the silhouette centroid (bench fit: ~mid-height)
+  stud:
+    base_height_mm: 20.0       # top face of the square base: plane of the detected centre
+    top_height_mm: 39.0        # tip of the thread above the table
+
+vision:
+  node: /vision_node
+  detection_topic: /vision/detection
+  camera_info_topic: /camera_info
+  settle_s: 1.0                # wait after arrival before frames count (robot rings down)
+  timeout_s: 10.0              # no settled detection within this time -> abort
+  # Reject detections whose target lies farther from the camera axis than this (outside the
+  # work area or at the image border, where perspective errors grow; THEORY 4)
+  max_offset_from_axis_mm: 70.0
+
+robot:
+  backend: franka              # franka | mock (dry run without robot, vision still real)
+  reference_topic: /cartesian_impedance_controller/reference_pose
+  mode_topic: /cartesian_impedance_controller/control_mode
+  state_topic: /franka_robot_state_broadcaster/robot_state
+  modes:                       # control_mode values of cartesian_impedance_controller
+    normal: 0                  # modes.normal_stiffness
+    float: 2                   # modes.float_stiffness (compliant in all axes)
+  stream_rate_hz: 100.0        # reference poses per second while moving
+  motion:
+    max_speed_mm_s: 80.0       # peak speed of every axis group
+    max_angular_speed_deg_s: 30.0
+    lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
+    min_duration_s: 1.0
+  arrival_tolerance_mm: 3.0    # position error that counts as arrived
+  arrival_timeout_s: 10.0      # after the end of the path
+  arrival_settle_s: 0.5        # error must stay below the tolerance this long
+  max_taught_tilt_deg: 5.0     # taught poses more tilted than this are refused
+  state_timeout_s: 5.0         # no robot state within this time -> abort
+
+pick:
+  # TCP target below the table, so the bottom plate rests flat with a small preload
+  # (normal z stiffness 1500 N/m -> 3 N at 2 mm)
+  press_depth_mm: 2.0
+  close_iris: true             # close the iris on the nut before moving back up
+
+place:
+  approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
+  descend_speed_mm_s: 5.0      # contact search
+  max_descend_mm: 12.0         # below the approach pose; no contact by then -> abort
+  contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
+  screw:
+    direction: 1               # M1 direction that tightens (+1 / -1), check on the hardware
+    duration_ms: 8000          # time-based, no sensor (CLAUDE.md)
+    speed: 200                 # motor shield speed 0-255
+    follow_depth_mm: 10.0      # reference this far below the contact pose while screwing
+                               # (float stiffness: the arm follows the thread compliantly)
+
+gripper:
+  backend: mock                # mock (log only) until the serial bridge exists
+  open: {duration_ms: 1500, speed: 200}
+  close: {duration_ms: 1500, speed: 200, hold_speed: 120}
+
+log_dir: data/runs             # one YAML record per run, relative to the repository root

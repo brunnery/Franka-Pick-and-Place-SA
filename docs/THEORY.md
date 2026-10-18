@@ -2,7 +2,7 @@
 
 > Living document. Every formula, model or principle that the code relies on and that belongs in the report is written down here, in report-ready English, with symbols defined once.
 > Status per section: **used** (in the code), **planned** (decided, not implemented yet), **dropped** (kept for the discussion chapter).
-> Last update: 16.10.2026 (new gripper/camera mount, Section 0)
+> Last update: 18.10.2026 (base-frame target and motion, Sections 3 and 5; stud detection, 2.6c)
 
 ---
 
@@ -90,7 +90,7 @@ Consequences for the method:
 
 ---
 
-## 2. Object detection – **used** (nut, `sa_vision/detection.py`; stud: planned)
+## 2. Object detection – **used** (nut and stud, `sa_vision/detection.py`)
 
 Goal: the centre $(u, v)$ of the nut (pick) and of the stud base (place), from a single observation pose, on a white background, without painting the parts (in the BA they were painted matt black). The nut detection does not assume a nut size; it measures it.
 
@@ -210,6 +210,9 @@ The ratio is therefore not a usable size-independent constant. It is only checke
 
 **Result on the 27 test images** (hand labels: 23 images with an M8 nut, 5 of them with an additional large nut, 4 empty images; $d = 340$ mm assumed for all, background estimated, no reference image): with target M8, 20 of 23 M8 nuts found and no false detection; without a target, 25 of 28 nuts accepted as candidates and no false candidate (the 5 images with two nuts are then correctly invalid). Missed: a nut in an overexposed corner, a nut at the image border whose true distance (≈ 270 mm) lies outside the size window at the assumed 340 mm, and a nut seen obliquely with its side faces ($s/e$ = 0.77). **These thresholds were chosen on the same images**, so the rates are optimistic; a fair rate needs a second, independent image set from the observation pose at the robot.
 
+### 2.6c Stud detection – **used, not yet validated on images** (`detect_stud`)
+The stud is fixed in its area and seen from directly above (observation pose over it). The same pre-processing (2.1–2.2a) yields silhouettes; the stud is the one whose width $s$ matches the 10 mm square base ($\pm 20\,\%$, $d$ to the top face of the base) and whose width ratio is that of a square, $s/e \in [0.62, 0.80]$ around $1/\sqrt2 = 0.707$; a nut ($s/e \ge 0.82$) never passes. The threaded rod (8 mm) lies inside the square and does not change the hull when the camera is above the stud. Seen off-axis, the tip of the rod (19 mm higher) is displaced outwards by $X h / d$, which is why the stud observation pose is taught directly above it. Exactly one candidate must pass. Each observation pose has its own reference image (`reference_image`, `reference_image_stud`), because the empty nut area and the stud area look different.
+
 ### 2.6b Source of the distance $d$ – **used** (`d_source` in `vision.yaml`)
 The metric quantities need the distance $d$ from the camera to the nut top face.
 - **`yaml`**: $d$ is a known value, `object_plane_distance_mm`; at the robot it will come from forward kinematics (Section 3). The size $\hat s = s_\text{px} d / f$ is then *measured*.
@@ -265,7 +268,7 @@ The error vectors show no systematic pattern (no radial or one-sided trend), so 
 
 ---
 
-## 3. From pixel to robot target – **used** (camera frame, `sa_vision/geometry.py`); base frame and tool target: planned
+## 3. From pixel to robot target – **used** (`sa_vision/geometry.py`, `sa_tasks/frames.py`, `sa_tasks/sequences.py`)
 
 ### 3.1 Back-projection as ray–plane intersection
 After undistortion, the pixel defines a viewing ray in the camera frame:
@@ -289,6 +292,10 @@ $$
 
 This is valid for any camera orientation, as long as the ray is not parallel to the plane and $\lambda^* > 0$ (plane in front of the camera).
 
+**Frames in the implementation.** The robot state gives the pose of the libfranka end-effector frame $\{E\}$ (configured in Desk) and the flange–end-effector transform: ${}^{B}\mathbf{T}_{F} = {}^{B}\mathbf{T}_{E}\,({}^{F}\mathbf{T}_{E})^{-1}$. The controller is commanded in $\{E\}$ as well, ${}^{B}\mathbf{T}_{E}^{d} = {}^{B}\mathbf{T}_{F}^{d}\,{}^{F}\mathbf{T}_{E}$, so the task code works in the flange frame and does not depend on the end-effector setting in Desk. ${}^{F}\mathbf{T}_{C}$ has the rotation $\operatorname{diag}(-1, -1, 1)$ (Section 0) and the translation ${}^{F}\mathbf{t}_{C} - (0, 0, \Delta_c)^\top$, where $\Delta_c = 9$ mm is the height of the projection centre above the lowest point of the housing (Section 2.8; to be calibrated at the robot).
+
+**Object planes.** The plane must be the height of the point whose image is the detected centre. For the nut this is the centroid of the silhouette, which lies at about half the nut height (bench fit, Section 2.8): $z_\text{obj} = z_\text{table} + 4$ mm. For the stud it is the top face of the square base, $z_\text{table} + 20$ mm. The distance used by the size filter of the detection is computed separately for the face whose size is checked (nut top face, base top face): $d = (o_z - z_\text{face}) / (-\mathbf{R}_{:,3})_z$.
+
 ### 3.2 Special case: camera looking straight down
 If the optical axis is vertical, $\lambda^* = d$ and the result reduces to the familiar pinhole relation
 
@@ -296,10 +303,18 @@ $$
 X_C = \frac{(u - c_x)\, d}{f_x}, \qquad Y_C = \frac{(v - c_y)\, d}{f_y}
 $$
 
-The vision node currently publishes this point $(X_C, Y_C, d)$ in the camera frame, with $d$ taken from the configuration (observation height). The transformation into $\{B\}$ with Section 3.1 follows once the forward kinematics are available.
+The vision node publishes this point $(X_C, Y_C, d)$ in the camera frame for debugging; the task code uses the general intersection of 3.1 with the measured pose, so a small tilt of the camera is handled.
 
 ### 3.3 Tool target
-The commanded TCP position is $\mathbf{p}_\text{obj}$ in $x, y$; $z$ is set per phase (approach height, contact). The orientation is fixed (gripper down, camera towards $+x_B$). A constant correction $\Delta\mathbf{p}$ from the verification measurement (Section 4) is added in $x, y$.
+The commanded TCP position is $\mathbf{p}_\text{obj}$ in $x, y$ plus a constant correction $\Delta\mathbf{p}$ from the verification measurement (Section 4); $z$ is set per phase. The orientation is fixed, ${}^{B}\mathbf{R}_{F} = [\,\mathbf{e}_y\ \ \mathbf{e}_x\ \ {-\mathbf{e}_z}\,]$ (gripper down, camera towards $+x_B$). The flange target that puts the TCP at $\mathbf{p}_T$ is
+
+$$
+{}^{B}\mathbf{t}_{F} = \mathbf{p}_T - {}^{B}\mathbf{R}_{F}\,{}^{F}\mathbf{t}_{T}
+$$
+
+- **Pick (step 1):** $\mathbf{p}_T = (x_\text{nut}, y_\text{nut}, z_\text{table} - \delta_p)$ with a press depth $\delta_p = 2$ mm, so the bottom plate rests flat on the table with a small preload ($k_z \delta_p = 1500\ \text{N/m} \cdot 2\ \text{mm} = 3$ N) and the iris, centred on the TCP axis, surrounds the nut.
+- **Place (step 2):** the nut sits in the iris with its bottom face in the TCP plane. Approach: $\mathbf{p}_T = (x_\text{stud}, y_\text{stud}, z_\text{table} + 39\ \text{mm} + 5\ \text{mm})$, i.e. 5 mm above the tip of the thread; then a vertical contact search (Section 5).
+- **Plausibility:** a target farther than 70 mm from the camera axis (measured on the object plane) is rejected as outside the work area, before the robot moves.
 
 ### 3.4 Comparison with the BA approach
 The BA used image-based visual servoing in its simplest form: a proportional law on the normalised pixel error, $\Delta\mathbf{x} = K_p\, \mathbf{e}_\text{px}$, iterated until $\|\mathbf{e}_\text{px}\|$ fell below a threshold. This needs no calibration but converges slowly and oscillated in one of eight runs. The direct (position-based) method needs $\mathbf{K}$, ${}^{F}\mathbf{T}_{C}$ and $z_\text{obj}$, but reaches the target with a single motion.
@@ -318,6 +333,22 @@ $$
 - Height and focal-length errors scale with the lateral distance $X$ from the optical axis. Objects near the image centre are therefore less sensitive, which is an argument for an observation pose above the middle of each work area.
 - The height error includes the position of the projection centre inside the camera, which is not the lowest point of the camera housing assumed by the CAD offset (about 9 mm higher on the bench, Section 2.8).
 - Systematic errors (CAD offset ${}^{F}\mathbf{T}_{C}$, small camera tilt) appear as a constant offset and are removed by the verification measurement: place the object at a known position, drive to the computed target, measure the residual, store it as $\Delta\mathbf{p}$.
+
+---
+
+## 5. Motion – **used** (`sa_tasks/trajectory.py`, `sa_tasks/sequences.py`)
+
+The Cartesian impedance controller tracks a reference pose; the task code streams the reference at 100 Hz (the controller additionally low-pass filters it and limits its speed). Every move is **one continuous minimum-jerk motion** from the measured pose to the goal,
+
+$$
+\sigma(s) = 10 s^3 - 15 s^4 + 6 s^5, \qquad s \in [0, 1],
+$$
+
+which starts and ends with zero velocity and acceleration (peak speed $1.875\times$ the mean speed). To arrive vertically over the nut without sweeping the gripper over it, the horizontal and vertical components use different time scales: going down, $x, y$ follow $\sigma(t / \lambda T)$ and $z$ follows $\sigma(t / T)$ with $\lambda = 0.6$, so the horizontal motion is finished at $0.6\,T$ and the rest of the descent is vertical (from an observation height of 350 mm, the last $\approx 55$ mm). Going up, $z$ leads instead, so the gripper leaves the table vertically. The orientation is interpolated by spherical linear interpolation with $\sigma(t/T)$. The duration $T$ is the smallest value for which no axis group exceeds the peak speed (80 mm/s, 30 °/s in the first tests).
+
+- **Arrival:** the goal is reached when the flange position error stays below 3 mm for 0.5 s (plus the press depth for the pick, where the table stops the arm before the reference).
+- **Contact search (step 2):** from the approach pose the reference moves straight down at 5 mm/s; contact is declared when the estimated external force along $z_B$ differs by more than 4 N from its median before the descent (the difference removes the bias of an unmodelled tool mass). The reference is then set to the measured pose.
+- **Screwing (step 2):** the controller switches to its compliant preset (low stiffness in all axes), the reference is set 10 mm below the contact pose, and the gripper rotates the nut for a fixed time. The low stiffness lets the arm follow the thread down and centre itself on the stud, with a small downward preload. Before switching back to the stiff preset the reference is reset to the measured pose, so the arm does not jump.
 
 ---
 

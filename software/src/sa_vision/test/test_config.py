@@ -61,3 +61,22 @@ def test_vision_node_declares_every_detection_parameter():
                  and any(getattr(t, "id", "") == "DETECTION_PARAMETERS" for t in node.targets))
     declared = {key.value for key in table.keys}
     assert declared == {field.name for field in dataclasses.fields(NutParams)}
+
+
+def test_vision_node_declares_every_stud_parameter():
+    import ast
+    import dataclasses
+    from pathlib import Path
+
+    import yaml
+
+    from sa_vision.detection import StudParams
+    source = Path(__file__).resolve().parents[1] / "sa_vision" / "vision_node.py"
+    tree = ast.parse(source.read_text())
+    table = next(node.value for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                 and any(getattr(t, "id", "") == "STUD_PARAMETERS" for t in node.targets))
+    fields = {field.name for field in dataclasses.fields(StudParams)}
+    assert {key.value for key in table.keys} == fields
+    config = Path(__file__).resolve().parents[1] / "config" / "vision.yaml"
+    stud = yaml.safe_load(config.read_text())["vision_node"]["ros__parameters"]["stud"]
+    assert set(stud) == fields

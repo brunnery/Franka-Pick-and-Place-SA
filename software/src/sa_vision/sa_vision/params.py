@@ -11,6 +11,9 @@ from sa_vision.detection import NutParams
 D_SOURCE_YAML = "yaml"
 D_SOURCE_FROM_SIZE = "from_size"
 D_SOURCES = (D_SOURCE_YAML, D_SOURCE_FROM_SIZE)
+TARGET_NUT = "nut"
+TARGET_STUD = "stud"
+TARGETS = (TARGET_NUT, TARGET_STUD)
 
 
 @dataclass(frozen=True)

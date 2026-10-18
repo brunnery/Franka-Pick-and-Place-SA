@@ -67,6 +67,16 @@ class NutParams:
     max_centre_offset_ratio: float   # |core centre - silhouette centre| / s_px
 
 
+@dataclass(frozen=True)
+class StudParams:
+    """Stud (threaded rod on a square base) seen from above (config/vision.yaml, "stud")."""
+
+    base_side_mm: float              # side of the square base
+    size_tolerance: float            # accepted side: base_side_mm * (1 +- tol)
+    min_width_ratio: float           # s/e of the silhouette: square 0.707
+    max_width_ratio: float           # below the hexagon (0.866), so a nut is never a stud
+
+
 @dataclass
 class Candidate:
     """One silhouette and the result of the filters (for debugging)."""
@@ -193,7 +203,8 @@ def failure_reason(detection: NutDetection) -> str:
     if detection.num_accepted > 1:
         return f"{detection.num_accepted} candidates"
     if not detection.candidates:
-        return "nothing in view" if detection.status == "no nut found" else detection.status
+        return ("nothing in view" if detection.status in ("no nut found", "no stud found")
+                else detection.status)
     best = max(detection.candidates,
                key=lambda c: (FILTER_ORDER.index(c.rejected), c.area_px))
     text = REJECTION_TEXT[best.rejected]
@@ -407,37 +418,29 @@ def _evaluate(contour: np.ndarray, ratio: np.ndarray, offset: Tuple[int, int],
     return candidate
 
 
-def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
-               params: NutParams, background: Optional[np.ndarray] = None,
-               distance_range_mm: Optional[Tuple[float, float]] = None) -> NutDetection:
-    """Find exactly one nut in the ROI.
+@dataclass
+class Foreground:
+    """Result of the shared pre-processing: I/B, foreground mask and outer point sets."""
 
-    focal_px: focal length in pixels, distance_mm: camera -> nut top face.
-    background: image of the empty work area from the same pose and exposure
-    (method A'); None uses the local median of the image alone (A).
-    distance_range_mm: (d_min, d_max) estimates d from the size instead
-    (d = f * target / s_px, hand-held tests); distance_mm is then ignored. The nut
-    size is assumed in this mode, and the size filter only checks that d lies in
-    the range.
-    The detection is valid only if exactly one silhouette passes all filters.
+    ratio: np.ndarray
+    mask: np.ndarray
+    contours: List[np.ndarray]       # full-image pixel coordinates
+    background: str
+    reference_brightness: float
+
+
+def foreground(image: np.ndarray, params: NutParams, size_range_px: Tuple[float, float],
+               background: Optional[np.ndarray], roi: Tuple[int, int, int, int]) -> Foreground:
+    """Greyscale, blur, reference division (if it matches), local median, segmentation.
+
+    size_range_px: accepted object widths in px; the largest sets the median window
+    and the edge grouping distance.
     """
-    if background is not None and background.shape[:2] != image.shape[:2]:
-        raise ValueError(f"reference image {background.shape[:2]} does not match the "
-                         f"camera image {image.shape[:2]}")
-    from_size = distance_range_mm is not None
-    if from_size and params.target_across_flats_mm <= 0.0:
-        raise ValueError("estimating d from the size needs target_across_flats_mm > 0")
-
-    roi = clip_roi(params.roi, image.shape)
-    x, y, w, h = roi
     if params.segmentation not in SEGMENTATIONS:
         raise ValueError(f"segmentation must be one of {SEGMENTATIONS}, "
                          f"not '{params.segmentation}'")
+    x, y, w, h = roi
     mode = BACKGROUND_ESTIMATED if background is None else BACKGROUND_REFERENCE
-    if w == 0 or h == 0:
-        return NutDetection(False, "empty roi", background=mode, roi=roi)
-
-    size_range_px = accepted_size_range_px(params, focal_px, distance_mm, distance_range_mm)
     gray = _blur(to_gray(image)[y:y + h, x:x + w], params)
     reference_brightness = math.nan
     if background is not None:
@@ -452,7 +455,7 @@ def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
             gray = np.clip(divided * REFERENCE_GREY, 0, 255).astype(np.uint8)
         else:
             mode = BACKGROUND_MISMATCH
-    # Local median at a scale near the nut size: also absorbs most of its soft shadow
+    # Local median at a scale near the object size: also absorbs most of its soft shadow
     window_px = params.background_window_ratio * size_range_px[1]
     table = estimate_background(gray, window_px, params.background_downscale)
     ratio = ratio_image(gray, table)
@@ -464,6 +467,44 @@ def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
         mask = segment(ratio, params)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE,
                                        offset=(x, y))
+    return Foreground(ratio, mask, list(contours), mode, reference_brightness)
+
+
+def _check_inputs(image: np.ndarray, background: Optional[np.ndarray]) -> None:
+    if background is not None and background.shape[:2] != image.shape[:2]:
+        raise ValueError(f"reference image {background.shape[:2]} does not match the "
+                         f"camera image {image.shape[:2]}")
+
+
+def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
+               params: NutParams, background: Optional[np.ndarray] = None,
+               distance_range_mm: Optional[Tuple[float, float]] = None) -> NutDetection:
+    """Find exactly one nut in the ROI.
+
+    focal_px: focal length in pixels, distance_mm: camera -> nut top face.
+    background: image of the empty work area from the same pose and exposure
+    (method A'); None uses the local median of the image alone (A).
+    distance_range_mm: (d_min, d_max) estimates d from the size instead
+    (d = f * target / s_px, hand-held tests); distance_mm is then ignored. The nut
+    size is assumed in this mode, and the size filter only checks that d lies in
+    the range.
+    The detection is valid only if exactly one silhouette passes all filters.
+    """
+    _check_inputs(image, background)
+    from_size = distance_range_mm is not None
+    if from_size and params.target_across_flats_mm <= 0.0:
+        raise ValueError("estimating d from the size needs target_across_flats_mm > 0")
+
+    roi = clip_roi(params.roi, image.shape)
+    x, y, w, h = roi
+    if w == 0 or h == 0:
+        mode = BACKGROUND_ESTIMATED if background is None else BACKGROUND_REFERENCE
+        return NutDetection(False, "empty roi", background=mode, roi=roi)
+
+    size_range_px = accepted_size_range_px(params, focal_px, distance_mm, distance_range_mm)
+    fg = foreground(image, params, size_range_px, background, roi)
+    mode, reference_brightness = fg.background, fg.reference_brightness
+    ratio, mask, contours = fg.ratio, fg.mask, fg.contours
     candidate_distance = None if from_size else distance_mm
     candidates = [_evaluate(c, ratio, (x, y), focal_px, candidate_distance, size_range_px,
                             params) for c in contours]
@@ -496,6 +537,66 @@ def detect_nut(image: np.ndarray, focal_px: float, distance_mm: Optional[float],
     detection.distance_mm = best.distance_mm
     detection.area_px = best.area_px
     detection.hole_area_px = best.hole_area_px
+    detection.width_ratio = best.width_ratio
+    detection.compactness = best.compactness
+    return detection
+
+
+def _evaluate_stud(contour: np.ndarray, focal_px: float, distance_mm: float,
+                   size_range_px: Tuple[float, float], stud: StudParams) -> Candidate:
+    hull = cv2.convexHull(contour)
+    area = cv2.contourArea(hull)
+    s_px, e_px = caliper_widths(hull)
+    centre = contour_centre(hull)
+    candidate = Candidate(hull, None, centre, area, 0.0, s_px, e_px, distance_mm,
+                          px_to_mm(s_px, focal_px, distance_mm), compactness(hull),
+                          math.nan, "", "")
+    if not size_range_px[0] <= s_px <= size_range_px[1]:
+        candidate.rejected = "size"
+    elif not stud.min_width_ratio <= candidate.width_ratio <= stud.max_width_ratio:
+        candidate.rejected = "width ratio"
+    elif centre is None:
+        candidate.rejected = "degenerate"
+    return candidate
+
+
+def detect_stud(image: np.ndarray, focal_px: float, distance_mm: float, params: NutParams,
+                stud: StudParams, background: Optional[np.ndarray] = None) -> NutDetection:
+    """Find exactly one stud (square base with the threaded rod in its middle) in the ROI.
+
+    Same pre-processing as detect_nut (params: segmentation, reference, ROI). The
+    silhouette is the square base: side s = base_side_mm, s/e = 1/sqrt(2); the rod
+    lies inside it. distance_mm: camera -> top face of the base. Centre = centroid of
+    the silhouette, i.e. the stud axis when the camera looks down on it.
+    """
+    _check_inputs(image, background)
+    roi = clip_roi(params.roi, image.shape)
+    x, y, w, h = roi
+    if w == 0 or h == 0:
+        mode = BACKGROUND_ESTIMATED if background is None else BACKGROUND_REFERENCE
+        return NutDetection(False, "empty roi", background=mode, roi=roi)
+    side_px = mm_to_px(stud.base_side_mm, focal_px, distance_mm)
+    size_range_px = (side_px * (1.0 - stud.size_tolerance),
+                     side_px * (1.0 + stud.size_tolerance))
+    fg = foreground(image, params, size_range_px, background, roi)
+    candidates = [_evaluate_stud(c, focal_px, distance_mm, size_range_px, stud)
+                  for c in fg.contours]
+    detection = NutDetection(False, "", background=fg.background,
+                             reference_brightness=fg.reference_brightness, roi=roi,
+                             candidates=candidates, mask=fg.mask, ratio=fg.ratio,
+                             distance_mm=distance_mm)
+    accepted = [c for c in candidates if c.accepted]
+    if len(accepted) != 1:
+        detection.status = ("no stud found" if not accepted
+                            else f"{len(accepted)} studs found")
+        return detection
+    best = accepted[0]
+    detection.valid = True
+    detection.status = "ok"
+    detection.u, detection.v = best.centre
+    detection.across_flats_mm = best.across_flats_mm
+    detection.across_flats_px = best.across_flats_px
+    detection.area_px = best.area_px
     detection.width_ratio = best.width_ratio
     detection.compactness = best.compactness
     return detection

@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 import pytest
 
-from sa_vision.detection import (NutParams, caliper_widths, classify_size, clip_roi,
-                                 compactness, detect_nut, estimate_background, failure_reason,
-                                 hexagon_area, mm_to_px)
+from sa_vision.detection import (NutParams, StudParams, caliper_widths, classify_size,
+                                 clip_roi, compactness, detect_nut, detect_stud,
+                                 estimate_background, failure_reason, hexagon_area, mm_to_px)
 
 FOCAL_PX = 2080.0
 DISTANCE_MM = 340.0
@@ -254,6 +254,48 @@ def test_square_stud_base_is_rejected_by_width_ratio():
     assert not result.valid
     assert [c.rejected for c in result.candidates] == ["width ratio"]
     assert result.candidates[0].width_ratio == pytest.approx(1 / math.sqrt(2.0), abs=0.03)
+
+
+STUD = StudParams(base_side_mm=10.0, size_tolerance=0.2, min_width_ratio=0.62,
+                  max_width_ratio=0.8)
+
+
+def draw_stud(image, centre, angle_deg=0.0):
+    """Dark square base 10 x 10 mm, bright rod end (8 mm) in its middle, seen from above."""
+    side = 10.0 * SCALE
+    a = math.radians(angle_deg)
+    corners = [(centre[0] + side / 2 * (cx * math.cos(a) - cy * math.sin(a)),
+                centre[1] + side / 2 * (cx * math.sin(a) + cy * math.cos(a)))
+               for cx, cy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    fill(image, corners, 60)
+    draw_circle(image, centre, 8.0 * SCALE, 170)
+
+
+@pytest.mark.parametrize("segmentation", ["threshold", "edges"])
+@pytest.mark.parametrize("centre, angle", [((640.0, 360.0), 0.0), ((420.5, 250.25), 30.0)])
+def test_stud_centre(segmentation, centre, angle):
+    image = table()
+    draw_stud(image, centre, angle)
+    result = detect_stud(image, FOCAL_PX, DISTANCE_MM, with_params(segmentation=segmentation),
+                         STUD)
+    assert result.valid, result.status
+    assert (result.u, result.v) == pytest.approx(centre, abs=1.0)
+    assert result.width_ratio == pytest.approx(1 / math.sqrt(2.0), abs=0.05)
+
+
+def test_nut_is_not_a_stud_and_stud_is_not_a_nut():
+    image = table()
+    draw_stud(image, (400.0, 360.0))
+    draw_nut(image, (900.0, 360.0))
+    stud = detect_stud(image, FOCAL_PX, DISTANCE_MM, PARAMS, STUD)
+    nut = detect_nut(image, FOCAL_PX, DISTANCE_MM, PARAMS)
+    assert stud.valid and stud.u == pytest.approx(400.0, abs=1.0)
+    assert nut.valid and nut.u == pytest.approx(900.0, abs=1.0)
+
+
+def test_empty_table_has_no_stud():
+    result = detect_stud(table(), FOCAL_PX, DISTANCE_MM, PARAMS, STUD)
+    assert not result.valid and failure_reason(result) == "nothing in view"
 
 
 def test_round_washer_is_rejected_by_width_ratio():

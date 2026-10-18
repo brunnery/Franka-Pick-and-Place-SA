@@ -73,23 +73,22 @@ Arbeitsbereiche für Mutter (**Area N**) und Schraube (**Area S**) sind fest. Zu
 | A1 | Iris öffnen, zur Beobachtungspose N fahren | HIGH | Pose erreicht |
 | A2 | Bild aufnehmen (n Frames mitteln), Mutter detektieren | – | Detektion gültig, sonst Retry/Abbruch |
 | A3 | Pixel → Punkt im Basis-Frame (§5.1), Ziel = Gripper-Mitte über Mutter | – | – |
-| A4 | Anfahrpose über Mutter (z.B. +30 mm) | HIGH | Pose erreicht |
-| A5 | Absenken bis Gripper-Unterseite auf Tisch | LOW | Fz < Schwelle **oder** z-Ziel erreicht |
-| A6 | Iris schliessen (t_close), danach Halten (Motoren laufen weiter) | LOW | Zeit |
-| A7 | Anheben | HIGH | Pose erreicht |
+| A4 | **Eine durchgehende Bewegung** von der Beobachtungspose bis Gripper-Unterseite flach auf dem Tisch (TCP 2 mm unter Tischhöhe), xy zuerst fertig, letzter Teil senkrecht (THEORY §5) | HIGH (normal) | Pose erreicht (Toleranz + 2 mm) |
+| A5 | Iris schliessen (t_close), danach Halten (Motoren laufen weiter) | – | Zeit |
+| A6 | Zurück zur Beobachtungspose (z zuerst) | HIGH | Pose erreicht |
 
 ### Phase B – Place & Screw
 | # | Schritt | Steifigkeit | Abbruch/Übergang |
 |---|---|---|---|
 | B1 | Beobachtungspose S | HIGH | Pose erreicht |
 | B2 | Schraube detektieren, Pixel → Basis | – | Detektion gültig |
-| B3 | Anfahrpose: Mutter koaxial über Gewindespitze (+10 mm) | HIGH | Pose erreicht |
-| B4 | Absenken in −z mit leichtem xy-Wiggle bis Mutter aufsitzt | LOW | Fz < Schwelle |
+| B3 | Eine Bewegung zur Anfahrpose: Mutter koaxial 5 mm über Gewindespitze | HIGH | Pose erreicht |
+| B4 | Senkrecht absenken (5 mm/s) bis Mutter aufsitzt (Wiggle erst, wenn nötig) | HIGH | \|ΔFz\| > 4 N, sonst Abbruch nach 12 mm |
 | B5 | Optional: kurz rückwärts drehen (Gewindeanfang finden) | LOW | Zeit |
-| B6 | M1 vorwärts drehen, Roboter folgt in −z (niedrige z-Steifigkeit, Soll leicht unter Ist) | LOW | Zeit t_screw |
-| B7 | Iris öffnen, wegfahren | HIGH | – |
+| B6 | M1 vorwärts drehen, Roboter folgt in −z (Modus float, Soll 10 mm unter Kontakt) | LOW | Zeit t_screw |
+| B7 | Iris öffnen, Soll = Ist, Modus normal, zurück zur Beobachtungspose S | HIGH | – |
 
-Pick und Place sind **einzeln startbar** (zum Testen), plus ein kombinierter Ablauf.
+Pick (Schritt 1, `ros2 run sa_tasks pick`) und Place & Screw (Schritt 2, `ros2 run sa_tasks place_screw`) sind **getrennt startbar**; ein kombinierter Ablauf kommt mit dem Bringup-Launch. Beobachtungsposen und Tischhöhe werden mit `teach_poses` am Roboter aufgenommen (`sa_tasks/config/poses.yaml`).
 
 ---
 
@@ -285,6 +284,9 @@ Antwort:
 | 16.10. | Kanten **nach Nähe gruppieren** (`edge_group_ratio` 0.1, Hülle nur der Kantenpixel) statt Schliessen + Füllen; **Referenzbild nur bei passender Beleuchtung** (Median I/R in [0.8, 1.25], sonst ignoriert + Warnung) | Live-Test mit anderem Licht (Lampe aus/anders, harter Schatten): Referenz passte nicht (Median 0.45), Umriss der Mutter offen → 0 Treffer. Gruppierung: Bench weiter 26/26 + 11/11, Handbilder 18/27 statt 12/27. Mutter neben ihrem harten Schatten bleibt unsichtbar → **diffuses Licht von oben ist Voraussetzung**, Lampenposition gehört zur Beobachtungspose |
 | 16.10. | **Neue Gripper-/Kamerahalterung (CAD 16.10.):** `T_flange_cam` = (0, 44.4, 57.223) mm (vorher 60.223), `T_flange_tcp` = (0, 0, 118.823) mm (vorher 113.823). Bezugspunkt Kamera = unterster Punkt des Gehäuses (Linse 5 mm höher), Flansch = Auflagefläche (Zentrierzylinder ragt in den Arm). Kamera-Orientierung unverändert → Achsen-Mapping F27/F28 und `camera_to_robot_xy` bleiben. Fusion-Baugruppe jetzt in Basis-Achsen (Kamera bei +x), Messung als Delta Flansch → Punkt. CAD-Werte < 0.2 mm = 0 (CLAUDE.md vereinheitlicht). STEP + STL in `cad/export/`. 3D-Viewer (`visualization/`) nachgeführt: neues Gripper-Mesh, `GRIP_LEN` = 118.823 mm (vorher 156.3, alter Entwurf), IK erreicht alle Wegpunkte | Kamera 3 mm höher, Gripper 5 mm länger → Kamera bei aufliegendem Gripper 61.6 mm über Tisch (vorher 53.6). Gleicher Bezugspunkt wie das Lineal am Bench → Befund „Projektionszentrum ≈ 9 mm darüber“ bleibt gültig, Kalibrierung am Roboter wie geplant. Kontrolle im Mesh: Kameragehäuse unten bei z = −57.22, Bodenplatte bei −118.82 |
 | 16.10. | **BA wird ignoriert:** keine Werte, Frames, Parameter oder Methoden aus der BA übernehmen, alles aus der aktuellen Hardware und diesem Repo ableiten. BA-Zahlen nur noch als Vergleich im Bericht. Frühere Einträge mit „aus BA übernommen“ (z.B. Achsen-Mapping F27, Kontaktschwelle −4 N in §5.3) gelten nur, soweit sie am neuen Aufbau bestätigt sind | Entscheid Yannick (16.10.): aus der BA ist praktisch nichts verwendbar |
+| 18.10. | **`sa_tasks`** (Schritt 1 `pick`, Schritt 2 `place_screw`, `teach_poses`): Ziel im Basis-Frame per Strahl-Ebene-Schnitt mit gemessener Flansch-Pose (`F_T_EE` aus dem Robot-State → unabhängig von der EE-Einstellung in Desk), Referenz an `/cartesian_impedance_controller/reference_pose` mit 100 Hz gestreamt. Beobachtungsposen + Tischhöhe werden geteacht (Arm von Hand führen, `robot_state.launch.py` ohne Controller), Orientierung immer fix nach unten (geteachte nur geprüft, max 5° Neigung). Gripper vorerst Mock (kein Serial-Bridge) | Vorgabe Yannick: feste Positionen anfahren, dort suchen, in einem Zug runter, zurück; Code in zwei Schritte getrennt |
+| 18.10. | **Eine Bewegung nach unten** statt Anfahrpose + Absenken: Minimum-Jerk, xy fertig bei 60 % der Zeit, Rest senkrecht (umgekehrt beim Hochfahren). TCP-Ziel 2 mm unter dem Tisch (≈ 3 N Vorspannung bei k_z = 1500 N/m), damit die Bodenplatte flach aufliegt | Vorgabe „in einem Zug“; senkrechtes Ende verhindert, dass der Gripper über die Mutter streift (THEORY §5) |
+| 18.10. | **Stiftschraube per Vision** (`detect_stud`: Quadrat 10 mm, s/e ≈ 0.71) statt geteachter Position, `vision_node`-Parameter `target` (nut/stud) wird von `sa_tasks` gesetzt; eigenes Referenzbild pro Beobachtungspose (`reference_image_stud`). **Noch nicht an echten Bildern getestet** (keine Bilder der stehenden Schraube) | Vorgabe Yannick (Zentrieren über der Schraube per Vision). Objektebenen: Mutter-Schwerpunkt 4 mm, Schraubenbasis 20 mm über Tisch |
 | 14.10. | Detektion nur gültig bei **genau einem** Kandidaten; Mittelpunkt = Loch-Schwerpunkt; Zusatzfilter Konzentrizität Loch/Aussen | lieber Retry als falsche Mutter greifen |
 | 07.10. | Keine Orientierungsbestimmung der Mutter | Iris zentriert selbst (F14) |
 | 07.10. | Mutter über inneres Loch detektieren, ROI = bekannte Area | keine Lackierung mehr, robustes Merkmal |

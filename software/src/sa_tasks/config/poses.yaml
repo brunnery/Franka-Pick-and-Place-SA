@@ -1,0 +1,8 @@
+# Taught poses, written by `ros2 run sa_tasks teach_poses`. Do not edit by hand unless you
+# know the values: flange pose in the base frame, position in mm, quaternion (x, y, z, w).
+# Observation poses are commanded with the fixed downward orientation of tasks.yaml;
+# the taught orientation is only checked (tilt).
+table_z_mm: null          # z of the table top in the base frame (gripper resting on it)
+poses:
+  observe_nut: null       # camera above the middle of the nut area (step 1)
+  observe_stud: null      # camera above the stud (step 2)

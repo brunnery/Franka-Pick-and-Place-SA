@@ -19,8 +19,8 @@ from sensor_msgs.msg import CameraInfo, Image
 from sa_interfaces.msg import Detection
 from sa_vision import geometry
 from sa_vision.debug_draw import draw_debug, draw_steps
-from sa_vision.detection import BACKGROUND_MISMATCH, NutParams, detect_nut
-from sa_vision.params import distance_range, nut_params
+from sa_vision.detection import BACKGROUND_MISMATCH, NutParams, StudParams, detect_nut, detect_stud
+from sa_vision.params import TARGET_NUT, TARGET_STUD, TARGETS, distance_range, nut_params
 from sa_vision.temporal import CentreMedian
 
 MM_TO_M = 1e-3
@@ -53,6 +53,12 @@ DETECTION_PARAMETERS = {
     "max_hole_ratio": Parameter.Type.DOUBLE,
     "max_centre_offset_ratio": Parameter.Type.DOUBLE,
 }
+STUD_PARAMETERS = {
+    "base_side_mm": Parameter.Type.DOUBLE,
+    "size_tolerance": Parameter.Type.DOUBLE,
+    "min_width_ratio": Parameter.Type.DOUBLE,
+    "max_width_ratio": Parameter.Type.DOUBLE,
+}
 
 
 class VisionNode(Node):
@@ -67,10 +73,20 @@ class VisionNode(Node):
         self.declare_parameter("centre_median_frames", Parameter.Type.INTEGER)
         self.declare_parameter("centre_reset_jump_ratio", Parameter.Type.DOUBLE)
         self.declare_parameter("reference_image", Parameter.Type.STRING)
+        self.declare_parameter("reference_image_stud", Parameter.Type.STRING)
+        # "nut" or "stud"; sa_tasks switches it (and object_plane_distance_mm) at run time
+        self.declare_parameter("target", Parameter.Type.STRING)
         for name, kind in DETECTION_PARAMETERS.items():
             self.declare_parameter(f"nut.{name}", kind)
+        for name, kind in STUD_PARAMETERS.items():
+            self.declare_parameter(f"stud.{name}", kind)
+        self.target = None  # target of the frames in the median window
 
-        self.background = self.load_reference(self.get_parameter("reference_image").value)
+        # One reference per observation pose: the nut area and the stud look different
+        self.backgrounds = {
+            TARGET_NUT: self.load_reference(self.get_parameter("reference_image").value),
+            TARGET_STUD: self.load_reference(self.get_parameter("reference_image_stud").value),
+        }
         self.bridge = CvBridge()
         self.distance_range()  # an unknown d_source fails at start, not per frame
         if self.get_parameter("debug_view").value not in DEBUG_VIEWS:
@@ -114,6 +130,10 @@ class VisionNode(Node):
                 FPS_SMOOTHING * rate + (1.0 - FPS_SMOOTHING) * self.fps)
         self.last_frame_time = now
 
+    def stud_params(self) -> StudParams:
+        return StudParams(**{name: self.get_parameter(f"stud.{name}").value
+                             for name in STUD_PARAMETERS})
+
     def nut_params(self) -> NutParams:
         return nut_params({name: self.get_parameter(f"nut.{name}").value
                            for name in DETECTION_PARAMETERS})
@@ -132,8 +152,18 @@ class VisionNode(Node):
         focal_px = 0.5 * (self.k[0, 0] + self.k[1, 1])
         image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         params = self.nut_params()
-        result = detect_nut(image, focal_px, distance_mm, params, self.background,
-                            self.distance_range())
+        target = self.get_parameter("target").value
+        if target not in TARGETS:
+            raise ValueError(f"target must be one of {TARGETS}, not '{target}'")
+        if target != self.target:  # never mix frames of two targets in the median
+            self.centre_filter.clear()
+            self.target = target
+        if target == TARGET_STUD:
+            result = detect_stud(image, focal_px, distance_mm, params, self.stud_params(),
+                                 self.backgrounds[target])
+        else:
+            result = detect_nut(image, focal_px, distance_mm, params, self.backgrounds[target],
+                                self.distance_range())
         if result.background == BACKGROUND_MISMATCH:
             self.get_logger().warn(
                 f"Reference image ignored: live / reference brightness "
