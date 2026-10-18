@@ -92,6 +92,7 @@ class FrankaRobot:
         self.reference_pub = node.create_publisher(Pose, robot["reference_topic"], 10)
         self.mode_pub = node.create_publisher(Int16, robot["mode_topic"], 10)
         self.timeout = robot["state_timeout_s"]
+        self.arrivals: List[list] = []  # remaining error [x, y, z] mm of every arrival
 
     def check_controller(self) -> None:
         deadline = time.monotonic() + self.timeout
@@ -158,6 +159,7 @@ class FrankaRobot:
                 still_since = still_since or now
                 if now - still_since >= settle:
                     log.info("arrived, remaining error x %+.1f y %+.1f z %+.1f mm", *error)
+                    self.arrivals.append([round(float(e), 2) for e in error])
                     return
             else:
                 still_since = None

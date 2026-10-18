@@ -59,6 +59,9 @@ def run(step: str) -> None:
     parser.add_argument("--poses", type=Path, default=config.DEFAULT_POSES)
     parser.add_argument("--robot", choices=ROBOT_BACKENDS, help="override robot.backend")
     parser.add_argument("--yes", action="store_true", help="start without confirmation")
+    if step == "pick":
+        parser.add_argument("--locate-only", action="store_true",
+                            help="observation pose + detection only, no descent")
     args, ros_args = parser.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     log = logging.getLogger("sa_tasks")
@@ -76,6 +79,7 @@ def run(step: str) -> None:
     spinner.start()
     started = time.monotonic()
     record = {"step": step, "robot": backend, "started": datetime.now().isoformat()}
+    robot = None
     try:
         robot = make_robot(node, cfg, backend, poses, start_pose)
         gripper = make_gripper(cfg)
@@ -89,8 +93,11 @@ def run(step: str) -> None:
             input(f"Step '{step}': the robot will move. Check first: after the controller "
                   "activation the camera faces away from the robot base (+x). "
                   "Enter = start, Ctrl-C = abort ")
-        sequence = sequences.pick if step == "pick" else sequences.place_and_screw
-        record.update(sequence(robot, gripper, vision, cfg, poses))
+        if step == "pick":
+            record.update(sequences.pick(robot, gripper, vision, cfg, poses,
+                                         locate_only=args.locate_only))
+        else:
+            record.update(sequences.place_and_screw(robot, gripper, vision, cfg, poses))
         record["result"] = "ok"
         log.info("done in %.1f s", time.monotonic() - started)
     except KeyboardInterrupt:
@@ -101,6 +108,8 @@ def run(step: str) -> None:
         log.error("%s", error)
     finally:
         record["duration_s"] = round(time.monotonic() - started, 2)
+        if robot is not None and getattr(robot, "arrivals", None):
+            record["arrival_errors_mm"] = robot.arrivals
         log.info("record: %s", write_record(cfg, record))
         # Stop the spinning thread before the context goes, else rclcpp aborts
         executor.shutdown()

@@ -77,9 +77,12 @@ def locate(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,
 
 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
-         poses: config.Poses) -> dict:
+         poses: config.Poses, locate_only: bool = False) -> dict:
     """Step 1: observation pose -> detect the nut -> one move down until the gripper rests
-    flat on the table with the iris centred over the nut -> close -> back up."""
+    flat on the table with the iris centred over the nut -> close -> back up.
+
+    locate_only: stop after the detection (verification of the target computation:
+    compare the printed nut position with the hand-measured one)."""
     table_z = poses.table_z()
     nut = cfg["objects"]["nut"]
     rotation = config.rotation_down(cfg)
@@ -91,6 +94,10 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     move_to(robot, observe, cfg)
     found = locate(robot, vision, cfg, table_z, TARGET_NUT, nut["height_mm"],
                    nut["centre_height_mm"])
+    if locate_only:
+        log.info("Step 1 (locate only): nut at x %.1f y %.1f mm, no descent",
+                 *found["position_mm"][:2])
+        return {"step": "pick", "locate_only": True, "nut": found}
 
     press = cfg["pick"]["press_depth_mm"]
     tcp = [found["position_mm"][0], found["position_mm"][1], table_z - press]

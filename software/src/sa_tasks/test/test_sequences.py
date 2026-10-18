@@ -57,6 +57,15 @@ def test_pick_puts_the_tcp_over_the_nut_flat_on_the_table():
     assert robot.pose == pytest.approx(OBSERVE_NUT)  # back at the start pose
 
 
+def test_locate_only_does_not_descend():
+    robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
+    u, v = pixel_of(NUT, CFG["objects"]["nut"]["centre_height_mm"], OBSERVE_NUT)
+    result = sequences.pick(robot, MockGripper(), MockVision(u, v, K), CFG, FakePoses(),
+                            locate_only=True)
+    assert result["nut"]["position_mm"][:2] == pytest.approx(NUT, abs=1e-6)
+    assert min(t[2, 3] for t in robot.history) == pytest.approx(OBSERVE_NUT[2, 3])
+
+
 def test_pick_tells_vision_the_distance_to_the_nut_top_face():
     _, _, vision, _ = run_pick()
     camera_z = OBSERVE_NUT[2, 3] - 57.223 + CFG["frames"]["projection_centre_above_housing_mm"]
