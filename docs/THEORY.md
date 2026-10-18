@@ -2,7 +2,7 @@
 
 > Living document. Every formula, model or principle that the code relies on and that belongs in the report is written down here, in report-ready English, with symbols defined once.
 > Status per section: **used** (in the code), **planned** (decided, not implemented yet), **dropped** (kept for the discussion chapter).
-> Last update: 18.10.2026 (base-frame target and motion, Sections 3 and 5; stud detection, 2.6c)
+> Last update: 18.10.2026 (gripper clocking and fixed orientation corrected, Section 0; base-frame target and motion, Sections 3 and 5; stud detection, 2.6c)
 
 ---
 
@@ -11,7 +11,7 @@
 | Symbol | Meaning |
 |---|---|
 | $\{B\}$ | robot base frame (FR3 `fr3_link0`) |
-| $\{F\}$ | flange frame (`fr3_link8`) |
+| $\{F\}$ | flange frame: origin at the centre of the flange contact face, **axes of the Franka hand frame**, i.e. `fr3_link8` turned by −45° about $z$ (the robot's end-effector frame with the Franka Hand set in Desk). **Not** the axes of `fr3_link8`. |
 | $\{C\}$ | camera frame, OpenCV convention: $x_C$ right in the image, $y_C$ down in the image, $z_C$ along the optical axis into the scene |
 | $\{T\}$ | tool frame (TCP): centre of the gripper bottom plate |
 | ${}^{A}\mathbf{T}_{B} \in SE(3)$ | homogeneous transform that maps coordinates in $\{B\}$ to $\{A\}$ |
@@ -22,10 +22,14 @@
 Fixed transforms (CAD of the new mount, 16.10.2026, mm, in the flange frame $\{F\}$ with $z_F$ pointing along the tool):
 
 $$
-{}^{F}\mathbf{t}_{C} = (0,\ 44.4,\ 57.223)^\top, \qquad {}^{F}\mathbf{t}_{T} = (0,\ 0,\ 118.823)^\top
+{}^{F}\mathbf{t}_{C} = (44.4,\ 0,\ 57.223)^\top, \qquad {}^{F}\mathbf{t}_{T} = (0,\ 0,\ 118.823)^\top
 $$
 
-The flange origin is the centre of the contact face on the FR3 flange (a centring cylinder of the adapter reaches into the arm). ${}^{F}\mathbf{t}_{C}$ points to the centre of the lowest face of the camera housing; the lens lies 5 mm higher, and the projection centre higher still (Section 2.8). ${}^{F}\mathbf{t}_{T}$ points to the centre of the gripper bottom plate, which rests on the table during the grasp. CAD components below 0.2 mm are set to zero. With the gripper resting on the table, the housing is 61.6 mm above the table. Previous mount (08.10.): $(0,\ 44.4,\ 60.223)^\top$ and $(0,\ 0,\ 113.823)^\top$.
+The flange origin is the centre of the contact face on the FR3 flange (a centring cylinder of the adapter reaches into the arm). ${}^{F}\mathbf{t}_{C}$ points to the centre of the lowest face of the camera housing; the lens lies 5 mm higher, and the projection centre higher still (Section 2.8). ${}^{F}\mathbf{t}_{T}$ points to the centre of the gripper bottom plate, which rests on the table during the grasp. CAD components below 0.2 mm are set to zero. With the gripper resting on the table, the housing is 61.6 mm above the table. Previous mount (08.10., written in other axes): $\Delta z = 60.223$ mm and $(0,\ 0,\ 113.823)^\top$.
+
+The camera lies on $+x_F$. Expressed in the axes of `fr3_link8` the same camera vector is $(31.4,\ -31.4,\ 57.223)^\top$; reading ${}^{F}\mathbf{t}_{C}$ in `fr3_link8` axes puts the camera 45° off. The camera axes in $\{F\}$ are $x_C = +y_F$, $y_C = -x_F$, $z_C = +z_F$, i.e. ${}^{F}\mathbf{R}_{C} = \mathbf{R}_z(+90°)$.
+
+**Commanded orientation, the only one used:** the end-effector quaternion $(x, y, z, w) = (1,\ 0,\ 0,\ 0)$, which is also the controller start pose ($q_7 = 0.80$ rad). The tool points down and $x_F = +x_B$, $y_F = -y_B$, $z_F = -z_B$; `fr3_link8` has a yaw of −45°. In this pose the camera lies in front of the flange, ${}^{B}\mathbf{R}_{F}\,{}^{F}\mathbf{t}_{C} = (44.4,\ 0,\ -57.223)^\top$. No pose of the task turns the tool about its axis, so the pixel-to-base mapping below is constant and no adjustment is needed at the start of a run.
 
 With the gripper pointing down and the camera in front of the flange, the camera axes map to the base axes as $x_B = -y_C$, $y_B = -x_C$, $z_B = -z_C$.
 

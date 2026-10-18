@@ -92,7 +92,7 @@
         enabled: true
         position: [0.5, 0.0, 0.5]  # [m], base frame, Franka EE frame (hand TCP, 0.1034 m below the flange)
         use_orientation: true      # false: keep the orientation at activation
-        orientation_xyzw: [1.0, 0.0, 0.0, 0.0]  # pointing down (as in all runs so far)
+        orientation_xyzw: [1.0, 0.0, 0.0, 0.0]  # pointing down, camera at +x_robo: the only orientation used (CLAUDE.md)
         max_velocity: 0.1          # peak speed [m/s] (max 0.5)
         max_angular_velocity: 0.3  # peak [rad/s]
       modes:                       # stiffness presets set by the /cartesian_impedance_controller/control_mode topic
