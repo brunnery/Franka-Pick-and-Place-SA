@@ -26,9 +26,10 @@ frames:
   # nut at a known position -> drive there -> measure the residual. 0 until measured.
   # Verification 18.10. (4 runs, compare_runs; run 3 excluded: nut not in its outline):
   # truth - computed = (-9.0, +8.2) mm mean, residual 2.5-4.5 mm; robot execution 0.2-0.7 mm.
-  # Test 18.10.: is the correction still needed with the intermediate stop? Set to 0; the
-  # measured value to restore is [-9.0, 8.2].
-  target_correction_mm: [0.0, 0.0]
+  # Test 18.10. with the intermediate stop and correction 0: 1 of 2 hits -> correction still
+  # needed (gripper visibly not straight). Next: measure the mount tilt (teach 'flat',
+  # use_gripper_tilt) and try to replace this constant with it.
+  target_correction_mm: [-9.0, 8.2]
 
 objects:
   nut:
