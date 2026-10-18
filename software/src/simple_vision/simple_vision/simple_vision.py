@@ -103,27 +103,48 @@ def find_object(image: np.ndarray, p: dict) -> tuple:
     return fit_hexagon(cv2.convexHull(largest), p["angle_step_deg"]), mask, "ok"
 
 
-def draw(image: np.ndarray, hexagon: Optional[Hexagon], mask: np.ndarray, status: str,
-         principal_point: tuple, info: tuple = ()) -> np.ndarray:
-    """Overlay; info = extra text lines (bottom left)."""
+AXIS_PX = 70        # length of the frame arrows in the overlay
+FRAME_MARGIN_PX = 40
+FONT, FONT_SCALE = cv2.FONT_HERSHEY_SIMPLEX, 1.0
+
+
+def _axes(out: np.ndarray, origin: tuple, axes: tuple, colour: tuple) -> None:
+    """Two labelled arrows from origin; axes = ((label, (du, dv)), ...) in unit pixels."""
+    for label, (du, dv) in axes:
+        tip = (int(origin[0] + AXIS_PX * du), int(origin[1] + AXIS_PX * dv))
+        cv2.arrowedLine(out, origin, tip, colour, 2, tipLength=0.2)
+        # Labels point away from the arrow, and inwards near the right image border
+        right = origin[0] > out.shape[1] / 2
+        dx = 8 if du > 0 else -45 if du < 0 or right else 8
+        cv2.putText(out, label, (tip[0] + dx, tip[1] + (25 if dv > 0 else -8)), FONT, 0.7,
+                    colour, 2)
+
+
+def draw(image: np.ndarray, hexagon: Optional[Hexagon], principal_point: tuple,
+         offset_mm: Optional[tuple], distance_mm: float) -> np.ndarray:
+    """Minimal overlay: camera frame (top left), robot frame (bottom right), image centre,
+    hexagon, and as text only the offset in robot axes and the distance d."""
     out = image.copy()
-    for i, line in enumerate(reversed(info)):
-        cv2.putText(out, line, (20, out.shape[0] - 20 - 40 * i), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
-                    OVERLAY_YELLOW, 2)
-    out[mask > 0] = (0.6 * out[mask > 0] + 0.4 * np.array(OVERLAY_YELLOW)).astype(np.uint8)
+    height, width = out.shape[:2]
+    m = FRAME_MARGIN_PX
+    _axes(out, (m, m), (("x_C", (1, 0)), ("y_C", (0, 1))), OVERLAY_YELLOW)
+    # Robot axes in the image: x_robo = -y_cam (up), y_robo = -x_cam (left)
+    _axes(out, (width - m, height - m), (("x_R", (0, -1)), ("y_R", (-1, 0))), OVERLAY_GREEN)
     pp = tuple(int(round(c)) for c in principal_point)
     cv2.drawMarker(out, pp, OVERLAY_YELLOW, cv2.MARKER_CROSS, 40, 2)
-    if hexagon is None:
-        cv2.putText(out, status, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, OVERLAY_RED, 2)
-        return out
-    corners = np.round(hexagon.corners()).astype(np.int32)
-    centre = tuple(int(round(c)) for c in hexagon.centre)
-    cv2.polylines(out, [corners], True, OVERLAY_GREEN, 2)
-    cv2.drawMarker(out, centre, OVERLAY_GREEN, cv2.MARKER_CROSS, 20, 2)
-    cv2.line(out, pp, centre, OVERLAY_GREEN, 1)
-    cv2.putText(out, f"u {hexagon.centre[0]:.1f} v {hexagon.centre[1]:.1f}  "
-                f"s {hexagon.across_flats_px:.0f} px", (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
-                1.0, OVERLAY_GREEN, 2)
+    lines = []
+    if hexagon is not None:
+        centre = tuple(int(round(c)) for c in hexagon.centre)
+        cv2.polylines(out, [np.round(hexagon.corners()).astype(np.int32)], True, OVERLAY_GREEN, 2)
+        cv2.drawMarker(out, centre, OVERLAY_GREEN, cv2.MARKER_CROSS, 20, 2)
+        cv2.line(out, pp, centre, OVERLAY_GREEN, 1)
+    if offset_mm is not None:
+        lines.append(f"x {offset_mm[0]:+.1f}  y {offset_mm[1]:+.1f} mm")
+    lines.append(f"z = {distance_mm:.0f} mm")
+    for i, line in enumerate(lines):
+        size = cv2.getTextSize(line, FONT, FONT_SCALE, 2)[0]
+        cv2.putText(out, line, (width - m - size[0], m + 10 + 40 * i), FONT, FONT_SCALE,
+                    OVERLAY_GREEN if offset_mm is not None else OVERLAY_RED, 2)
     return out
 
 
@@ -169,7 +190,7 @@ class SimpleVisionNode(Node):
         out.width_ratio = out.compactness = nan
         d_mm = self.get_parameter("object_plane_distance_mm").value
         out.plane_distance = d_mm * MM_TO_M
-        info = [f"z: d = {d_mm:.0f} mm (camera -> object plane, set by sa_tasks)"]
+        offset = None
         if hexagon is not None:
             out.u, out.v = hexagon.centre
             und = cv2.undistortPoints(np.array([[hexagon.centre]], float), self.k, self.dist,
@@ -178,16 +199,15 @@ class SimpleVisionNode(Node):
             ray = np.linalg.solve(self.k, [und[0], und[1], 1.0]) * d_mm * MM_TO_M
             out.point_camera.x, out.point_camera.y, out.point_camera.z = ray.tolist()
             out.across_flats_mm = hexagon.across_flats_px * d_mm / self.k[0, 0]
-            # Robot axes: x_robo = -y_cam, y_robo = -x_cam (CLAUDE.md)
-            info.append(f"offset from image centre: x_robo {-ray[1] / MM_TO_M:+.1f} mm, "
-                        f"y_robo {-ray[0] / MM_TO_M:+.1f} mm")
+            # Offset of the object from the image centre in robot axes:
+            # x_robo = -y_cam, y_robo = -x_cam (CLAUDE.md)
+            offset = (-ray[1] / MM_TO_M, -ray[0] / MM_TO_M)
             out.width_ratio = hexagon.regularity
             out.num_candidates = 1
         self.pub.publish(out)
         if self.get_parameter("publish_debug").value:
             debug = self.bridge.cv2_to_imgmsg(
-                draw(image, hexagon, mask, status, (self.k[0, 2], self.k[1, 2]), tuple(info)),
-                "bgr8")
+                draw(image, hexagon, (self.k[0, 2], self.k[1, 2]), offset, d_mm), "bgr8")
             debug.header = msg.header
             self.debug_pub.publish(debug)
 
