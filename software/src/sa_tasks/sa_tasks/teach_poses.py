@@ -31,12 +31,8 @@ def describe(t_base_flange: np.ndarray, cfg: dict, poses: config.Poses, k) -> st
     p = t_base_flange[:3, 3]
     r = t_base_flange[:3, :3]
     tcp = frames.tcp_position(t_base_flange, cfg["frames"]["flange_to_tcp_mm"])
-    # Where the CAD offset puts the camera, seen from above (check this on the robot!)
-    camera = r @ np.asarray(cfg["frames"]["flange_to_camera_housing_mm"], float)
-    lines = [f"flange x {p[0]:7.1f}  y {p[1]:7.1f}  z {p[2]:7.1f} mm | "
-             f"tilt {frames.tilt_deg(r):4.1f} deg, yaw (flange x axis) {frames.yaw_deg(r):6.1f} deg",
-             f"per CAD the camera is {camera[0]:+.0f} mm in x and {camera[1]:+.0f} mm in y "
-             f"(base frame) from the flange centre (+x = away from the base, +y = left)"]
+    lines = [f"flange x {p[0]:7.1f}  y {p[1]:7.1f}  z {p[2]:7.1f} mm | tilt {frames.tilt_deg(r):4.1f} "
+             f"deg (only the position is used; the orientation is always (1, 0, 0, 0))"]
     if poses.table_z_mm is not None:
         camera = t_base_flange @ config.camera_in_flange(cfg)
         d = frames.distance_along_axis(camera, poses.table_z_mm)
@@ -62,7 +58,7 @@ def main():
 
     rclpy.init(args=ros_args)
     node = rclpy.create_node("teach_poses")
-    state = RobotState(node, cfg["robot"]["state_topic"])
+    state = RobotState(node, cfg["robot"]["state_topic"], config.link8_to_flange(cfg))
     camera = {"k": None}
     node.create_subscription(
         CameraInfo, cfg["vision"]["camera_info_topic"],

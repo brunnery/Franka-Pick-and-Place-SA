@@ -25,18 +25,43 @@ def test_quaternion_round_trip():
         assert frames.matrix_to_quaternion(frames.quaternion_to_matrix(q)) == pytest.approx(q)
 
 
-def test_rotation_down_matches_the_documented_axes():
-    # x_F = +y_B, y_F = +x_B, z_F = -z_B (CLAUDE.md)
-    assert R_DOWN[:, 0] == pytest.approx([0, 1, 0])
-    assert R_DOWN[:, 1] == pytest.approx([1, 0, 0])
+def test_fixed_orientation_matches_the_documented_axes():
+    # quaternion (1, 0, 0, 0): x_F = +x_B, y_F = -y_B, z_F = -z_B (CLAUDE.md)
+    assert R_DOWN[:, 0] == pytest.approx([1, 0, 0])
+    assert R_DOWN[:, 1] == pytest.approx([0, -1, 0])
     assert R_DOWN[:, 2] == pytest.approx([0, 0, -1])
     assert frames.tilt_deg(R_DOWN) == pytest.approx(0.0)
+
+
+def test_flange_from_the_robot_state_with_the_franka_hand_set_in_desk():
+    # Franka Hand in Desk: L_T_EE = Rz(-45 deg), 103.4 mm along z. With the controller start
+    # pose O_T_EE = (1, 0, 0, 0), the flange {F} has the same axes and the camera is in front.
+    t_link8_ee = frames.pose(frames.rotation_z(-45.0), [0, 0, 103.4])
+    t_base_ee = frames.pose(R_DOWN, [500.0, 0.0, 400.0])
+    flange, t_flange_ee = frames.flange_from_state(t_base_ee, t_link8_ee, config.link8_to_flange(CFG))
+    assert frames.rotation_angle_deg(flange[:3, :3], R_DOWN) == pytest.approx(0.0, abs=1e-9)
+    assert flange[:3, 3] == pytest.approx([500.0, 0.0, 503.4])
+    assert t_flange_ee[:3, :3] == pytest.approx(np.eye(3))
+    camera = flange @ config.camera_in_flange(CFG)
+    assert camera[:2, 3] == pytest.approx([544.4, 0.0])
+    assert frames.end_effector_from_flange(flange, t_flange_ee) == pytest.approx(t_base_ee)
+
+
+def test_flange_from_the_robot_state_with_a_generic_device_set_in_desk():
+    # Any EE setting gives the same flange pose: the code does not depend on Desk
+    flange = frames.pose(R_DOWN, [480.0, 20.0, 450.0])
+    t_link8_flange = frames.pose(config.link8_to_flange(CFG), [0, 0, 0])
+    t_link8_ee = frames.pose(np.eye(3), [0, 0, 118.823])
+    t_base_ee = flange @ frames.invert(t_link8_flange) @ t_link8_ee
+    result, _ = frames.flange_from_state(t_base_ee, t_link8_ee, config.link8_to_flange(CFG))
+    assert result == pytest.approx(flange)
 
 
 def test_camera_sits_in_front_of_the_flange_and_looks_down():
     flange = frames.pose(R_DOWN, [500.0, 0.0, 400.0])
     camera = flange @ config.camera_in_flange(CFG)
     assert camera[0, 3] == pytest.approx(544.4)            # +x_base, 44.4 mm
+    assert camera[1, 3] == pytest.approx(0.0)
     assert camera[2, 3] == pytest.approx(400.0 - 57.223 + 9.0)
     assert camera[:3, 2] == pytest.approx([0, 0, -1])      # z_C down
 

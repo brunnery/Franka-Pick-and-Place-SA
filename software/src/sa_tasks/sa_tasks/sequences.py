@@ -31,17 +31,9 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
     robot.wait_until_arrived(goal, cfg["robot"]["arrival_tolerance_mm"] + extra_tolerance_mm)
 
 
-def commanded_rotation(cfg: dict, poses: config.Poses) -> np.ndarray:
-    """Flange orientation of every motion: the taught yaw of robot.orientation_from with
-    the tool axis exactly down, or the fixed frames.flange_rotation_down if that is ""."""
-    source = cfg["robot"]["orientation_from"]
-    if source:
-        return frames.level(poses.get(source)[:3, :3])
-    return config.rotation_down(cfg)
-
-
 def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
-    """Taught position with the fixed downward orientation; refuses a tilted teach.
+    """Taught position with the fixed orientation (quaternion (1, 0, 0, 0)); only the
+    taught position counts, a grossly tilted teach is refused.
 
     With robot.observation_height_from set, z is taken from that pose, so both
     observation poses share one height (same image scale for nut and stud).
@@ -54,7 +46,7 @@ def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
     height_from = cfg["robot"]["observation_height_from"]
     if height_from:
         position[2] = poses.get(height_from)[2, 3]
-    return frames.pose(commanded_rotation(cfg, poses), position)
+    return frames.pose(config.rotation_down(cfg), position)
 
 
 def locate(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,
@@ -90,7 +82,7 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     flat on the table with the iris centred over the nut -> close -> back up."""
     table_z = poses.table_z()
     nut = cfg["objects"]["nut"]
-    rotation = commanded_rotation(cfg, poses)
+    rotation = config.rotation_down(cfg)
     observe = observation_pose(poses, "observe_nut", cfg)
 
     robot.set_mode(cfg["robot"]["modes"]["normal"])
@@ -122,7 +114,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     place = cfg["place"]
     modes = cfg["robot"]["modes"]
     rate = cfg["robot"]["stream_rate_hz"]
-    rotation = commanded_rotation(cfg, poses)
+    rotation = config.rotation_down(cfg)
     observe = observation_pose(poses, "observe_stud", cfg)
 
     robot.set_mode(modes["normal"])

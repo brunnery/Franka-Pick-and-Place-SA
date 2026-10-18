@@ -19,7 +19,7 @@ from sa_interfaces.msg import Detection
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import Int16
 
-from sa_tasks import frames
+from sa_tasks import config, frames
 from sa_tasks.interfaces import Observation
 from sa_tasks.trajectory import Waypoint
 from sa_vision import geometry
@@ -48,7 +48,8 @@ def matrix_to_pose_msg(t: np.ndarray) -> Pose:
 class RobotState:
     """Latest robot state: end-effector pose, flange -> EE transform, external force."""
 
-    def __init__(self, node: Node, topic: str):
+    def __init__(self, node: Node, topic: str, r_link8_flange: np.ndarray):
+        self.r_link8_flange = r_link8_flange
         self._lock = threading.Lock()
         self._msg: Optional[FrankaRobotState] = None
         node.create_subscription(FrankaRobotState, topic, self._on_state, 10)
@@ -67,11 +68,11 @@ class RobotState:
         raise RuntimeError("no robot state received: is the franka bringup running?")
 
     def flange_and_ee(self, timeout_s: float):
-        """(T_B_F, T_F_E) in mm."""
+        """(T_B_F, T_F_E) in mm, F with the hand axes (libfranka's f_t_ee is fr3_link8)."""
         msg = self.wait(timeout_s)
-        t_base_ee = pose_msg_to_matrix(msg.o_t_ee.pose)
-        t_flange_ee = pose_msg_to_matrix(msg.f_t_ee.pose)
-        return frames.flange_from_end_effector(t_base_ee, t_flange_ee), t_flange_ee
+        return frames.flange_from_state(pose_msg_to_matrix(msg.o_t_ee.pose),
+                                        pose_msg_to_matrix(msg.f_t_ee.pose),
+                                        self.r_link8_flange)
 
     def force_z(self, timeout_s: float) -> float:
         return float(self.wait(timeout_s).o_f_ext_hat_k.wrench.force.z)
@@ -83,7 +84,7 @@ class FrankaRobot:
     def __init__(self, node: Node, cfg: dict):
         robot = cfg["robot"]
         self.cfg = robot
-        self.state = RobotState(node, robot["state_topic"])
+        self.state = RobotState(node, robot["state_topic"], config.link8_to_flange(cfg))
         self.reference_pub = node.create_publisher(Pose, robot["reference_topic"], 10)
         self.mode_pub = node.create_publisher(Int16, robot["mode_topic"], 10)
         self.timeout = robot["state_timeout_s"]

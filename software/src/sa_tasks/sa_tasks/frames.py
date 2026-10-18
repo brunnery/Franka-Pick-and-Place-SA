@@ -2,8 +2,11 @@
 
 docs/THEORY.md, Sections 0 and 3. All lengths in mm, poses as 4x4 homogeneous
 matrices T_a_b (pose of frame b in frame a). Frames:
-  B  robot base               F  FR3 flange (contact face of the adapter)
-  E  libfranka end effector   (set in Desk; F_T_EE comes with the robot state)
+  B  robot base
+  F  flange: origin at the centre of the flange contact face, axes of the Franka hand
+     / EE frame = fr3_link8 turned by -45 deg about z (CLAUDE.md, THEORY 0)
+  L  fr3_link8 (libfranka's "flange" frame; the robot state gives L_T_EE)
+  E  libfranka end effector   (set in Desk)
   C  camera projection centre (OpenCV axes)
   T  TCP = centre of the gripper bottom plate
 """
@@ -74,35 +77,30 @@ def rotation_angle_deg(r0: np.ndarray, r1: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))))
 
 
-def level(r_base_flange: np.ndarray) -> np.ndarray:
-    """Same yaw, tool axis exactly down: x_F projected onto the horizontal plane, z_F = -z_B."""
-    x = np.array([r_base_flange[0, 0], r_base_flange[1, 0], 0.0])
-    if np.linalg.norm(x) < 1e-6:
-        raise ValueError("flange x axis is vertical, yaw undefined")
-    x /= np.linalg.norm(x)
-    z = np.array([0.0, 0.0, -1.0])
-    return np.stack([x, np.cross(z, x), z], axis=1)
-
-
-def yaw_deg(r_base_flange: np.ndarray) -> float:
-    """Direction of the flange x axis in the base xy plane (0 = +x_B, 90 = +y_B)."""
-    return float(np.degrees(np.arctan2(r_base_flange[1, 0], r_base_flange[0, 0])))
-
-
 def tilt_deg(r_base_flange: np.ndarray) -> float:
     """Angle between the tool axis z_F and the downward vertical."""
     return float(np.degrees(np.arccos(np.clip(-r_base_flange[2, 2], -1.0, 1.0))))
 
 
-# Camera axes in the flange frame: x_C = -x_F, y_C = -y_F, z_C = z_F (CLAUDE.md, PLAN F28)
-R_FLANGE_CAMERA = np.diag([-1.0, -1.0, 1.0])
+def rotation_z(angle_deg: float) -> np.ndarray:
+    a = np.radians(angle_deg)
+    return np.array([[np.cos(a), -np.sin(a), 0.0], [np.sin(a), np.cos(a), 0.0], [0.0, 0.0, 1.0]])
 
 
-def flange_to_camera(flange_to_housing_mm: Sequence[float],
+def flange_to_camera(r_flange_camera: np.ndarray, flange_to_housing_mm: Sequence[float],
                      projection_centre_above_housing_mm: float) -> np.ndarray:
     """T_F_C: the projection centre lies above the lowest point of the housing (towards F)."""
     t = np.asarray(flange_to_housing_mm, float) - [0.0, 0.0, projection_centre_above_housing_mm]
-    return pose(R_FLANGE_CAMERA, t)
+    return pose(r_flange_camera, t)
+
+
+def flange_from_state(t_base_ee: np.ndarray, t_link8_ee: np.ndarray,
+                      r_link8_flange: np.ndarray) -> tuple:
+    """(T_B_F, T_F_E) from the robot state (O_T_EE, F_T_EE of libfranka, whose "F" is
+    fr3_link8). T_B_F = T_B_E (T_L_E)^-1 T_L_F with T_L_F a pure rotation (same origin)."""
+    t_link8_flange = pose(r_link8_flange, [0.0, 0.0, 0.0])
+    t_base_flange = t_base_ee @ invert(t_link8_ee) @ t_link8_flange
+    return t_base_flange, invert(t_link8_flange) @ t_link8_ee
 
 
 def flange_from_end_effector(t_base_ee: np.ndarray, t_flange_ee: np.ndarray) -> np.ndarray:

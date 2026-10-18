@@ -3,16 +3,21 @@
 # Theory: docs/THEORY.md, Sections 0, 3 and 5.
 
 frames:
-  # CAD of the new mount (16.10.2026), flange frame: flange contact face -> lowest point of
-  # the camera housing, and -> centre of the gripper bottom plate (TCP).
-  flange_to_camera_housing_mm: [0.0, 44.4, 57.223]
+  # Flange frame {F}: origin = centre of the flange contact face, axes = Franka hand / EE
+  # axes = fr3_link8 turned by -45 deg about z (CLAUDE.md, THEORY 0). Never fr3_link8 axes.
+  link8_to_flange_yaw_deg: -45.0
+  # CAD of the new mount (16.10.2026), in {F}: flange contact face -> lowest point of the
+  # camera housing, and -> centre of the gripper bottom plate (TCP).
+  flange_to_camera_housing_mm: [44.4, 0.0, 57.223]
+  # Camera axes in {F} (rows of R_F_C): x_C = +y_F, y_C = -x_F, z_C = +z_F, i.e. Rz(+90 deg)
+  camera_rotation_in_flange: [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
   flange_to_tcp_mm: [0.0, 0.0, 118.823]
   # The projection centre lies above the lowest point of the housing (bench 16.10.: about
   # 9 mm, THEORY 2.8). Calibrate at the robot with the grid sheet from the observation pose.
   projection_centre_above_housing_mm: 9.0
-  # Flange orientation for every motion: gripper down, camera in front (+x_base).
-  # Rows of R_base_flange; columns are the flange axes: x_F = +y_B, y_F = +x_B, z_F = -z_B.
-  flange_rotation_down: [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]
+  # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
+  # x_F = +x_B, y_F = -y_B, z_F = -z_B, camera in front (+x_B). Quaternion (x, y, z, w).
+  flange_orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
   # Constant xy correction of the computed target (base frame), from the verification run:
   # nut at a known position -> drive there -> measure the residual. 0 until measured.
   target_correction_mm: [0.0, 0.0]
@@ -52,11 +57,8 @@ robot:
   arrival_tolerance_mm: 3.0    # position error that counts as arrived
   arrival_timeout_s: 10.0      # after the end of the path
   arrival_settle_s: 0.5        # error must stay below the tolerance this long
-  max_taught_tilt_deg: 10.0    # taught poses more tilted than this are refused (they are
-                               # levelled anyway; the check catches gross teaching errors)
-  # Orientation of all motions: the yaw of this taught pose with the tool exactly down, so
-  # the wrist is never turned away from how it was taught. "" = frames.flange_rotation_down.
-  orientation_from: observe_nut
+  max_taught_tilt_deg: 10.0    # taught poses more tilted than this are refused (only their
+                               # position is used; the check catches gross teaching errors)
   # Both observation poses use the z of this taught pose ("" = each its own taught z)
   observation_height_from: observe_nut
   state_timeout_s: 5.0         # no robot state within this time -> abort

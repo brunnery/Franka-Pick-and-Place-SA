@@ -37,16 +37,27 @@ def motion_limits(cfg: dict) -> MotionLimits:
                         m["min_duration_s"])
 
 
-def rotation_down(cfg: dict) -> np.ndarray:
-    r = np.asarray(cfg["frames"]["flange_rotation_down"], float)
+def _rotation(rows, name: str) -> np.ndarray:
+    r = np.asarray(rows, float)
     if not np.allclose(r @ r.T, np.eye(3), atol=1e-6) or np.linalg.det(r) < 0:
-        raise ValueError("frames.flange_rotation_down is not a rotation matrix")
+        raise ValueError(f"{name} is not a rotation matrix")
     return r
+
+
+def rotation_down(cfg: dict) -> np.ndarray:
+    """R_B_F of the only commanded orientation (quaternion in tasks.yaml)."""
+    return frames.quaternion_to_matrix(cfg["frames"]["flange_orientation_xyzw"])
+
+
+def link8_to_flange(cfg: dict) -> np.ndarray:
+    return frames.rotation_z(cfg["frames"]["link8_to_flange_yaw_deg"])
 
 
 def camera_in_flange(cfg: dict) -> np.ndarray:
     f = cfg["frames"]
-    return frames.flange_to_camera(f["flange_to_camera_housing_mm"],
+    return frames.flange_to_camera(_rotation(f["camera_rotation_in_flange"],
+                                             "frames.camera_rotation_in_flange"),
+                                   f["flange_to_camera_housing_mm"],
                                    f["projection_centre_above_housing_mm"])
 
 

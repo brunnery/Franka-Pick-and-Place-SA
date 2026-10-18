@@ -101,15 +101,13 @@ def test_both_observation_poses_use_the_height_of_the_nut_pose():
     assert sequences.observation_pose(poses, "observe_stud", cfg)[2, 3] == pytest.approx(455.0)
 
 
-def test_motions_keep_the_taught_yaw_and_point_exactly_down():
-    yawed = frames.pose(R_DOWN @ frames.quaternion_to_matrix([0, 0, np.sin(1.18), np.cos(1.18)])
+def test_observation_pose_uses_the_fixed_orientation_whatever_was_taught():
+    yawed = frames.pose(R_DOWN @ frames.rotation_z(-45.0)
                         @ frames.quaternion_to_matrix([np.sin(0.03), 0, 0, np.cos(0.03)]),
                         OBSERVE_NUT[:3, 3])
-    poses = FakePoses(observe_nut=yawed)
-    rotation = sequences.commanded_rotation(CFG, poses)
-    assert frames.tilt_deg(rotation) == pytest.approx(0.0, abs=1e-9)
-    assert frames.yaw_deg(rotation) == pytest.approx(frames.yaw_deg(yawed[:3, :3]), abs=0.1)
-    assert frames.rotation_angle_deg(rotation, R_DOWN) == pytest.approx(135.2, abs=0.5)
+    observe = sequences.observation_pose(FakePoses(observe_nut=yawed), "observe_nut", CFG)
+    assert frames.matrix_to_quaternion(observe[:3, :3]) == pytest.approx([1, 0, 0, 0])
+    assert observe[:3, 3] == pytest.approx(OBSERVE_NUT[:3, 3])
 
 
 def test_untaught_pose_and_tilted_teach_are_refused():

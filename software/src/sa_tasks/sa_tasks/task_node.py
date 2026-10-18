@@ -86,7 +86,9 @@ def run(step: str) -> None:
                  cfg["gripper"]["backend"], table, start_pose,
                  [round(v, 1) for v in observe[:3, 3]])
         if not args.yes:
-            input(f"Step '{step}': the robot will move. Enter = start, Ctrl-C = abort ")
+            input(f"Step '{step}': the robot will move. Check first: after the controller "
+                  "activation the camera faces away from the robot base (+x). "
+                  "Enter = start, Ctrl-C = abort ")
         sequence = sequences.pick if step == "pick" else sequences.place_and_screw
         record.update(sequence(robot, gripper, vision, cfg, poses))
         record["result"] = "ok"
