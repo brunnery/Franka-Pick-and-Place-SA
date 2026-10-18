@@ -25,6 +25,7 @@ setup(
             "pick = sa_tasks.task_node:main_pick",
             "place_screw = sa_tasks.task_node:main_place",
             "teach_poses = sa_tasks.teach_poses:main",
+            "compare_runs = sa_tasks.verification:main",
         ],
     },
 )

@@ -7,6 +7,8 @@ Guide the arm by hand (pilot buttons) and type a command:
   Enter               show the current pose
   save <name>         store the current flange pose, e.g. save observe_nut / save observe_stud
   table               gripper bottom resting flat on the table: store its height
+  truth [label]       iris centred over the nut, gripper flat on the table: store the
+                      TCP as the true nut position (compare_runs)
   list                show what is stored
   quit
 The poses are written to config/poses.yaml of sa_tasks at once.
@@ -20,7 +22,7 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from sensor_msgs.msg import CameraInfo
 
-from sa_tasks import config, frames
+from sa_tasks import config, frames, verification
 from sa_tasks.ros_interfaces import RobotState
 from sa_vision import geometry
 
@@ -83,6 +85,12 @@ def main():
             current = state.flange_and_ee(timeout)[0]
             if not command:
                 print(describe(current, cfg, poses, camera["k"]))
+            elif command[0] == "truth":
+                tcp = frames.tcp_position(current, cfg["frames"]["flange_to_tcp_mm"])
+                label = " ".join(command[1:])
+                path = verification.append_truth(cfg, tcp, label)
+                print(f"truth x {tcp[0]:.1f} y {tcp[1]:.1f} mm saved to {path} "
+                      "(gripper flat on the table, iris centred over the nut)")
             elif command[0] == "table":
                 tcp = frames.tcp_position(current, cfg["frames"]["flange_to_tcp_mm"])
                 poses.table_z_mm = float(tcp[2])
