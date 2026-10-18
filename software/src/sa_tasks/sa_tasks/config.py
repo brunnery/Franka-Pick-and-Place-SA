@@ -53,6 +53,18 @@ def link8_to_flange(cfg: dict) -> np.ndarray:
     return frames.rotation_z(cfg["frames"]["link8_to_flange_yaw_deg"])
 
 
+def tool_in_flange(cfg: dict, poses: "Poses") -> np.ndarray:
+    """T_F_G: the gripper ("tool") frame G is the flange frame tilted by the measured mount
+    tilt (poses.yaml, teach_poses 'flat'); same origin. Identity if use_gripper_tilt is
+    false. The CAD offsets (camera, TCP) are defined in G."""
+    if not cfg["frames"]["use_gripper_tilt"]:
+        return np.eye(4)
+    if poses.gripper_tilt_deg is None:
+        raise RuntimeError("use_gripper_tilt is on, but no tilt measured: teach_poses 'flat'")
+    return frames.pose(frames.matrix_from_rotation_vector_deg(poses.gripper_tilt_deg),
+                       [0.0, 0.0, 0.0])
+
+
 def camera_in_flange(cfg: dict) -> np.ndarray:
     f = cfg["frames"]
     return frames.flange_to_camera(_rotation(f["camera_rotation_in_flange"],
@@ -68,6 +80,10 @@ class Poses:
         self.path = resolve(path)
         data = yaml.safe_load(self.path.read_text()) or {}
         self.table_z_mm: Optional[float] = data.get("table_z_mm")
+        # Mount tilt of the gripper against the flange: rotation vector (deg) of T_F_G,
+        # the mean of the samples taken with the bottom plate pressed flat on the table
+        self.gripper_tilt_deg: Optional[list] = data.get("gripper_tilt_deg")
+        self.gripper_tilt_samples: list = list(data.get("gripper_tilt_samples") or [])
         self.poses: Dict[str, Optional[dict]] = dict(data.get("poses") or {})
 
     def table_z(self) -> float:
@@ -89,7 +105,19 @@ class Poses:
                                 for v in frames.matrix_to_quaternion(t_base_flange[:3, :3])],
         }
 
+    def add_tilt_sample(self, t_base_flange: np.ndarray) -> np.ndarray:
+        """Bottom plate pressed flat on the table: the gripper frame is level (same yaw), so
+        R_F_G = R_B_F^T level(R_B_F). Stores the sample and the mean; returns the sample."""
+        r = t_base_flange[:3, :3]
+        sample = frames.rotation_vector_deg(r.T @ frames.level(r))
+        self.gripper_tilt_samples.append([round(float(v), 3) for v in sample])
+        mean = np.mean(np.array(self.gripper_tilt_samples), axis=0)
+        self.gripper_tilt_deg = [round(float(v), 3) for v in mean]
+        return sample
+
     def save(self) -> None:
         data = {"table_z_mm": None if self.table_z_mm is None else round(self.table_z_mm, 2),
+                "gripper_tilt_deg": self.gripper_tilt_deg,
+                "gripper_tilt_samples": self.gripper_tilt_samples,
                 "poses": self.poses}
         self.path.write_text(POSES_HEADER + yaml.safe_dump(data, sort_keys=False))

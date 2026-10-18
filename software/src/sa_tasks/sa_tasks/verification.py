@@ -16,7 +16,7 @@ from typing import List, Optional
 import numpy as np
 import yaml
 
-from sa_tasks import config
+from sa_tasks import config, frames
 
 REPO_ROOT = config.PACKAGE_DIR.parents[2]
 TRUTH_FILE = "truth.yaml"
@@ -26,13 +26,18 @@ def truth_path(cfg: dict) -> Path:
     return REPO_ROOT / cfg["log_dir"] / TRUTH_FILE
 
 
-def append_truth(cfg: dict, tcp_mm, label: str) -> Path:
+def append_truth(cfg: dict, tcp_mm, label: str, t_base_flange=None) -> Path:
     path = truth_path(cfg)
     path.parent.mkdir(parents=True, exist_ok=True)
     entries = yaml.safe_load(path.read_text()) if path.is_file() else None
     entries = entries or []
-    entries.append({"time": datetime.now().isoformat(timespec="seconds"), "label": label,
-                    "tcp_mm": [round(float(v), 2) for v in tcp_mm]})
+    entry = {"time": datetime.now().isoformat(timespec="seconds"), "label": label,
+             "tcp_mm": [round(float(v), 2) for v in tcp_mm]}
+    if t_base_flange is not None:  # lets the TCP be recomputed with a later mount tilt
+        entry["flange_position_mm"] = [round(float(v), 2) for v in t_base_flange[:3, 3]]
+        entry["flange_quaternion_xyzw"] = [round(float(v), 6) for v in
+                                           frames.matrix_to_quaternion(t_base_flange[:3, :3])]
+    entries.append(entry)
     path.write_text(yaml.safe_dump(entries, sort_keys=False))
     return path
 
@@ -73,7 +78,16 @@ def main():
     if len(truths) != len(records):
         print(f"warning: {len(truths)} truth points but {len(records)} pick records, "
               f"comparing the first {pairs} in order")
-    truth_xy = np.array([t["tcp_mm"][:2] for t in truths[:pairs]])
+    # Truth points with a stored flange pose are recomputed with the current gripper frame
+    # (mount tilt), the others use the TCP stored when they were taken
+    tool = config.tool_in_flange(cfg, config.Poses())
+    def truth_tcp(t):
+        if "flange_position_mm" not in t:
+            return t["tcp_mm"][:2]
+        flange = frames.pose(frames.quaternion_to_matrix(t["flange_quaternion_xyzw"]),
+                             t["flange_position_mm"])
+        return frames.tcp_position(flange @ tool, cfg["frames"]["flange_to_tcp_mm"])[:2]
+    truth_xy = np.array([truth_tcp(t) for t in truths[:pairs]])
     computed_xy = np.array([r["nut"]["position_mm"][:2] for r in records[:pairs]])
     result = correction(truth_xy, computed_xy)
     landed = [(r, t) for r, t in zip(records[:pairs], truth_xy) if r.get("landed_tcp_mm")]

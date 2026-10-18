@@ -77,6 +77,34 @@ def rotation_angle_deg(r0: np.ndarray, r1: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))))
 
 
+def level(r_base_frame: np.ndarray) -> np.ndarray:
+    """Same yaw, z axis exactly down: x projected onto the horizontal plane, z = -z_B."""
+    x = np.array([r_base_frame[0, 0], r_base_frame[1, 0], 0.0])
+    x /= np.linalg.norm(x)
+    z = np.array([0.0, 0.0, -1.0])
+    return np.stack([x, np.cross(z, x), z], axis=1)
+
+
+def rotation_vector_deg(r: np.ndarray) -> np.ndarray:
+    """Axis * angle (deg) of a rotation matrix (log map, angles below 180 deg)."""
+    angle = np.arccos(np.clip((np.trace(r) - 1.0) / 2.0, -1.0, 1.0))
+    if angle < 1e-9:
+        return np.zeros(3)
+    axis = np.array([r[2, 1] - r[1, 2], r[0, 2] - r[2, 0], r[1, 0] - r[0, 1]]) / (2 * np.sin(angle))
+    return np.degrees(angle) * axis
+
+
+def matrix_from_rotation_vector_deg(v) -> np.ndarray:
+    """Rodrigues: rotation matrix of axis * angle (deg)."""
+    v = np.radians(np.asarray(v, float))
+    angle = np.linalg.norm(v)
+    if angle < 1e-12:
+        return np.eye(3)
+    k = v / angle
+    kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return np.eye(3) + np.sin(angle) * kx + (1 - np.cos(angle)) * kx @ kx
+
+
 def tilt_deg(r_base_flange: np.ndarray) -> float:
     """Angle between the tool axis z_F and the downward vertical."""
     return float(np.degrees(np.arccos(np.clip(-r_base_flange[2, 2], -1.0, 1.0))))

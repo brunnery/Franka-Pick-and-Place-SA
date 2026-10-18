@@ -18,6 +18,10 @@ frames:
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
   # x_F = +x_B, y_F = -y_B, z_F = -z_B, camera in front (+x_B). Quaternion (x, y, z, w).
   flange_orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
+  # Mount tilt of the gripper against the flange (measured with teach_poses 'flat', stored in
+  # poses.yaml). true: motions keep the gripper (bottom plate, camera) level instead of the
+  # flange, and camera/TCP are computed in the tilted gripper frame (THEORY 3.1).
+  use_gripper_tilt: false
   # Constant xy correction of the computed target (base frame), from the verification run:
   # nut at a known position -> drive there -> measure the residual. 0 until measured.
   # Verification 18.10. (4 runs, compare_runs; run 3 excluded: nut not in its outline):

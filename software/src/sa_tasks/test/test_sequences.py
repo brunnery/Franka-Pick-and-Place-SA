@@ -26,6 +26,8 @@ class FakePoses(config.Poses):
     def __init__(self, observe_nut=OBSERVE_NUT, observe_stud=OBSERVE_STUD, table_z=TABLE_Z):
         self.path = None
         self.table_z_mm = table_z
+        self.gripper_tilt_deg = None
+        self.gripper_tilt_samples = []
         self.poses = {}
         self.set("observe_nut", observe_nut)
         self.set("observe_stud", observe_stud)
@@ -126,6 +128,50 @@ def test_observation_pose_uses_the_fixed_orientation_whatever_was_taught():
     observe = sequences.observation_pose(FakePoses(observe_nut=yawed), "observe_nut", CFG)
     assert frames.matrix_to_quaternion(observe[:3, :3]) == pytest.approx([1, 0, 0, 0])
     assert observe[:3, 3] == pytest.approx(OBSERVE_NUT[:3, 3])
+
+
+def tilted_cfg_and_poses(tilt_deg):
+    cfg = copy.deepcopy(CFG)
+    cfg["frames"]["use_gripper_tilt"] = True
+    poses = FakePoses()
+    poses.gripper_tilt_deg = list(tilt_deg)
+    return cfg, poses
+
+
+def test_flat_sample_measures_the_mount_tilt():
+    # Bottom plate flat on the table, gripper tilted 1.5 / -0.8 deg against the flange:
+    # then the flange itself is tilted by the inverse
+    t_flange_tool = frames.matrix_from_rotation_vector_deg([1.5, -0.8, 0.0])
+    flange = frames.pose(R_DOWN @ t_flange_tool.T, [480.0, 0.0, 130.0])
+    poses = FakePoses()
+    sample = poses.add_tilt_sample(flange)
+    # The levelled reference keeps the yaw of x_F, which leaves a second-order z rotation
+    assert sample == pytest.approx([1.5, -0.8, 0.0], abs=0.02)
+    assert poses.gripper_tilt_deg == pytest.approx([1.5, -0.8, 0.0], abs=0.02)
+
+
+def test_with_gripper_tilt_the_gripper_lands_level_and_on_target():
+    cfg, poses = tilted_cfg_and_poses([1.5, -0.8, 0.0])
+    t_flange_tool = config.tool_in_flange(cfg, poses)
+    robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
+    observe = OBSERVE_NUT @ t_flange_tool  # where the camera really is when G is level
+    u, v = pixel_of(NUT, cfg["objects"]["nut"]["centre_height_mm"], OBSERVE_NUT)
+    result = sequences.pick(robot, MockGripper(), MockVision(u, v, K), cfg, poses)
+    assert result["nut"]["position_mm"][:2] == pytest.approx(NUT, abs=1e-6)
+    lowest = min(robot.history, key=lambda t: t[2, 3])
+    tool = lowest @ t_flange_tool
+    assert frames.tilt_deg(tool[:3, :3]) == pytest.approx(0.0, abs=1e-6)   # plate level
+    assert frames.tilt_deg(lowest[:3, :3]) > 1.0                           # flange tilted
+    assert frames.tcp_position(tool, T_FT)[:2] == pytest.approx(NUT, abs=1e-6)
+    del observe
+
+
+def test_gripper_tilt_switched_on_without_measurement_is_refused():
+    cfg, poses = tilted_cfg_and_poses([0.0, 0.0, 0.0])
+    poses.gripper_tilt_deg = None
+    with pytest.raises(RuntimeError, match="no tilt measured"):
+        sequences.pick(MockRobot(OBSERVE_NUT.copy(), T_FT[2]), MockGripper(),
+                       MockVision(640.0, 360.0, K), cfg, poses)
 
 
 def test_untaught_pose_and_tilted_teach_are_refused():

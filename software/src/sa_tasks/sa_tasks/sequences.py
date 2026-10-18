@@ -22,6 +22,35 @@ class SequenceError(RuntimeError):
     """A step failed; the robot stays where it is (no automatic recovery)."""
 
 
+class ToolRobot:
+    """The robot seen in the gripper frame G instead of the flange frame F.
+
+    G = F tilted by the measured mount tilt (same origin), so commanding G level keeps the
+    bottom plate (and the camera on it) level. Identity transform = plain flange frame.
+    """
+
+    def __init__(self, robot: Robot, t_flange_tool: np.ndarray):
+        self.robot = robot
+        self.t_flange_tool = t_flange_tool
+        self.t_tool_flange = frames.invert(t_flange_tool)
+
+    def flange_pose(self) -> np.ndarray:  # pose of G, named like the Robot interface
+        return self.robot.flange_pose() @ self.t_flange_tool
+
+    def force_z(self) -> float:
+        return self.robot.force_z()
+
+    def set_mode(self, mode: int) -> None:
+        self.robot.set_mode(mode)
+
+    def follow(self, path, stop_on_contact_n=None) -> bool:
+        return self.robot.follow([Waypoint(w.time_s, w.t_base_flange @ self.t_tool_flange)
+                                  for w in path], stop_on_contact_n)
+
+    def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float) -> None:
+        self.robot.wait_until_arrived(goal @ self.t_tool_flange, tolerance_mm)
+
+
 def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = None,
             extra_tolerance_mm: float = 0.0) -> None:
     """One continuous move of the flange from where it is to goal, then wait for arrival."""
@@ -86,6 +115,7 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     record: filled step by step, so an abort (Ctrl-C) keeps what was measured so far."""
     record = {} if record is None else record
     record["step"] = "pick"
+    robot = ToolRobot(robot, config.tool_in_flange(cfg, poses))
     table_z = poses.table_z()
     nut = cfg["objects"]["nut"]
     rotation = config.rotation_down(cfg)
@@ -132,6 +162,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                     poses: config.Poses) -> dict:
     """Step 2: observation pose over the stud -> detect it -> one move to just above the
     thread -> descend until contact -> screw (compliant) -> release -> back up."""
+    robot = ToolRobot(robot, config.tool_in_flange(cfg, poses))
     table_z = poses.table_z()
     stud = cfg["objects"]["stud"]
     place = cfg["place"]

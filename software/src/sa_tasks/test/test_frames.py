@@ -106,3 +106,9 @@ def test_distance_along_axis_and_footprint():
     assert d == pytest.approx(400.0 - 57.223 + 9.0 - 8.0)
     width, height = frames.footprint_mm(d, K, (1280, 720))
     assert width == pytest.approx(1280 * d / K[0, 0])
+
+
+def test_rotation_vector_round_trip():
+    for v in ([1.5, -0.7, 0.0], [0.0, 0.0, 0.0], [10.0, 20.0, -5.0]):
+        r = frames.matrix_from_rotation_vector_deg(v)
+        assert frames.rotation_vector_deg(r) == pytest.approx(v, abs=1e-9)

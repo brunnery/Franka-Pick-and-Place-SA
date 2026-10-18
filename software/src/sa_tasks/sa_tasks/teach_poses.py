@@ -9,6 +9,8 @@ Guide the arm by hand (pilot buttons) and type a command:
   table               gripper bottom resting flat on the table: store its height
   truth [label]       iris centred over the nut, gripper flat on the table: store the
                       TCP as the true nut position (compare_runs)
+  flat                bottom plate pressed flat on the table: store a sample of the
+                      gripper mount tilt (repeat 3-4 times, the mean is used)
   list                show what is stored
   quit
 The poses are written to config/poses.yaml of sa_tasks at once.
@@ -83,16 +85,24 @@ def main():
                     print(f"{name}: {entry['position_mm'] if entry else 'not taught'}")
                 continue
             current = state.flange_and_ee(timeout)[0]
+            # Gripper frame (tilted by the measured mount tilt if use_gripper_tilt is on)
+            tool = current @ config.tool_in_flange(cfg, poses)
             if not command:
-                print(describe(current, cfg, poses, camera["k"]))
+                print(describe(tool, cfg, poses, camera["k"]))
             elif command[0] == "truth":
-                tcp = frames.tcp_position(current, cfg["frames"]["flange_to_tcp_mm"])
+                tcp = frames.tcp_position(tool, cfg["frames"]["flange_to_tcp_mm"])
                 label = " ".join(command[1:])
-                path = verification.append_truth(cfg, tcp, label)
+                path = verification.append_truth(cfg, tcp, label, current)
                 print(f"truth x {tcp[0]:.1f} y {tcp[1]:.1f} mm saved to {path} "
                       "(gripper flat on the table, iris centred over the nut)")
+            elif command[0] == "flat":
+                sample = poses.add_tilt_sample(current)
+                poses.save()
+                print(f"tilt sample {len(poses.gripper_tilt_samples)}: rx {sample[0]:+.2f} "
+                      f"ry {sample[1]:+.2f} deg (flange vs. level gripper); mean of all: "
+                      f"{poses.gripper_tilt_deg} deg, saved")
             elif command[0] == "table":
-                tcp = frames.tcp_position(current, cfg["frames"]["flange_to_tcp_mm"])
+                tcp = frames.tcp_position(tool, cfg["frames"]["flange_to_tcp_mm"])
                 poses.table_z_mm = float(tcp[2])
                 poses.save()
                 print(f"table z = {tcp[2]:.1f} mm saved (the gripper bottom must rest flat "
