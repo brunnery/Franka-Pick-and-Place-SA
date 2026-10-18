@@ -104,8 +104,12 @@ def find_object(image: np.ndarray, p: dict) -> tuple:
 
 
 def draw(image: np.ndarray, hexagon: Optional[Hexagon], mask: np.ndarray, status: str,
-         principal_point: tuple) -> np.ndarray:
+         principal_point: tuple, info: tuple = ()) -> np.ndarray:
+    """Overlay; info = extra text lines (bottom left)."""
     out = image.copy()
+    for i, line in enumerate(reversed(info)):
+        cv2.putText(out, line, (20, out.shape[0] - 20 - 40 * i), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
+                    OVERLAY_YELLOW, 2)
     out[mask > 0] = (0.6 * out[mask > 0] + 0.4 * np.array(OVERLAY_YELLOW)).astype(np.uint8)
     pp = tuple(int(round(c)) for c in principal_point)
     cv2.drawMarker(out, pp, OVERLAY_YELLOW, cv2.MARKER_CROSS, 40, 2)
@@ -165,6 +169,7 @@ class SimpleVisionNode(Node):
         out.width_ratio = out.compactness = nan
         d_mm = self.get_parameter("object_plane_distance_mm").value
         out.plane_distance = d_mm * MM_TO_M
+        info = [f"z: d = {d_mm:.0f} mm (camera -> object plane, set by sa_tasks)"]
         if hexagon is not None:
             out.u, out.v = hexagon.centre
             und = cv2.undistortPoints(np.array([[hexagon.centre]], float), self.k, self.dist,
@@ -173,12 +178,16 @@ class SimpleVisionNode(Node):
             ray = np.linalg.solve(self.k, [und[0], und[1], 1.0]) * d_mm * MM_TO_M
             out.point_camera.x, out.point_camera.y, out.point_camera.z = ray.tolist()
             out.across_flats_mm = hexagon.across_flats_px * d_mm / self.k[0, 0]
+            # Robot axes: x_robo = -y_cam, y_robo = -x_cam (CLAUDE.md)
+            info.append(f"offset from image centre: x_robo {-ray[1] / MM_TO_M:+.1f} mm, "
+                        f"y_robo {-ray[0] / MM_TO_M:+.1f} mm")
             out.width_ratio = hexagon.regularity
             out.num_candidates = 1
         self.pub.publish(out)
         if self.get_parameter("publish_debug").value:
             debug = self.bridge.cv2_to_imgmsg(
-                draw(image, hexagon, mask, status, (self.k[0, 2], self.k[1, 2])), "bgr8")
+                draw(image, hexagon, mask, status, (self.k[0, 2], self.k[1, 2]), tuple(info)),
+                "bgr8")
             debug.header = msg.header
             self.debug_pub.publish(debug)
 

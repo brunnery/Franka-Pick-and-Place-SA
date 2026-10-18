@@ -4,6 +4,7 @@ franka_robot_state_broadcaster, sa_vision/vision_node).
 The node is spun in a background thread; the sequences call these methods from the
 main thread and block.
 """
+import logging
 import threading
 import time
 from typing import List, Optional
@@ -24,8 +25,11 @@ from sa_tasks.interfaces import Observation
 from sa_tasks.trajectory import Waypoint
 from sa_vision import geometry
 
+log = logging.getLogger("sa_tasks")
+
 M_TO_MM = 1000.0
 POLL_S = 0.01
+ARRIVAL_POLL_S = 0.05  # long enough for a meaningful speed estimate from two poses
 FORCE_BASELINE_SAMPLES = 20
 
 
@@ -135,21 +139,32 @@ class FrankaRobot:
         return False
 
     def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float) -> None:
+        """Arrived = standing still (speed below arrival_speed_mm_s for arrival_settle_s)
+        within tolerance_mm of the goal. The impedance controller keeps a few mm of
+        steady-state error; the vision uses the measured pose, so that is harmless."""
         settle, timeout = self.cfg["arrival_settle_s"], self.cfg["arrival_timeout_s"]
+        max_speed = self.cfg["arrival_speed_mm_s"]
         deadline = time.monotonic() + timeout
-        inside_since = None
+        still_since = None
+        last_position, last_time = None, None
         while True:
-            error = float(np.linalg.norm(self.flange_pose()[:3, 3] - goal[:3, 3]))
+            position = self.flange_pose()[:3, 3]
             now = time.monotonic()
-            if error <= tolerance_mm:
-                inside_since = inside_since or now
-                if now - inside_since >= settle:
+            error = position - goal[:3, 3]
+            speed = (np.inf if last_position is None
+                     else float(np.linalg.norm(position - last_position)) / max(now - last_time, 1e-3))
+            last_position, last_time = position, now
+            if float(np.linalg.norm(error)) <= tolerance_mm and speed <= max_speed:
+                still_since = still_since or now
+                if now - still_since >= settle:
+                    log.info("arrived, remaining error x %+.1f y %+.1f z %+.1f mm", *error)
                     return
             else:
-                inside_since = None
+                still_since = None
             if now > deadline:
-                raise RuntimeError(f"goal not reached within {timeout} s (error {error:.1f} mm)")
-            time.sleep(POLL_S)
+                raise RuntimeError(f"goal not reached within {timeout} s (error x {error[0]:+.1f} "
+                                   f"y {error[1]:+.1f} z {error[2]:+.1f} mm, speed {speed:.1f} mm/s)")
+            time.sleep(ARRIVAL_POLL_S)
 
 
 class RosVision:
