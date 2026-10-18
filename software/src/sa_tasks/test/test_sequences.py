@@ -71,6 +71,18 @@ def test_locate_only_does_not_descend():
     assert min(t[2, 3] for t in robot.history) == pytest.approx(OBSERVE_NUT[2, 3])
 
 
+def test_pick_stops_above_the_nut_and_then_goes_straight_down():
+    robot, _, _, result = run_pick()
+    height = CFG["pick"]["align"]["height_mm"]
+    stop_z = TABLE_Z + height + T_FT[2]
+    lowest = int(np.argmin([t[2, 3] for t in robot.history]))
+    at_stop = [i for i, t in enumerate(robot.history[:lowest]) if abs(t[2, 3] - stop_z) < 1e-6]
+    assert at_stop, "no intermediate stop"
+    after = robot.history[at_stop[0]:lowest + 1]
+    assert all(np.allclose(t[:2, 3], NUT) for t in after)  # vertical from the stop on
+    assert set(result["orientation"]) == {"observe", "aligned", "landed"}
+
+
 def test_pick_records_where_the_gripper_landed():
     _, _, _, result = run_pick()
     assert result["landed_tcp_mm"][:2] == pytest.approx(NUT, abs=1e-6)

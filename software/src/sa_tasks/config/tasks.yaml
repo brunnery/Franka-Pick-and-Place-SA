@@ -77,6 +77,12 @@ pick:
   # (normal z stiffness 1500 N/m -> 3 N at 2 mm)
   press_depth_mm: 2.0
   close_iris: true             # close the iris on the nut before moving back up
+  # Intermediate stop straight above the nut: wait until the measured orientation matches
+  # the commanded one, then go vertically down. height_mm 0 = one continuous move.
+  align:
+    height_mm: 30.0            # TCP above the table at the stop
+    tolerance_deg: 0.2         # measured vs. commanded orientation
+    timeout_s: 5.0             # continue after this even if not within the tolerance
 
 place:
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread

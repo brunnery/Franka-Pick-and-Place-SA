@@ -4,6 +4,7 @@ docs/PLAN.md Section 4, docs/THEORY.md Sections 3 and 5. The sequences only use 
 Robot, Gripper and Vision interfaces (interfaces.py), so they run against mocks.
 """
 import logging
+import time
 from typing import Optional
 
 import numpy as np
@@ -15,6 +16,7 @@ from sa_tasks.trajectory import LEAD_XY, LEAD_Z, Waypoint, plan_move, straight_d
 log = logging.getLogger("sa_tasks")
 
 TARGET_NUT = "nut"
+ALIGN_POLL_S = 0.05
 TARGET_STUD = "stud"
 
 
@@ -58,6 +60,28 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
                      cfg["robot"]["stream_rate_hz"], lead)
     robot.follow(path)
     robot.wait_until_arrived(goal, cfg["robot"]["arrival_tolerance_mm"] + extra_tolerance_mm)
+
+
+def orientation_error(robot: Robot, rotation: np.ndarray) -> dict:
+    """Measured tilt (tool axis vs. vertical) and angle to the commanded orientation, deg."""
+    r = robot.flange_pose()[:3, :3]
+    return {"tilt_deg": round(frames.tilt_deg(r), 3),
+            "to_commanded_deg": round(frames.rotation_angle_deg(r, rotation), 3)}
+
+
+def wait_aligned(robot: Robot, rotation: np.ndarray, tolerance_deg: float,
+                 timeout_s: float) -> dict:
+    """Wait until the measured orientation is within tolerance of the commanded one (or the
+    timeout ends: the impedance controller may keep a small steady-state error)."""
+    deadline = time.monotonic() + timeout_s
+    error = orientation_error(robot, rotation)
+    while error["to_commanded_deg"] > tolerance_deg and time.monotonic() < deadline:
+        time.sleep(ALIGN_POLL_S)
+        error = orientation_error(robot, rotation)
+    log.info("aligned: tilt %.2f deg, %.2f deg from the commanded orientation%s",
+             error["tilt_deg"], error["to_commanded_deg"],
+             "" if error["to_commanded_deg"] <= tolerance_deg else " (timeout)")
+    return error
 
 
 def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
@@ -125,6 +149,7 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     gripper.open()
     log.info("Step 1: moving to the nut observation pose")
     move_to(robot, observe, cfg)
+    record["orientation"] = {"observe": orientation_error(robot, rotation)}
     found = locate(robot, vision, cfg, table_z, TARGET_NUT, nut["height_mm"],
                    nut["centre_height_mm"])
     record["nut"] = found
@@ -138,11 +163,25 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     tcp = [found["position_mm"][0], found["position_mm"][1], table_z - press]
     record["tcp_target_mm"] = tcp
     grasp = frames.flange_for_tcp(tcp, rotation, cfg["frames"]["flange_to_tcp_mm"])
-    log.info("Step 1: one move down onto the nut (TCP %.1f, %.1f, table - %.1f mm)",
-             tcp[0], tcp[1], press)
+    align = cfg["pick"]["align"]
+    if align["height_mm"] > 0:
+        # Intermediate stop straight above the nut: let the orientation settle, then go
+        # vertically down (test whether a tilt on the way down causes the misses)
+        above = frames.flange_for_tcp([tcp[0], tcp[1], table_z + align["height_mm"]], rotation,
+                                      cfg["frames"]["flange_to_tcp_mm"])
+        log.info("Step 1: move above the nut (TCP %.1f, %.1f, table + %.0f mm)",
+                 tcp[0], tcp[1], align["height_mm"])
+        move_to(robot, above, cfg, lead=LEAD_XY)
+        record["orientation"]["aligned"] = wait_aligned(robot, rotation, align["tolerance_deg"],
+                                                        align["timeout_s"])
+        log.info("Step 1: straight down onto the table (table - %.1f mm)", press)
+    else:
+        log.info("Step 1: one move down onto the nut (TCP %.1f, %.1f, table - %.1f mm)",
+                 tcp[0], tcp[1], press)
     # If the iris misses, the bottom plate stands on the nut instead of the table: accept
     # that (the arm stands still) and record it instead of aborting
     move_to(robot, grasp, cfg, lead=LEAD_XY, extra_tolerance_mm=press + nut["height_mm"])
+    record["orientation"]["landed"] = orientation_error(robot, rotation)
     landed = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])
     above_table = float(landed[2] - table_z)
     log.info("landed: TCP x %.1f y %.1f mm, %.1f mm above the table (target x %.1f y %.1f)",
