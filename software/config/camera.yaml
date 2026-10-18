@@ -17,9 +17,9 @@
       auto_exposure: 1                 # 1 = manual, 3 = automatic (aperture priority)
       exposure_dynamic_framerate: 0    # keep the frame rate fixed
       white_balance_automatic: 0
-      # Unit 100 us. Bench setup with the diffuse lamp on, d about 410 mm (16.10.):
-      # 100 gives paper median 180, darkest corner 141, no clipping; 150 clips 6 %,
-      # 250 clips 60-94 %. Aim for a table grey value of 170-200 without clipping, so
-      # highlights of the nut stay measurable. Re-measure when the lighting changes.
-      exposure_time_absolute: 100
+      # Unit 100 us. Robot setup without the lamp (18.10.): 100 -> image median 57 (too dark),
+      # 250 -> 101, 300 -> 116, no clipping. 400 and more stalled the stream when changed
+      # live at 30 fps (exposure must stay below the frame period, 33 ms). With the diffuse
+      # lamp of the bench (16.10.) 100 was right. Re-measure when the lighting changes.
+      exposure_time_absolute: 300
       white_balance_temperature: 4600  # K, value the automatic mode had chosen
