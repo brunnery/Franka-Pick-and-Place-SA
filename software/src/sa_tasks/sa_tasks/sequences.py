@@ -32,12 +32,20 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
 
 
 def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
-    """Taught position with the fixed downward orientation; refuses a tilted teach."""
+    """Taught position with the fixed downward orientation; refuses a tilted teach.
+
+    With robot.observation_height_from set, z is taken from that pose, so both
+    observation poses share one height (same image scale for nut and stud).
+    """
     taught = poses.get(name)
     tilt = frames.tilt_deg(taught[:3, :3])
     if tilt > cfg["robot"]["max_taught_tilt_deg"]:
         raise SequenceError(f"taught pose '{name}' is tilted by {tilt:.1f} deg, teach it again")
-    return frames.pose(config.rotation_down(cfg), taught[:3, 3])
+    position = taught[:3, 3].copy()
+    height_from = cfg["robot"]["observation_height_from"]
+    if height_from:
+        position[2] = poses.get(height_from)[2, 3]
+    return frames.pose(config.rotation_down(cfg), position)
 
 
 def locate(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,

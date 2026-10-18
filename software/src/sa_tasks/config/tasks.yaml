@@ -53,6 +53,8 @@ robot:
   arrival_timeout_s: 10.0      # after the end of the path
   arrival_settle_s: 0.5        # error must stay below the tolerance this long
   max_taught_tilt_deg: 5.0     # taught poses more tilted than this are refused
+  # Both observation poses use the z of this taught pose ("" = each its own taught z)
+  observation_height_from: observe_nut
   state_timeout_s: 5.0         # no robot state within this time -> abort
 
 pick:

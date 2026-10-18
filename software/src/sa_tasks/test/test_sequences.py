@@ -92,6 +92,15 @@ def test_nothing_found_aborts_before_moving_down():
         run_pick(vision=MockVision(math.nan, math.nan, K))
 
 
+def test_both_observation_poses_use_the_height_of_the_nut_pose():
+    poses = FakePoses(observe_stud=frames.pose(R_DOWN, [420.0, 250.0, 455.0]))
+    stud = sequences.observation_pose(poses, "observe_stud", CFG)
+    assert stud[:3, 3] == pytest.approx([420.0, 250.0, OBSERVE_NUT[2, 3]])
+    cfg = copy.deepcopy(CFG)
+    cfg["robot"]["observation_height_from"] = ""
+    assert sequences.observation_pose(poses, "observe_stud", cfg)[2, 3] == pytest.approx(455.0)
+
+
 def test_untaught_pose_and_tilted_teach_are_refused():
     poses = FakePoses()
     poses.poses["observe_nut"] = None
