@@ -1,6 +1,6 @@
 """Verification of the target computation: hand-guided truth vs. computed nut position.
 
-  ros2 run sa_tasks compare_runs [--since 2026-10-18T11:00]
+  ros2 run sa_tasks compare_runs [--since 2026-10-18T11:00] [--truth-since ...]
 
 truth.yaml (log_dir) is written by the `truth` command of teach_poses: the TCP position
 with the gripper guided by hand flat onto the table, iris centred over the nut. The
@@ -57,12 +57,14 @@ def load_records(directory: Path, since: Optional[str]) -> List[dict]:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--since", help="ISO time, e.g. 2026-10-18T11:00 (default: all)")
+    parser.add_argument("--since", help="pick records from this ISO time on, e.g. "
+                        "2026-10-18T11:00 (default: all)")
+    parser.add_argument("--truth-since", help="truth points from this ISO time on (default: all)")
     parser.add_argument("--config", type=Path, default=config.DEFAULT_TASKS)
     args = parser.parse_args()
     cfg = config.load_tasks(args.config)
     truths = yaml.safe_load(truth_path(cfg).read_text()) if truth_path(cfg).is_file() else []
-    truths = [t for t in truths or [] if args.since is None or t["time"] >= args.since]
+    truths = [t for t in truths or [] if args.truth_since is None or t["time"] >= args.truth_since]
     records = load_records(REPO_ROOT / cfg["log_dir"], args.since)
     pairs = min(len(truths), len(records))
     if pairs == 0:
