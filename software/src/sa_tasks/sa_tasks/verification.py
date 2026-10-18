@@ -74,6 +74,7 @@ def main():
     truth_xy = np.array([t["tcp_mm"][:2] for t in truths[:pairs]])
     computed_xy = np.array([r["nut"]["position_mm"][:2] for r in records[:pairs]])
     result = correction(truth_xy, computed_xy)
+    landed = [(r, t) for r, t in zip(records[:pairs], truth_xy) if r.get("landed_tcp_mm")]
     current = np.asarray(cfg["frames"]["target_correction_mm"], float)
     print(f"{'run':24s} {'computed x/y':>17s} {'truth x/y':>17s} {'error x':>8s} {'error y':>8s}"
           f" {'from axis':>9s}")
@@ -86,6 +87,25 @@ def main():
     print(f"remaining after a constant correction: max {result['norm_after'].max():.1f} mm")
     print(f"target_correction_mm now {current.round(1).tolist()} -> suggested "
           f"{(current + result['mean']).round(1).tolist()}")
+    if landed:
+        # Execution: where the robot put the TCP vs. the commanded target (robot error);
+        # total: truth vs. where the TCP landed (what is seen at the iris)
+        print(f"\n{'run (with descent)':24s} {'landed x/y':>17s} {'exec x':>7s} {'exec y':>7s}"
+              f" {'total x':>8s} {'total y':>8s} {'above table':>11s}")
+        execution, total = [], []
+        for r, t in landed:
+            land = np.array(r["landed_tcp_mm"][:2])
+            target = np.array(r["tcp_target_mm"][:2])
+            execution.append(land - target)
+            total.append(t - land)
+            print(f"{r['file'][:24]:24s} {land[0]:8.1f} {land[1]:8.1f} {execution[-1][0]:+7.1f} "
+                  f"{execution[-1][1]:+7.1f} {total[-1][0]:+8.1f} {total[-1][1]:+8.1f} "
+                  f"{r['landed_above_table_mm']:9.1f} mm")
+        execution, total = np.array(execution), np.array(total)
+        print(f"\nexecution (landed - target): mean x {execution[:, 0].mean():+.1f} "
+              f"y {execution[:, 1].mean():+.1f} mm; total (truth - landed): mean x "
+              f"{total[:, 0].mean():+.1f} y {total[:, 1].mean():+.1f}, max "
+              f"{np.linalg.norm(total, axis=1).max():.1f} mm")
 
 
 if __name__ == "__main__":

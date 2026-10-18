@@ -104,12 +104,22 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     grasp = frames.flange_for_tcp(tcp, rotation, cfg["frames"]["flange_to_tcp_mm"])
     log.info("Step 1: one move down onto the nut (TCP %.1f, %.1f, table - %.1f mm)",
              tcp[0], tcp[1], press)
-    move_to(robot, grasp, cfg, lead=LEAD_XY, extra_tolerance_mm=press)
+    # If the iris misses, the bottom plate stands on the nut instead of the table: accept
+    # that (the arm stands still) and record it instead of aborting
+    move_to(robot, grasp, cfg, lead=LEAD_XY, extra_tolerance_mm=press + nut["height_mm"])
+    landed = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])
+    above_table = float(landed[2] - table_z)
+    log.info("landed: TCP x %.1f y %.1f mm, %.1f mm above the table (target x %.1f y %.1f)",
+             landed[0], landed[1], above_table, tcp[0], tcp[1])
+    if above_table > nut["height_mm"] / 2:
+        log.warning("gripper stands %.1f mm above the table: iris missed the nut?", above_table)
     if cfg["pick"]["close_iris"]:
         gripper.close()
     log.info("Step 1: back to the observation pose")
     move_to(robot, observe, cfg, lead=LEAD_Z)
-    return {"step": "pick", "nut": found, "tcp_target_mm": tcp}
+    return {"step": "pick", "nut": found, "tcp_target_mm": tcp,
+            "landed_tcp_mm": [round(float(v), 2) for v in landed],
+            "landed_above_table_mm": round(above_table, 2)}
 
 
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,

@@ -66,6 +66,12 @@ def test_locate_only_does_not_descend():
     assert min(t[2, 3] for t in robot.history) == pytest.approx(OBSERVE_NUT[2, 3])
 
 
+def test_pick_records_where_the_gripper_landed():
+    _, _, _, result = run_pick()
+    assert result["landed_tcp_mm"][:2] == pytest.approx(NUT, abs=1e-6)
+    assert result["landed_above_table_mm"] == pytest.approx(-CFG["pick"]["press_depth_mm"])
+
+
 def test_pick_tells_vision_the_distance_to_the_nut_top_face():
     _, _, vision, _ = run_pick()
     camera_z = OBSERVE_NUT[2, 3] - 57.223 + CFG["frames"]["projection_centre_above_housing_mm"]
