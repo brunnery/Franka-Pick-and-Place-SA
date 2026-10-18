@@ -2,7 +2,25 @@
 # know the values: flange pose in the base frame, position in mm, quaternion (x, y, z, w).
 # Observation poses are commanded with the fixed downward orientation of tasks.yaml;
 # the taught orientation is only checked (tilt).
-table_z_mm: null          # z of the table top in the base frame (gripper resting on it)
+table_z_mm: 11.96
 poses:
-  observe_nut: null       # camera above the middle of the nut area (step 1)
-  observe_stud: null      # camera above the stud (step 2)
+  observe_nut:
+    position_mm:
+    - 410.45
+    - -233.16
+    - 473.38
+    quaternion_xyzw:
+    - -0.999133
+    - -0.028928
+    - -0.016864
+    - 0.024733
+  observe_stud:
+    position_mm:
+    - 340.25
+    - 222.25
+    - 463.55
+    quaternion_xyzw:
+    - 0.999394
+    - -0.015904
+    - 0.029952
+    - 0.007875
