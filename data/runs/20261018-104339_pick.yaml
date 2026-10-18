@@ -1,0 +1,12 @@
+step: pick
+robot: franka
+started: '2026-10-18T10:43:06.099704'
+result: aborted by user
+duration_s: 33.18
+arrival_errors_mm:
+- - 4.51
+  - -1.72
+  - 2.16
+- - 3.69
+  - 2.93
+  - 10.66

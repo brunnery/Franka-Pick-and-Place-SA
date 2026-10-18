@@ -94,8 +94,8 @@ def run(step: str) -> None:
                   "activation the camera faces away from the robot base (+x). "
                   "Enter = start, Ctrl-C = abort ")
         if step == "pick":
-            record.update(sequences.pick(robot, gripper, vision, cfg, poses,
-                                         locate_only=args.locate_only))
+            sequences.pick(robot, gripper, vision, cfg, poses, locate_only=args.locate_only,
+                           record=record)
         else:
             record.update(sequences.place_and_screw(robot, gripper, vision, cfg, poses))
         record["result"] = "ok"

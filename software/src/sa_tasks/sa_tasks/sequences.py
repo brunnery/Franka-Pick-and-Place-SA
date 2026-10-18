@@ -77,12 +77,15 @@ def locate(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,
 
 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
-         poses: config.Poses, locate_only: bool = False) -> dict:
+         poses: config.Poses, locate_only: bool = False, record: Optional[dict] = None) -> dict:
     """Step 1: observation pose -> detect the nut -> one move down until the gripper rests
     flat on the table with the iris centred over the nut -> close -> back up.
 
     locate_only: stop after the detection (verification of the target computation:
-    compare the printed nut position with the hand-measured one)."""
+    compare the printed nut position with the hand-measured one).
+    record: filled step by step, so an abort (Ctrl-C) keeps what was measured so far."""
+    record = {} if record is None else record
+    record["step"] = "pick"
     table_z = poses.table_z()
     nut = cfg["objects"]["nut"]
     rotation = config.rotation_down(cfg)
@@ -94,13 +97,16 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     move_to(robot, observe, cfg)
     found = locate(robot, vision, cfg, table_z, TARGET_NUT, nut["height_mm"],
                    nut["centre_height_mm"])
+    record["nut"] = found
     if locate_only:
         log.info("Step 1 (locate only): nut at x %.1f y %.1f mm, no descent",
                  *found["position_mm"][:2])
-        return {"step": "pick", "locate_only": True, "nut": found}
+        record["locate_only"] = True
+        return record
 
     press = cfg["pick"]["press_depth_mm"]
     tcp = [found["position_mm"][0], found["position_mm"][1], table_z - press]
+    record["tcp_target_mm"] = tcp
     grasp = frames.flange_for_tcp(tcp, rotation, cfg["frames"]["flange_to_tcp_mm"])
     log.info("Step 1: one move down onto the nut (TCP %.1f, %.1f, table - %.1f mm)",
              tcp[0], tcp[1], press)
@@ -111,15 +117,15 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     above_table = float(landed[2] - table_z)
     log.info("landed: TCP x %.1f y %.1f mm, %.1f mm above the table (target x %.1f y %.1f)",
              landed[0], landed[1], above_table, tcp[0], tcp[1])
+    record["landed_tcp_mm"] = [round(float(v), 2) for v in landed]
+    record["landed_above_table_mm"] = round(above_table, 2)
     if above_table > nut["height_mm"] / 2:
         log.warning("gripper stands %.1f mm above the table: iris missed the nut?", above_table)
     if cfg["pick"]["close_iris"]:
         gripper.close()
     log.info("Step 1: back to the observation pose")
     move_to(robot, observe, cfg, lead=LEAD_Z)
-    return {"step": "pick", "nut": found, "tcp_target_mm": tcp,
-            "landed_tcp_mm": [round(float(v), 2) for v in landed],
-            "landed_above_table_mm": round(above_table, 2)}
+    return record
 
 
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,

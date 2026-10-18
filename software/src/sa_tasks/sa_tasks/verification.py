@@ -106,6 +106,10 @@ def main():
               f"y {execution[:, 1].mean():+.1f} mm; total (truth - landed): mean x "
               f"{total[:, 0].mean():+.1f} y {total[:, 1].mean():+.1f}, max "
               f"{np.linalg.norm(total, axis=1).max():.1f} mm")
+        # The landing contains both the computation and the robot's steady-state error, so
+        # the total error is the correction to apply
+        print(f"target_correction_mm now {current.round(1).tolist()} -> suggested from the "
+              f"landings {(current + total.mean(axis=0)).round(1).tolist()} (use this one)")
 
 
 if __name__ == "__main__":
