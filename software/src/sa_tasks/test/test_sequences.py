@@ -90,7 +90,7 @@ def test_target_correction_is_added():
 
 
 def test_detection_outside_the_area_is_refused():
-    far = NUT + [0.0, 120.0]
+    far = NUT + [0.0, 200.0]
     u, v = pixel_of(far, 4.0, OBSERVE_NUT)
     with pytest.raises(sequences.SequenceError, match="outside the work area"):
         run_pick(vision=MockVision(u, v, K))
