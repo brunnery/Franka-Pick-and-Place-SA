@@ -87,12 +87,12 @@
         damping: 1.0               # joint damping in the nullspace [Nms/rad]; 0 = off (was 0.0)
         max_torque: 5.0            # clamp per joint [Nm]
         target_from_activation: false  # true: posture = q at activation; false: q_target below
-        q_target: [0.10, -0.19, -0.09, -1.84, -0.02, 1.65, -0.77]  # IK for (0.5, 0, 0.5) pointing down, camera at +x (q7 was 0.80 = camera at -y)
+        q_target: [0.10, -0.19, -0.09, -1.84, -0.02, 1.65, 0.80]  # IK for (0.5, 0, 0.5) pointing down, sigma_min 0.18
       start_pose:                  # smooth move at activation (minimum-jerk); a set_pose / reference_pose cancels it
         enabled: true
         position: [0.5, 0.0, 0.5]  # [m], base frame, Franka EE frame (hand TCP, 0.1034 m below the flange)
         use_orientation: true      # false: keep the orientation at activation
-        orientation_xyzw: [0.7071068, 0.7071068, 0.0, 0.0]  # pointing down, camera at +x_robo (CLAUDE.md: camera never to the side)
+        orientation_xyzw: [1.0, 0.0, 0.0, 0.0]  # pointing down, camera at +x_robo: the only orientation used (CLAUDE.md)
         max_velocity: 0.1          # peak speed [m/s] (max 0.5)
         max_angular_velocity: 0.3  # peak [rad/s]
       modes:                       # stiffness presets set by the /cartesian_impedance_controller/control_mode topic

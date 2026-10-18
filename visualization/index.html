@@ -309,7 +309,7 @@ const P = {
   screwEnd: [SCREW[0], SCREW[1], SEAT + NUT_H / 2],
 };
 const TURNS = Math.round((SCREW_TOP - SEAT) / PITCH);
-const YAW = Math.PI / 2;  // camera side of the gripper faces +x, away from the robot base
+const YAW = 0;  // EE quaternion (1, 0, 0, 0) = controller start pose; the gripper is mounted so the camera faces +x
 
 const PHASES = [
   { name: 'Startpose',            t0: 0,    t1: 1,    kind: 'hold' },
@@ -461,6 +461,8 @@ for (let i = 0; i < 7; i++) {
 const flange = new THREE.Object3D(); flange.position.z = 0.107; flange.rotation.z = -Math.PI / 4; parent.add(flange);
 const gripRoot = new THREE.Object3D(); gripRoot.rotation.x = Math.PI; gripRoot.position.z = GRIP_LEN; flange.add(gripRoot);
 gripRoot.add(gripScene);
+// gripper clocking on the flange: camera on +x of the EE (Franka hand) axes, i.e. the mesh (camera at -y) turned +90 deg about the tool axis
+gripScene.rotation.z = Math.PI / 2;
 const tcp = new THREE.Object3D(); tcp.position.z = TCP_IN_GRIPPER; gripRoot.add(tcp);
 
 // --- gripper parts
