@@ -50,12 +50,12 @@ robot:
     float: 2                   # modes.float_stiffness (compliant in all axes)
   stream_rate_hz: 100.0        # reference poses per second while moving
   motion:
-    max_speed_mm_s: 80.0       # peak speed of every axis group
-    max_angular_speed_deg_s: 30.0
+    max_speed_mm_s: 30.0       # peak speed of every axis group (first robot runs 18.10.: slow)
+    max_angular_speed_deg_s: 10.0
     lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
     min_duration_s: 1.0
   arrival_tolerance_mm: 3.0    # position error that counts as arrived
-  arrival_timeout_s: 10.0      # after the end of the path
+  arrival_timeout_s: 15.0      # after the end of the path
   arrival_settle_s: 0.5        # error must stay below the tolerance this long
   max_taught_tilt_deg: 10.0    # taught poses more tilted than this are refused (only their
                                # position is used; the check catches gross teaching errors)
