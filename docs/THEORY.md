@@ -29,7 +29,7 @@ The flange origin is the centre of the contact face on the FR3 flange (a centrin
 
 The gripper is clocked on the flange like the Franka Hand (as in the 3D viewer, `FLANGE_YAW` in `visualization/src/kin.js`), so the camera lies on $+y_F$. Expressed in the axes of `fr3_link8` the same camera vector is $(31.4,\ 31.4,\ 57.223)^\top$. Reading ${}^{F}\mathbf{t}_{C}$ in `fr3_link8` axes puts the camera 45° off (e.g. back right instead of right).
 
-**Commanded orientation (camera in front, tool down):** $x_F = +y_B$, $y_F = +x_B$, $z_F = -z_B$, quaternion $(x, y, z, w) = (0.7071,\ 0.7071,\ 0,\ 0)$ for the end-effector frame. At this orientation `fr3_link8` has a yaw of +45°. Compared with the controller start pose $(1, 0, 0, 0)$ (camera on $-y_B$, `fr3_link8` yaw −45°), joint 7 turns by −90° (viewer IK: $q_7$ from 0.79 to −0.78 rad, limit ±3.05 rad).
+**Commanded orientation, the only one used:** the camera always lies in front of the flange ($+x_B$), with the tool pointing down and no yaw about the tool axis in any pose, the controller start pose included. Thus $x_F = +y_B$, $y_F = +x_B$, $z_F = -z_B$, quaternion $(x, y, z, w) = (0.7071,\ 0.7071,\ 0,\ 0)$ for the end-effector frame, and `fr3_link8` has a yaw of +45°. The fixed orientation keeps the pixel-to-base mapping of Section 0 constant. For reference, the quaternion $(1, 0, 0, 0)$ would put the camera on $-y_B$ and differs by 90° in $q_7$; it is not used (start pose in `controllers.yaml`: $q_7 = -0.77$ rad, limit ±3.05 rad).
 
 With the gripper pointing down and the camera in front of the flange, the camera axes map to the base axes as $x_B = -y_C$, $y_B = -x_C$, $z_B = -z_C$.
 
