@@ -1,232 +1,249 @@
-"""ROS 2 node: nut detection on the camera stream.
+"""Simple object finder: one object on a blank background -> centre of a fitted hexagon.
 
-Subscribes:  image_raw (sensor_msgs/Image), camera_info (sensor_msgs/CameraInfo)
-Publishes:   vision/detection (sa_interfaces/Detection), vision/debug (sensor_msgs/Image)
-All parameters come from config/vision.yaml (no defaults in code).
+  ros2 launch software/launch/vision.launch.py
+
+No size or shape filter. Steps: greyscale -> blur -> background = heavily blurred
+image (the table) -> band-stop around the table: foreground where |I - B| / B > threshold
+(darker or brighter than the table) -> close/open -> largest blob that
+does not touch the image border (robot parts reaching into the view, a cut object) ->
+regular hexagon fitted to its convex hull -> centre of the hexagon.
+
+Hexagon fit: for each orientation theta (0-60 deg), the hull is enclosed by three
+pairs of parallel lines with normals theta, theta+60, theta+120. Each pair gives a
+width and a midline. The orientation with the smallest total width gives the
+tightest enclosing hexagon (it touches the flats of a hexagonal object); its centre
+is the least-squares intersection of the three midlines.
+
+Publishes sa_interfaces/Detection on vision/detection (read by sa_tasks) and on
+vision/debug either the overlay or
+(debug_view "steps") camera image, binary mask and overlay side by side.
 """
-from pathlib import Path
-import time
+import math
+from dataclasses import dataclass
+from typing import Optional
 
 import cv2
-import rclpy
-from cv_bridge import CvBridge
-from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
-from rclpy.parameter import Parameter
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import CameraInfo, Image
+import numpy as np
 
-from sa_interfaces.msg import Detection
-from sa_vision import geometry
-from sa_vision.debug_draw import draw_debug, draw_steps
-from sa_vision.detection import BACKGROUND_MISMATCH, NutParams, StudParams, detect_nut, detect_stud
-from sa_vision.params import TARGET_NUT, TARGET_STUD, TARGETS, distance_range, nut_params
-from sa_vision.temporal import CentreMedian
+try:  # the pure functions above the node run without ROS (pytest on any laptop)
+    import rclpy
+    from cv_bridge import CvBridge
+    from rclpy.node import Node
+    from rclpy.parameter import Parameter
+    from rclpy.qos import qos_profile_sensor_data
+    from sa_interfaces.msg import Detection
+    from sensor_msgs.msg import CameraInfo, Image
+except ImportError:  # pragma: no cover
+    Node = object
 
 MM_TO_M = 1e-3
-FPS_SMOOTHING = 0.1  # weight of the newest frame interval in the displayed frame rate
-DEBUG_VIEWS = ("overlay", "steps")
-REFERENCE_WARN_PERIOD_S = 5.0
-
-DETECTION_PARAMETERS = {
-    "blur_kernel_px": Parameter.Type.INTEGER,
-    "morph_kernel_px": Parameter.Type.INTEGER,
-    "morph_close_iterations": Parameter.Type.INTEGER,
-    "morph_open_iterations": Parameter.Type.INTEGER,
-    "roi": Parameter.Type.INTEGER_ARRAY,
-    "segmentation": Parameter.Type.STRING,
-    "edge_threshold": Parameter.Type.DOUBLE,
-    "edge_group_ratio": Parameter.Type.DOUBLE,
-    "reference_match_range": Parameter.Type.DOUBLE_ARRAY,
-    "background_downscale": Parameter.Type.INTEGER,
-    "background_window_ratio": Parameter.Type.DOUBLE,
-    "brighter_threshold": Parameter.Type.DOUBLE,
-    "darker_threshold": Parameter.Type.DOUBLE,
-    "core_threshold": Parameter.Type.DOUBLE,
-    "across_flats_range_mm": Parameter.Type.DOUBLE_ARRAY,
-    "target_across_flats_mm": Parameter.Type.DOUBLE,
-    "size_tolerance": Parameter.Type.DOUBLE,
-    "size_class_tolerance": Parameter.Type.DOUBLE,
-    "min_width_ratio": Parameter.Type.DOUBLE,
-    "max_width_ratio": Parameter.Type.DOUBLE,
-    "min_hole_ratio": Parameter.Type.DOUBLE,
-    "max_hole_ratio": Parameter.Type.DOUBLE,
-    "max_centre_offset_ratio": Parameter.Type.DOUBLE,
-}
-STUD_PARAMETERS = {
-    "base_side_mm": Parameter.Type.DOUBLE,
-    "size_tolerance": Parameter.Type.DOUBLE,
-    "min_width_ratio": Parameter.Type.DOUBLE,
-    "max_width_ratio": Parameter.Type.DOUBLE,
-}
+HEXAGON_DIRECTIONS = np.radians([0.0, 60.0, 120.0])
+OVERLAY_GREEN, OVERLAY_RED, OVERLAY_YELLOW = (0, 200, 0), (0, 0, 255), (0, 220, 255)
 
 
-class VisionNode(Node):
+@dataclass
+class Hexagon:
+    centre: tuple          # (u, v) px
+    across_flats_px: float
+    angle_deg: float       # normal of the first flat
+    regularity: float      # spread of the three widths / their mean (0 = regular hexagon)
+
+    def corners(self) -> np.ndarray:
+        radius = self.across_flats_px / math.sqrt(3.0)
+        angles = np.radians(self.angle_deg + 30.0 + 60.0 * np.arange(6))
+        return np.stack([self.centre[0] + radius * np.cos(angles),
+                         self.centre[1] + radius * np.sin(angles)], axis=1)
+
+
+def fit_hexagon(points: np.ndarray, angle_step_deg: float) -> Hexagon:
+    """Tightest regular hexagon around the points (see module docstring)."""
+    points = np.asarray(points, float).reshape(-1, 2)
+    best = None
+    for theta in np.radians(np.arange(0.0, 60.0, angle_step_deg)):
+        normals = np.stack([np.cos(theta + HEXAGON_DIRECTIONS),
+                            np.sin(theta + HEXAGON_DIRECTIONS)], axis=1)
+        projections = points @ normals.T
+        low, high = projections.min(axis=0), projections.max(axis=0)
+        widths = high - low
+        if best is None or widths.sum() < best[0]:
+            midlines = (low + high) / 2.0
+            centre, *_ = np.linalg.lstsq(normals, midlines, rcond=None)
+            best = (widths.sum(), Hexagon(tuple(centre), float(widths.mean()),
+                                          math.degrees(theta),
+                                          float(widths.std() / widths.mean())))
+    return best[1]
+
+
+def find_object(image: np.ndarray, p: dict, steps: Optional[dict] = None) -> tuple:
+    """(hexagon or None, foreground mask, status). p: the "detection" parameters.
+    If steps is a dict, the binary mask before close/open is stored in it (debug view)."""
+    gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (p["blur_kernel_px"],) * 2, 0).astype(np.float32)
+    # The background is smooth: blur a downscaled copy (much faster) and scale it back
+    scale = p["background_downscale"]
+    small = cv2.resize(gray, None, fx=1.0 / scale, fy=1.0 / scale, interpolation=cv2.INTER_AREA)
+    small = cv2.GaussianBlur(small, (0, 0), p["background_sigma_px"] / scale)
+    background = cv2.resize(small, gray.shape[::-1], interpolation=cv2.INTER_LINEAR)
+    difference = np.abs(gray - background) / np.maximum(background, 1.0)
+    mask = (difference > p["threshold"]).astype(np.uint8) * 255
+    if steps is not None:
+        steps["binary"] = mask
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (p["morph_kernel_px"],) * 2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=p["close_iterations"])
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    height, width = mask.shape
+    margin = p["border_margin_px"]
+
+    def inside(contour):
+        x, y, w, h = cv2.boundingRect(contour)
+        return x > margin and y > margin and x + w < width - margin and y + h < height - margin
+
+    contours = [c for c in contours if inside(c)]
+    if not contours:
+        return None, mask, "nothing found"
+    largest = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(largest) < p["min_area_px"]:
+        return None, mask, "nothing found (only specks)"
+    return fit_hexagon(cv2.convexHull(largest), p["angle_step_deg"]), mask, "ok"
+
+
+AXIS_PX = 70        # length of the frame arrows in the overlay
+FRAME_MARGIN_PX = 40
+FONT, FONT_SCALE = cv2.FONT_HERSHEY_SIMPLEX, 1.0
+
+
+def _axes(out: np.ndarray, origin: tuple, axes: tuple, colour: tuple) -> None:
+    """Two labelled arrows from origin; axes = ((label, (du, dv)), ...) in unit pixels."""
+    for label, (du, dv) in axes:
+        tip = (int(origin[0] + AXIS_PX * du), int(origin[1] + AXIS_PX * dv))
+        cv2.arrowedLine(out, origin, tip, colour, 2, tipLength=0.2)
+        # Labels point away from the arrow, and inwards near the right image border
+        right = origin[0] > out.shape[1] / 2
+        dx = 8 if du > 0 else -45 if du < 0 or right else 8
+        cv2.putText(out, label, (tip[0] + dx, tip[1] + (25 if dv > 0 else -8)), FONT, 0.7,
+                    colour, 2)
+
+
+def draw(image: np.ndarray, hexagon: Optional[Hexagon], principal_point: tuple,
+         offset_mm: Optional[tuple], distance_mm: float) -> np.ndarray:
+    """Minimal overlay: camera frame (top left), robot frame (bottom right), image centre,
+    hexagon, and as text only the offset in robot axes and the distance d."""
+    out = image.copy()
+    height, width = out.shape[:2]
+    m = FRAME_MARGIN_PX
+    _axes(out, (m, m), (("x_C", (1, 0)), ("y_C", (0, 1))), OVERLAY_YELLOW)
+    # Robot axes in the image: x_robo = -y_cam (up), y_robo = -x_cam (left)
+    _axes(out, (width - m, height - m), (("x_R", (0, -1)), ("y_R", (-1, 0))), OVERLAY_GREEN)
+    pp = tuple(int(round(c)) for c in principal_point)
+    cv2.drawMarker(out, pp, OVERLAY_YELLOW, cv2.MARKER_CROSS, 40, 2)
+    lines = []
+    if hexagon is not None:
+        centre = tuple(int(round(c)) for c in hexagon.centre)
+        cv2.polylines(out, [np.round(hexagon.corners()).astype(np.int32)], True, OVERLAY_GREEN, 2)
+        cv2.drawMarker(out, centre, OVERLAY_GREEN, cv2.MARKER_CROSS, 20, 2)
+        cv2.line(out, pp, centre, OVERLAY_GREEN, 1)
+    if offset_mm is not None:
+        lines.append(f"x {offset_mm[0]:+.1f}  y {offset_mm[1]:+.1f} mm")
+    lines.append(f"z = {distance_mm:.0f} mm")
+    for i, line in enumerate(lines):
+        size = cv2.getTextSize(line, FONT, FONT_SCALE, 2)[0]
+        cv2.putText(out, line, (width - m - size[0], m + 10 + 40 * i), FONT, FONT_SCALE,
+                    OVERLAY_GREEN if offset_mm is not None else OVERLAY_RED, 2)
+    return out
+
+
+def _tile(image: np.ndarray, title: str, scale: float) -> np.ndarray:
+    tile = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    tile = cv2.resize(tile, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    cv2.putText(tile, title, (10, 30), FONT, 0.8, (0, 0, 0), 4)
+    cv2.putText(tile, title, (10, 30), FONT, 0.8, OVERLAY_YELLOW, 2)
+    return tile
+
+
+def draw_steps(image: np.ndarray, binary: np.ndarray, result: np.ndarray, threshold: float,
+               scale: float) -> np.ndarray:
+    """One row: camera image | binary mask | result with the hexagon."""
+    return np.hstack([_tile(image, "camera", scale),
+                      _tile(binary, f"table 1 +- {threshold:.2f} removed", scale),
+                      _tile(result, "result", scale)])
+
+
+DETECTION_PARAMETERS = ("blur_kernel_px", "background_sigma_px", "background_downscale", "threshold",
+                        "morph_kernel_px", "close_iterations", "min_area_px", "border_margin_px",
+                        "angle_step_deg")
+
+
+class SimpleVisionNode(Node):
     def __init__(self):
         super().__init__("vision_node")
-        self.declare_parameter("d_source", Parameter.Type.STRING)
-        self.declare_parameter("d_from_size_range_mm", Parameter.Type.DOUBLE_ARRAY)
-        self.declare_parameter("object_plane_distance_mm", Parameter.Type.DOUBLE)
+        for name in DETECTION_PARAMETERS:
+            kind = Parameter.Type.DOUBLE if name in ("background_sigma_px", "threshold",
+                                                     "angle_step_deg") else Parameter.Type.INTEGER
+            self.declare_parameter(f"detection.{name}", kind)
         self.declare_parameter("publish_debug", Parameter.Type.BOOL)
         self.declare_parameter("debug_view", Parameter.Type.STRING)
         self.declare_parameter("debug_steps_scale", Parameter.Type.DOUBLE)
-        self.declare_parameter("centre_median_frames", Parameter.Type.INTEGER)
-        self.declare_parameter("centre_reset_jump_ratio", Parameter.Type.DOUBLE)
-        self.declare_parameter("reference_image", Parameter.Type.STRING)
-        self.declare_parameter("reference_image_stud", Parameter.Type.STRING)
-        # "nut" or "stud"; sa_tasks switches it (and object_plane_distance_mm) at run time
+        # Set by sa_tasks; only used for point_camera (no size filter here)
+        self.declare_parameter("object_plane_distance_mm", Parameter.Type.DOUBLE)
         self.declare_parameter("target", Parameter.Type.STRING)
-        for name, kind in DETECTION_PARAMETERS.items():
-            self.declare_parameter(f"nut.{name}", kind)
-        for name, kind in STUD_PARAMETERS.items():
-            self.declare_parameter(f"stud.{name}", kind)
-        self.target = None  # target of the frames in the median window
-
-        # One reference per observation pose: the nut area and the stud look different
-        self.backgrounds = {
-            TARGET_NUT: self.load_reference(self.get_parameter("reference_image").value),
-            TARGET_STUD: self.load_reference(self.get_parameter("reference_image_stud").value),
-        }
+        self.declare_parameter("d_source", Parameter.Type.STRING)
         self.bridge = CvBridge()
-        self.distance_range()  # an unknown d_source fails at start, not per frame
-        if self.get_parameter("debug_view").value not in DEBUG_VIEWS:
-            raise ValueError(f"debug_view must be one of {DEBUG_VIEWS}")
-        self.centre_filter = CentreMedian(self.get_parameter("centre_median_frames").value,
-                                          self.get_parameter("centre_reset_jump_ratio").value)
-        self.k = None
-        self.dist = None
-        self.last_frame_time = None
-        self.fps = None
-        self.detection_pub = self.create_publisher(Detection, "vision/detection", 10)
-        # Reliable with depth 1: rqt_image_view subscribes reliable, old frames are useless.
+        self.k = self.dist = None
+        self.pub = self.create_publisher(Detection, "vision/detection", 10)
         self.debug_pub = self.create_publisher(Image, "vision/debug", 1)
-        self.create_subscription(CameraInfo, "camera_info", self.on_camera_info,
-                                 qos_profile_sensor_data)
+        self.create_subscription(CameraInfo, "camera_info", self.on_info, qos_profile_sensor_data)
         self.create_subscription(Image, "image_raw", self.on_image, qos_profile_sensor_data)
-        self.get_logger().info("Waiting for camera_info and image_raw")
 
-    def load_reference(self, path: str):
-        """Reference image of the empty work area (method A'), None = estimate (A)."""
-        if path and Path(path).is_file():
-            image = cv2.imread(path)
-            if image is None:
-                raise RuntimeError(f"Cannot read reference image {path}")
-            self.get_logger().info(f"Background: reference image {Path(path).resolve()}")
-            return image
-        self.get_logger().warn(f"No reference image at '{path}', only the local median is "
-                               "used (method A). Record one with capture_reference.")
-        return None
+    def on_info(self, msg):
+        self.k = np.asarray(msg.k, float).reshape(3, 3)
+        self.dist = np.asarray(msg.d, float)
 
-    def distance_range(self):
-        """(d_min, d_max) if d is estimated from the nut size, None if d comes from the YAML."""
-        return distance_range(self.get_parameter("d_source").value,
-                              self.get_parameter("d_from_size_range_mm").value)
-
-    def update_fps(self):
-        now = time.monotonic()
-        if self.last_frame_time is not None and now > self.last_frame_time:
-            rate = 1.0 / (now - self.last_frame_time)
-            self.fps = rate if self.fps is None else (
-                FPS_SMOOTHING * rate + (1.0 - FPS_SMOOTHING) * self.fps)
-        self.last_frame_time = now
-
-    def stud_params(self) -> StudParams:
-        return StudParams(**{name: self.get_parameter(f"stud.{name}").value
-                             for name in STUD_PARAMETERS})
-
-    def nut_params(self) -> NutParams:
-        return nut_params({name: self.get_parameter(f"nut.{name}").value
-                           for name in DETECTION_PARAMETERS})
-
-    def on_camera_info(self, msg: CameraInfo):
-        if self.k is None:
-            self.get_logger().info("Received camera intrinsics")
-        self.k = geometry.camera_matrix(msg.k)
-        self.dist = list(msg.d)
-
-    def on_image(self, msg: Image):
+    def on_image(self, msg):
         if self.k is None:
             return
-        self.update_fps()
-        distance_mm = self.get_parameter("object_plane_distance_mm").value
-        focal_px = 0.5 * (self.k[0, 0] + self.k[1, 1])
         image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        params = self.nut_params()
-        target = self.get_parameter("target").value
-        if target not in TARGETS:
-            raise ValueError(f"target must be one of {TARGETS}, not '{target}'")
-        if target != self.target:  # never mix frames of two targets in the median
-            self.centre_filter.clear()
-            self.target = target
-        if target == TARGET_STUD:
-            result = detect_stud(image, focal_px, distance_mm, params, self.stud_params(),
-                                 self.backgrounds[target])
-        else:
-            result = detect_nut(image, focal_px, distance_mm, params, self.backgrounds[target],
-                                self.distance_range())
-        if result.background == BACKGROUND_MISMATCH:
-            self.get_logger().warn(
-                f"Reference image ignored: live / reference brightness "
-                f"{result.reference_brightness:.2f} (lighting changed?). Record a new one with "
-                f"capture_reference.", throttle_duration_sec=REFERENCE_WARN_PERIOD_S)
-        filtered = self.centre_filter.update(result)
-        settled = filtered is not None and filtered.settled
-
-        # The published centre is the median over the last frames; it is valid only once
-        # the window is full (THEORY 2.7).
-        out = Detection()
-        out.header = msg.header
-        out.valid = settled
-        out.status = (f"settling {filtered.frames}/{filtered.window}"
-                      if filtered is not None and not settled else result.status)
-        out.across_flats_mm = result.across_flats_mm
-        out.size = result.size
-        out.area_px = result.area_px
-        out.hole_area_px = result.hole_area_px
-        out.width_ratio = result.width_ratio
-        out.compactness = result.compactness
-        out.num_candidates = result.num_accepted
+        p = {name: self.get_parameter(f"detection.{name}").value for name in DETECTION_PARAMETERS}
+        steps = {} if self.get_parameter("debug_view").value == "steps" else None
+        hexagon, mask, status = find_object(image, p, steps)
+        out = Detection(header=msg.header, valid=hexagon is not None, status=status)
         nan = float("nan")
-        robot_offset = None
-        if filtered is not None:
-            u_undistorted, v_undistorted = geometry.undistort_pixel(
-                filtered.u, filtered.v, self.k, self.dist)
-            point = geometry.pixel_to_camera_point(u_undistorted, v_undistorted, self.k,
-                                                   filtered.distance_mm * MM_TO_M)
-            robot_offset = geometry.camera_to_robot_xy(point[0] / MM_TO_M, point[1] / MM_TO_M)
-        if settled:
-            out.u, out.v = filtered.u, filtered.v
-            out.u_undistorted, out.v_undistorted = u_undistorted, v_undistorted
-            out.plane_distance = filtered.distance_mm * MM_TO_M
-            out.point_camera.x, out.point_camera.y, out.point_camera.z = point
-        else:
-            out.u = out.v = out.u_undistorted = out.v_undistorted = nan
-            out.plane_distance = result.distance_mm * MM_TO_M  # NaN if estimated
-            out.point_camera.x = out.point_camera.y = out.point_camera.z = nan
-        self.detection_pub.publish(out)
-
+        out.u = out.v = out.u_undistorted = out.v_undistorted = nan
+        out.point_camera.x = out.point_camera.y = out.point_camera.z = nan
+        out.across_flats_mm = out.area_px = out.hole_area_px = nan
+        out.width_ratio = out.compactness = nan
+        d_mm = self.get_parameter("object_plane_distance_mm").value
+        out.plane_distance = d_mm * MM_TO_M
+        offset = None
+        if hexagon is not None:
+            out.u, out.v = hexagon.centre
+            und = cv2.undistortPoints(np.array([[hexagon.centre]], float), self.k, self.dist,
+                                      P=self.k)[0, 0]
+            out.u_undistorted, out.v_undistorted = float(und[0]), float(und[1])
+            ray = np.linalg.solve(self.k, [und[0], und[1], 1.0]) * d_mm * MM_TO_M
+            out.point_camera.x, out.point_camera.y, out.point_camera.z = ray.tolist()
+            out.across_flats_mm = hexagon.across_flats_px * d_mm / self.k[0, 0]
+            # Offset of the object from the image centre in robot axes:
+            # x_robo = -y_cam, y_robo = -x_cam (CLAUDE.md)
+            offset = (-ray[1] / MM_TO_M, -ray[0] / MM_TO_M)
+            out.width_ratio = hexagon.regularity
+            out.num_candidates = 1
+        self.pub.publish(out)
         if self.get_parameter("publish_debug").value:
-            principal_point = (self.k[0, 2], self.k[1, 2])
-            window = self.centre_filter.window
-            if self.get_parameter("debug_view").value == "steps":
-                debug = draw_steps(image, result, principal_point, params,
-                                   self.get_parameter("debug_steps_scale").value, self.fps,
-                                   robot_offset, filtered, window)
-            else:
-                debug = draw_debug(image, result, principal_point, self.fps, robot_offset,
-                                   filtered, window)
-            debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding="bgr8")
-            debug_msg.header = msg.header
-            self.debug_pub.publish(debug_msg)
+            debug = draw(image, hexagon, (self.k[0, 2], self.k[1, 2]), offset, d_mm)
+            if steps is not None:
+                debug = draw_steps(image, steps["binary"], debug, p["threshold"],
+                                   self.get_parameter("debug_steps_scale").value)
+            debug = self.bridge.cv2_to_imgmsg(debug, "bgr8")
+            debug.header = msg.header
+            self.debug_pub.publish(debug)
 
 
 def main(args=None):
-    # Ctrl-C reaches the node twice (terminal and launch), so no explicit
-    # destroy_node(): a second SIGINT there would end in a traceback.
     rclpy.init(args=args)
     try:
-        rclpy.spin(VisionNode())
-    except (KeyboardInterrupt, ExternalShutdownException):
+        rclpy.spin(SimpleVisionNode())
+    except KeyboardInterrupt:
         pass
     finally:
         rclpy.try_shutdown()

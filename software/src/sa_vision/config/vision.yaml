@@ -1,88 +1,26 @@
-# Parameters of sa_vision/vision_node. Lengths in mm, image quantities in px.
-# Theory behind each filter: docs/THEORY.md, Section 2.
+# sa_vision/vision_node: one object on a blank background, no size or shape filter.
 vision_node:
   ros__parameters:
-    # Source of d (THEORY 2.6b): "yaml" = object_plane_distance_mm (at the robot, later from
-    # forward kinematics); "from_size" = d = f * target_across_flats_mm / s_px for hand-held
-    # tests at any height. With from_size the nut size is assumed, not measured, and the
-    # size filter only checks that d lies in d_from_size_range_mm.
-    d_source: yaml
-    d_from_size_range_mm: [200.0, 500.0]
-    # Distance camera centre -> nut top face along the optical axis (d in THEORY 3.2),
-    # used with d_source "yaml".
-    # Bench stand of 16.10.: projection centre 419 mm above the sheet (grid fit, THEORY 2.8)
-    # minus the 8 mm nut height. At the robot this comes from forward kinematics.
-    object_plane_distance_mm: 411.0
-    # Object to detect: "nut" or "stud". sa_tasks sets it (and object_plane_distance_mm,
-    # from forward kinematics) before each observation.
-    target: nut
     publish_debug: true
-    # /vision/debug: "overlay" = result only, "steps" = 2x2 mosaic of the intermediate steps
-    # (I/B, threshold, morphology + candidates, result), each tile scaled by debug_steps_scale
+    # vision/debug: "overlay" = result only, "steps" = camera image | binary mask | result
+    # side by side, each scaled by debug_steps_scale
     debug_view: steps
-    debug_steps_scale: 0.75
-    # Temporal median of the centre (THEORY 2.7): median of u, v, d over the last n valid
-    # frames; valid only once n frames agree. The window starts over after an invalid frame
-    # or a jump larger than ratio * s_px (camera or nut moved). 1 = no filter.
-    centre_median_frames: 5
-    centre_reset_jump_ratio: 0.25
-    # Image of the empty work area from the observation pose with the fixed exposure
-    # (method A'), recorded with `ros2 run sa_vision capture_reference`. Relative to the
-    # working directory (repository root). Missing file or "" = local median only (A).
-    # Robot: nut observation pose (step 1). Bench stand of 16.10.: data/bench/diffuse/reference.png
-    reference_image: data/reference/nut_area.png
-    # Same for the stud observation pose (step 2): ros2 run sa_vision capture_reference
-    # --out data/reference/stud_area.png. Missing file = local median only.
-    reference_image_stud: data/reference/stud_area.png
-
-    nut:
-      # Region of interest [x, y, width, height]; all 0 = full image.
-      roi: [0, 0, 0, 0]
-      # Foreground (THEORY 2.2): "edges" = gradient of I/B > edge_threshold (sharp metal
-      # edges; soft shadows drop out), "threshold" = I/B level, brighter/darker_threshold.
-      # Bench set 16.10. (diffuse lamp, reference image): edges 26/26, threshold 4/26.
-      segmentation: edges
-      edge_threshold: 0.35         # |Sobel 3x3 of I/B|; bench 16.10.: 0.25 -> 19/26, 0.35 -> 26/26
-      # Edge pixels closer than ratio * largest accepted s_px form one candidate, so a gap in
-      # the outline does not split the nut. Bench 16.10.: 0.05 -> 25/26, 0.1 and 0.2 -> 26/26;
-      # hand-held images 15.10.: 0.1 -> 19/27 (without grouping 12/27).
-      edge_group_ratio: 0.1
-      # The reference image is used only if the median of I/R lies in this range; otherwise
-      # the lighting has changed since it was recorded and it is ignored (warning, method A).
-      reference_match_range: [0.8, 1.25]
-      # Pre-processing
-      blur_kernel_px: 5            # Gaussian kernel, odd
-      morph_kernel_px: 7           # elliptic structuring element for closing/opening
-      morph_close_iterations: 2    # joins highlights and dark facets of one nut
-      morph_open_iterations: 1     # removes specks
-      # Local table brightness B: median filter with a window of ratio * largest accepted
-      # s in px, at 1/downscale resolution. 1.25 also absorbs most of the nut's soft
-      # shadow (chosen on the 27 test images of 15.10.: 2.0 lets the shadow through).
-      background_downscale: 8
-      background_window_ratio: 1.25
-      # Ratio image I/B: 1 on the table. Bare metal is brighter (highlights) or darker.
-      brighter_threshold: 0.06     # foreground if I/B > 1.06
-      darker_threshold: 0.25       # foreground if I/B < 0.75
-      core_threshold: 0.28         # dark core (thread hole) if I/B < 0.72
-      # Size (width across flats s, measured as s_px * d / f)
-      across_flats_range_mm: [7.0, 19.0]  # M4 ... M12 (ISO 4032 / DIN 934)
-      target_across_flats_mm: 13.0  # M8; 0 = any size in the range, then exactly one nut
-      size_tolerance: 0.15         # accepted s: target (or range) * (1 +- tol)
-      size_class_tolerance: 0.05   # thread size only if all standard s within +-5 % agree
-                                   # (17 vs 18 mm differ by 5.6 %)
-      # Shape filters (scale-invariant)
-      min_width_ratio: 0.78        # s/e: hexagon 0.866, square 0.707 (stud base)
-      max_width_ratio: 0.95        # circle (washer) 1.0
-      min_hole_ratio: 0.15         # dark core area / silhouette area; measured 0.19-0.80
-      max_hole_ratio: 0.85
-      max_centre_offset_ratio: 0.25  # |core centre - silhouette centre| / s_px; measured <= 0.18
-
-    stud:
-      # M8 stud seen from above: square base 10 x 10 mm (top face 20 mm above the table),
-      # threaded rod (8 mm) in its middle. Silhouette = square, s/e = 1/sqrt(2) = 0.707.
-      # object_plane_distance_mm is then the distance to the top face of the base.
-      # Not tuned on real images yet (no images of the upright stud).
-      base_side_mm: 10.0
-      size_tolerance: 0.2          # accepted side: 10 mm * (1 +- tol)
-      min_width_ratio: 0.62
-      max_width_ratio: 0.80        # nut (hexagon) 0.82-0.91 never passes
+    debug_steps_scale: 0.5
+    target: nut                     # set by sa_tasks, not used here
+    d_source: yaml                  # set by sa_tasks, not used here
+    object_plane_distance_mm: 400.0 # set by sa_tasks (only for point_camera / s in mm)
+    detection:
+      blur_kernel_px: 5             # Gaussian kernel against sensor noise, odd
+      # Background = the image blurred with this sigma: much larger than the object
+      # (M8 nut: ~60 px at 400 mm), so the object hardly changes it.
+      background_sigma_px: 60.0
+      background_downscale: 8       # blur computed at 1/8 resolution (speed)
+      # Band-stop around the table (I / B = 1): foreground if |I - B| / B > this, i.e. darker
+      # or brighter than the table. Live 19.10.: 0.18 best (table 0.9-1.1, shadow 0.8-0.9)
+      threshold: 0.18
+      morph_kernel_px: 7            # closing joins the parts of the object, opening drops specks
+      close_iterations: 2
+      min_area_px: 300              # smaller blobs count as noise
+      border_margin_px: 2           # blobs within this distance of the image border are
+                                    # ignored (gripper/robot in view, object cut off)
+      angle_step_deg: 1.0           # orientation search of the hexagon fit

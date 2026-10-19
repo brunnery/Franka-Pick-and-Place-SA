@@ -6,10 +6,10 @@ import pytest
 import yaml
 from pathlib import Path
 
-from simple_vision.simple_vision import fit_hexagon, find_object
+from sa_vision.vision_node import fit_hexagon, find_object
 
 PARAMS = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" /
-                         "simple_vision.yaml").read_text())["vision_node"]["ros__parameters"]["detection"]
+                         "vision.yaml").read_text())["vision_node"]["ros__parameters"]["detection"]
 
 
 def hexagon_corners(centre, s, angle_deg):
