@@ -2,7 +2,7 @@
 
   ros2 run sa_tasks pick           # step 1: nut -> gripper, back to the observation pose
   ros2 run sa_tasks place_screw    # step 2: stud -> place, screw, release, back up
-  options: --robot mock (dry run, vision still real), --yes (no confirmation)
+  options: --robot mock (dry run, vision still real). Starts without confirmation.
 
 Needs: sa_vision (camera + vision_node) and, with the real robot, the impedance
 controller (sa_robot). Writes one YAML record per run to log_dir of tasks.yaml.
@@ -58,7 +58,6 @@ def run(step: str) -> None:
     parser.add_argument("--config", type=Path, default=config.DEFAULT_TASKS)
     parser.add_argument("--poses", type=Path, default=config.DEFAULT_POSES)
     parser.add_argument("--robot", choices=ROBOT_BACKENDS, help="override robot.backend")
-    parser.add_argument("--yes", action="store_true", help="start without confirmation")
     if step == "pick":
         parser.add_argument("--locate-only", action="store_true",
                             help="observation pose + detection only, no descent")
@@ -89,10 +88,6 @@ def run(step: str) -> None:
         log.info("robot %s, gripper %s, table z %.1f mm, %s at %s mm", backend,
                  cfg["gripper"]["backend"], table, start_pose,
                  [round(v, 1) for v in observe[:3, 3]])
-        if not args.yes:
-            input(f"Step '{step}': the robot will move. Check first: after the controller "
-                  "activation the camera faces away from the robot base (+x). "
-                  "Enter = start, Ctrl-C = abort ")
         if step == "pick":
             sequences.pick(robot, gripper, vision, cfg, poses, locate_only=args.locate_only,
                            record=record)
