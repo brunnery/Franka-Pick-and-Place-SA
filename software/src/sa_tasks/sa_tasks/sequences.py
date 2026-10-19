@@ -125,8 +125,27 @@ def locate(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,
     log.info("%s at x %.1f y %.1f z %.1f mm (base), %.0f mm from the camera axis, d %.0f mm",
              target, *point, offset, distance)
     return {"target": target, "position_mm": point.tolist(), "offset_from_axis_mm": offset,
-            "plane_distance_mm": distance,
+            "camera_axis_mm": axis.tolist(), "plane_distance_mm": distance,
             "pixel_undistorted": [observation.u_undistorted, observation.v_undistorted]}
+
+
+def tcp_move(robot: Robot, cfg: dict, found: dict) -> dict:
+    """Split the horizontal move of the TCP from the observation pose to the detected object
+    into the part the image gives (object relative to the camera axis, incl. the target
+    correction) and the fixed part of the mount (TCP -> camera axis on the object plane,
+    about +44.4 mm in x_B with the camera in front; THEORY 3.3). Logged and recorded only,
+    the target itself comes from the frame chain."""
+    tcp_now = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])[:2]
+    axis = np.asarray(found["camera_axis_mm"][:2], float)
+    from_image = np.asarray(found["position_mm"][:2], float) - axis
+    mount = axis - tcp_now
+    total = from_image + mount
+    log.info("TCP move x %.1f y %.1f mm = %s from the camera axis (image) x %.1f y %.1f "
+             "+ TCP -> camera axis (mount) x %.1f y %.1f", *total, found["target"],
+             *from_image, *mount)
+    return {"total_xy_mm": [round(float(v), 2) for v in total],
+            "from_image_xy_mm": [round(float(v), 2) for v in from_image],
+            "tcp_to_camera_axis_xy_mm": [round(float(v), 2) for v in mount]}
 
 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
@@ -153,6 +172,7 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     found = locate(robot, vision, cfg, table_z, TARGET_NUT, nut["height_mm"],
                    nut["centre_height_mm"])
     record["nut"] = found
+    record["tcp_move"] = tcp_move(robot, cfg, found)
     if locate_only:
         log.info("Step 1 (locate only): nut at x %.1f y %.1f mm, no descent",
                  *found["position_mm"][:2])
@@ -215,6 +235,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     move_to(robot, observe, cfg)
     found = locate(robot, vision, cfg, table_z, TARGET_STUD, stud["base_height_mm"],
                    stud["base_height_mm"])
+    move = tcp_move(robot, cfg, found)
 
     # The nut sits in the iris with its bottom face at the TCP plane
     tcp = [found["position_mm"][0], found["position_mm"][1],
@@ -245,6 +266,6 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     robot.set_mode(modes["normal"])
     log.info("Step 2: back to the observation pose")
     move_to(robot, observe, cfg, lead=LEAD_Z)
-    return {"step": "place_and_screw", "stud": found, "approach_tcp_mm": tcp,
+    return {"step": "place_and_screw", "stud": found, "tcp_move": move, "approach_tcp_mm": tcp,
             "contact_tcp_mm": frames.tcp_position(contact,
                                                   cfg["frames"]["flange_to_tcp_mm"]).tolist()}

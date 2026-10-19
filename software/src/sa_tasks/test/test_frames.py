@@ -112,3 +112,19 @@ def test_rotation_vector_round_trip():
     for v in ([1.5, -0.7, 0.0], [0.0, 0.0, 0.0], [10.0, 20.0, -5.0]):
         r = frames.matrix_from_rotation_vector_deg(v)
         assert frames.rotation_vector_deg(r) == pytest.approx(v, abs=1e-9)
+
+
+def test_cad_offsets_close_the_chain_flange_camera_tcp():
+    # CAD 19.10.: flange -> camera (44.4, 0, 57.223) + camera -> TCP (-44.505, 0.105, 61.6)
+    # = flange -> TCP (0, 0, 118.823) within the 0.2 mm CAD rounding
+    error = config.offset_chain_error(CFG)
+    assert np.abs(error) == pytest.approx([0.105, 0.105, 0.0], abs=1e-9)
+    config.check_offset_chain(CFG)
+
+
+def test_contradicting_cad_offsets_are_refused():
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["frames"]["flange_to_tcp_mm"] = [0.0, 0.0, 113.823]  # old gripper, camera updated
+    with pytest.raises(ValueError, match="off by"):
+        config.check_offset_chain(cfg)

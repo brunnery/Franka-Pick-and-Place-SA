@@ -25,7 +25,15 @@ $$
 {}^{F}\mathbf{t}_{C} = (44.4,\ 0,\ 57.223)^\top, \qquad {}^{F}\mathbf{t}_{T} = (0,\ 0,\ 118.823)^\top
 $$
 
-The flange origin is the centre of the contact face on the FR3 flange (a centring cylinder of the adapter reaches into the arm). ${}^{F}\mathbf{t}_{C}$ points to the centre of the lowest face of the camera housing; the lens lies 5 mm higher, and the projection centre higher still (Section 2.8). ${}^{F}\mathbf{t}_{T}$ points to the centre of the gripper bottom plate, which rests on the table during the grasp. CAD components below 0.2 mm are set to zero. With the gripper resting on the table, the housing is 61.6 mm above the table. Previous mount (08.10., written in other axes): $\Delta z = 60.223$ mm and $(0,\ 0,\ 113.823)^\top$.
+The flange origin is the centre of the contact face on the FR3 flange (a centring cylinder of the adapter reaches into the arm). ${}^{F}\mathbf{t}_{C}$ points to the centre of the lowest face of the camera housing; the lens lies 5 mm higher, and the projection centre higher still (Section 2.8). ${}^{F}\mathbf{t}_{T}$ points to the centre of the gripper bottom plate, which rests on the table during the grasp. CAD components below 0.2 mm are set to zero. With the gripper resting on the table, the housing is 61.6 mm above the table.
+
+A second, independent CAD measurement (19.10.2026, `cad/export/Configuration_1.*`) gives the camera housing → TCP vector ${}^{F}\mathbf{t}_{CT} = (-44.505,\ 0.105,\ 61.6)^\top$ (Fusion, base axes: $(-44.505,\ -0.105,\ -61.60)$). The chain must close,
+
+$$
+{}^{F}\mathbf{t}_{C} + {}^{F}\mathbf{t}_{CT} = {}^{F}\mathbf{t}_{T},
+$$
+
+and it does to $(-0.105,\ 0.105,\ 0)$ mm, below the 0.2 mm CAD rounding (the two Fusion measurements picked the camera centre at slightly different points). The motion uses only ${}^{F}\mathbf{t}_{C}$ and ${}^{F}\mathbf{t}_{T}$; the closure is checked every time `tasks.yaml` is loaded, so a CAD update of one offset without the other fails loudly. Previous mount (08.10., written in other axes): $\Delta z = 60.223$ mm and $(0,\ 0,\ 113.823)^\top$.
 
 The camera lies on $+x_F$. Expressed in the axes of `fr3_link8` the same camera vector is $(31.4,\ -31.4,\ 57.223)^\top$; reading ${}^{F}\mathbf{t}_{C}$ in `fr3_link8` axes puts the camera 45° off. The camera axes in $\{F\}$ are $x_C = +y_F$, $y_C = -x_F$, $z_C = +z_F$, i.e. ${}^{F}\mathbf{R}_{C} = \mathbf{R}_z(+90°)$.
 
@@ -327,6 +335,9 @@ $$
 
 - **Pick (step 1):** $\mathbf{p}_T = (x_\text{nut}, y_\text{nut}, z_\text{table} - \delta_p)$ with a press depth $\delta_p = 2$ mm, so the bottom plate rests flat on the table with a small preload ($k_z \delta_p = 1500\ \text{N/m} \cdot 2\ \text{mm} = 3$ N) and the iris, centred on the TCP axis, surrounds the nut.
 - **Place (step 2):** the nut sits in the iris with its bottom face in the TCP plane. Approach: $\mathbf{p}_T = (x_\text{stud}, y_\text{stud}, z_\text{table} + 39\ \text{mm} + 5\ \text{mm})$, i.e. 5 mm above the tip of the thread; then a vertical contact search (Section 5).
+- **Move per image:** from the observation pose, the horizontal TCP move splits into the part the image gives (object relative to the point where the optical axis meets the object plane) and the fixed part of the mount (TCP → that point, $\approx (+44.4,\ 0)$ mm in $x_B, y_B$ with a level camera):
+  $\Delta\mathbf{p}_{xy} = (\mathbf{p}_\text{obj} - \mathbf{p}_\text{axis})_{xy} + (\mathbf{p}_\text{axis} - \mathbf{p}_{T,\text{obs}})_{xy}$.
+  The target comes from the frame chain above, the split is only logged and stored in the run record (`tcp_move`), so a wrong mount offset shows up as a wrong second term.
 - **Plausibility:** a target farther than 70 mm from the camera axis (measured on the object plane) is rejected as outside the work area, before the robot moves.
 
 ### 3.4 Comparison with the BA approach

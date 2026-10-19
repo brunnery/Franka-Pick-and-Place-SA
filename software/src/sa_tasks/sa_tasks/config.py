@@ -28,7 +28,29 @@ def resolve(path: Path) -> Path:
 
 
 def load_tasks(path: Path = DEFAULT_TASKS) -> dict:
-    return yaml.safe_load(resolve(path).read_text())
+    cfg = yaml.safe_load(resolve(path).read_text())
+    check_offset_chain(cfg)
+    return cfg
+
+
+def offset_chain_error(cfg: dict) -> np.ndarray:
+    """(flange -> camera housing) + (camera housing -> TCP) - (flange -> TCP), in {F}, mm.
+    Two independent CAD measurements of the same mount; they must close (THEORY 0)."""
+    f = cfg["frames"]
+    return (np.asarray(f["flange_to_camera_housing_mm"], float)
+            + np.asarray(f["camera_housing_to_tcp_mm"], float)
+            - np.asarray(f["flange_to_tcp_mm"], float))
+
+
+def check_offset_chain(cfg: dict) -> None:
+    """Refuse a config whose camera and TCP offsets contradict each other (e.g. one of them
+    updated after a CAD change and the other not)."""
+    error = offset_chain_error(cfg)
+    tolerance = cfg["frames"]["offset_chain_tolerance_mm"]
+    if np.any(np.abs(error) > tolerance):
+        raise ValueError("frames: flange_to_camera_housing_mm + camera_housing_to_tcp_mm != "
+                         f"flange_to_tcp_mm, off by {np.round(error, 3).tolist()} mm "
+                         f"(tolerance {tolerance} mm per axis): check the CAD offsets")
 
 
 def motion_limits(cfg: dict) -> MotionLimits:

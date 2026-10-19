@@ -89,6 +89,17 @@ def test_pick_records_where_the_gripper_landed():
     assert result["landed_above_table_mm"] == pytest.approx(-CFG["pick"]["press_depth_mm"])
 
 
+def test_pick_records_the_tcp_move_as_image_part_plus_mount_offset():
+    _, _, _, result = run_pick()
+    move = result["tcp_move"]
+    tcp_at_observe = frames.tcp_position(OBSERVE_NUT, T_FT)[:2]
+    assert move["total_xy_mm"] == pytest.approx(NUT - tcp_at_observe, abs=0.01)
+    # Level camera: its axis hits the table straight below it, 44.4 mm in front of the TCP
+    assert move["tcp_to_camera_axis_xy_mm"] == pytest.approx([44.4, 0.0], abs=0.01)
+    assert np.add(move["from_image_xy_mm"], move["tcp_to_camera_axis_xy_mm"]) == \
+        pytest.approx(move["total_xy_mm"], abs=0.02)
+
+
 def test_pick_tells_vision_the_distance_to_the_nut_top_face():
     _, _, vision, _ = run_pick()
     camera_z = OBSERVE_NUT[2, 3] - 57.223 + CFG["frames"]["projection_centre_above_housing_mm"]

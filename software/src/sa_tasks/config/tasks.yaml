@@ -12,6 +12,11 @@ frames:
   # Camera axes in {F} (rows of R_F_C): x_C = +y_F, y_C = -x_F, z_C = +z_F, i.e. Rz(+90 deg)
   camera_rotation_in_flange: [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
   flange_to_tcp_mm: [0.0, 0.0, 118.823]
+  # CAD 19.10.2026 (cad/export/Configuration_1.*), camera housing -> TCP, in {F}. Fusion
+  # measures in base axes: (-44.505, -0.105, -61.60); {F} has y and z flipped. Not used for
+  # the motion: only a check that camera + camera->TCP lands on flange_to_tcp_mm (on load).
+  camera_housing_to_tcp_mm: [-44.505, 0.105, 61.6]
+  offset_chain_tolerance_mm: 0.2   # per axis; CAD values < 0.2 mm count as 0 (CLAUDE.md)
   # The projection centre lies above the lowest point of the housing (bench 16.10.: about
   # 9 mm, THEORY 2.8). Calibrate at the robot with the grid sheet from the observation pose.
   projection_centre_above_housing_mm: 9.0
