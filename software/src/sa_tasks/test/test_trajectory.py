@@ -3,7 +3,7 @@ import pytest
 
 from sa_tasks import config, frames
 from sa_tasks.trajectory import (LEAD_XY, LEAD_Z, MotionLimits, choose_lead, min_jerk,
-                                 plan_move, straight_down)
+                                 chain, plan_move, spiral_down, straight_down)
 
 R_DOWN = config.rotation_down(config.load_tasks())
 LIMITS = MotionLimits(max_speed_mm_s=80.0, max_angular_speed_deg_s=30.0, lead_fraction=0.6,
@@ -67,3 +67,26 @@ def test_straight_down():
     assert path[-1].t_base_flange[2, 3] == pytest.approx(LOW[2, 3] - 10.0)
     assert path[-1].time_s == pytest.approx(2.0)
     assert all(np.allclose(w.t_base_flange[:2, 3], LOW[:2, 3]) for w in path)
+
+
+def test_spiral_down_grows_outward_while_descending_and_ends_at_rest():
+    path = spiral_down(LOW, depth_mm=12.0, radius_mm=6.0, turns=2.0, duration_s=4.0,
+                       rate_hz=RATE)
+    p = np.array([w.t_base_flange[:3, 3] for w in path])
+    radius = np.linalg.norm(p[:, :2] - LOW[:2, 3], axis=1)
+    assert radius[-1] == pytest.approx(6.0) and np.all(np.diff(radius) >= -1e-9)
+    assert p[-1, 2] == pytest.approx(LOW[2, 3] - 12.0) and np.all(np.diff(p[:, 2]) <= 1e-9)
+    assert path[-1].time_s == pytest.approx(4.0)
+    assert all(np.allclose(w.t_base_flange[:3, :3], LOW[:3, :3]) for w in path)
+    xy, z = speeds(path)
+    assert xy[0] < 1.0 and xy[-1] < 1.0  # starts and ends at rest
+
+
+def test_chain_shifts_the_second_path_in_time():
+    first = plan_move(HIGH, LOW, LIMITS, RATE)
+    second = spiral_down(LOW, 5.0, 3.0, 1.0, 2.0, RATE)
+    path = chain(first, second)
+    assert len(path) == len(first) + len(second)
+    times = [w.time_s for w in path]
+    assert np.all(np.diff(times) > 0)
+    assert times[-1] == pytest.approx(first[-1].time_s + 2.0)

@@ -58,10 +58,12 @@
       # not 1000), otherwise the controller fails to load with a parameter type error.
       # Values below = baseline = the behaviour before 2026-10-13 (all new options off). Order of 6-vectors: x, y, z, rx, ry, rz
       # (base frame). Change a value -> restart the launch (no rebuild needed).
-      stiffness: [1000.0, 1000.0, 1000.0, 130.0, 130.0, 45.0]  # [N/m, N/m, N/m, Nm/rad x3], start-up K
+      stiffness: [1000.0, 1000.0, 1000.0, 300.0, 300.0, 45.0]  # [N/m, N/m, N/m, Nm/rad x3], start-up K (rx, ry 130 -> 300, 19.10.)
       damping:
-        ratio_translational: 0.7   # D_ii = 2 * ratio * sqrt(K_ii * Lambda_ii); 1.0 = critically damped (was 1.0: 30 Hz arm-yaw vibration after arrival, bag 165638)
-        ratio_rotational: 0.7      # (was 1.3: 23 Hz wrist limit cycle at the end pose, bag 2026-10-13_1634)
+        ratio_translational: 0.5   # D_ii = 2 * ratio * sqrt(K_ii * Lambda_ii); 1.0 = critically damped (was 1.0: 30 Hz arm-yaw vibration after arrival, bag 165638;
+                                   # 19.10.: 0.7 -> 0.5, prefactor 2 * ratio 1.4 -> 1.0, shaking at arrival)
+        ratio_rotational: 0.5      # (was 1.3: 23 Hz wrist limit cycle at the end pose, bag 2026-10-13_1634;
+                                   # 19.10. with rx, ry stiffness 300: 1.0 shook more, 0.7 -> 0.5)
         rot_z_min_factor: 0.0      # D_rz >= factor * sqrt(K_rz) (was 2.0: D_rz 8-11x critical, wrist chatter, bag 2026-10-13_1625)
       integrator:
         weights: [350.0, 350.0, 0.0, 50.0, 50.0, 50.0]  # 0.0 everywhere = no integral action
@@ -96,7 +98,10 @@
         max_velocity: 0.1          # peak speed [m/s] (max 0.5)
         max_angular_velocity: 0.3  # peak [rad/s]
       modes:                       # stiffness presets set by the /cartesian_impedance_controller/control_mode topic
-        normal_stiffness: [2500.0, 2500.0, 1500.0, 130.0, 130.0, 45.0]  # control_mode 0
+        # control_mode 0. rx, ry 130 -> 300 (19.10.): the arm stood 1.3-1.5 deg tilted at the
+        # observation pose and 2-2.8 deg after landing. The orientation error is the quaternion
+        # vector part (sin(theta/2)), so the effective stiffness is K/2 (130 -> 65 Nm/rad).
+        normal_stiffness: [2500.0, 2500.0, 1500.0, 300.0, 300.0, 45.0]
         float_stiffness: [150.0, 150.0, 150.0, 40.0, 40.0, 20.0]        # control_mode 2
         lift_stiffness: [0.0, 0.0, 8500.0, 0.0, 0.0, 0.0]               # control_mode 3
         contact_stiffness: [2500.0, 2500.0, 100.0, 40.0, 40.0, 20.0]    # z-contact switch in control_mode 1

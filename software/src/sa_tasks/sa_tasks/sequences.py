@@ -4,19 +4,18 @@ docs/PLAN.md Section 4, docs/THEORY.md Sections 3 and 5. The sequences only use 
 Robot, Gripper and Vision interfaces (interfaces.py), so they run against mocks.
 """
 import logging
-import time
 from typing import Optional
 
 import numpy as np
 
 from sa_tasks import config, frames
 from sa_tasks.interfaces import Gripper, Robot, Vision
-from sa_tasks.trajectory import LEAD_XY, LEAD_Z, Waypoint, plan_move, straight_down
+from sa_tasks.trajectory import (LEAD_XY, LEAD_Z, Waypoint, chain, plan_move, spiral_down,
+                                 straight_down)
 
 log = logging.getLogger("sa_tasks")
 
 TARGET_NUT = "nut"
-ALIGN_POLL_S = 0.05
 TARGET_STUD = "stud"
 
 
@@ -67,21 +66,6 @@ def orientation_error(robot: Robot, rotation: np.ndarray) -> dict:
     r = robot.flange_pose()[:3, :3]
     return {"tilt_deg": round(frames.tilt_deg(r), 3),
             "to_commanded_deg": round(frames.rotation_angle_deg(r, rotation), 3)}
-
-
-def wait_aligned(robot: Robot, rotation: np.ndarray, tolerance_deg: float,
-                 timeout_s: float) -> dict:
-    """Wait until the measured orientation is within tolerance of the commanded one (or the
-    timeout ends: the impedance controller may keep a small steady-state error)."""
-    deadline = time.monotonic() + timeout_s
-    error = orientation_error(robot, rotation)
-    while error["to_commanded_deg"] > tolerance_deg and time.monotonic() < deadline:
-        time.sleep(ALIGN_POLL_S)
-        error = orientation_error(robot, rotation)
-    log.info("aligned: tilt %.2f deg, %.2f deg from the commanded orientation%s",
-             error["tilt_deg"], error["to_commanded_deg"],
-             "" if error["to_commanded_deg"] <= tolerance_deg else " (timeout)")
-    return error
 
 
 def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
@@ -182,25 +166,26 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     press = cfg["pick"]["press_depth_mm"]
     tcp = [found["position_mm"][0], found["position_mm"][1], table_z - press]
     record["tcp_target_mm"] = tcp
-    grasp = frames.flange_for_tcp(tcp, rotation, cfg["frames"]["flange_to_tcp_mm"])
-    align = cfg["pick"]["align"]
-    if align["height_mm"] > 0:
-        # Intermediate stop straight above the nut: let the orientation settle, then go
-        # vertically down (test whether a tilt on the way down causes the misses)
-        above = frames.flange_for_tcp([tcp[0], tcp[1], table_z + align["height_mm"]], rotation,
-                                      cfg["frames"]["flange_to_tcp_mm"])
-        log.info("Step 1: move above the nut (TCP %.1f, %.1f, table + %.0f mm)",
-                 tcp[0], tcp[1], align["height_mm"])
-        move_to(robot, above, cfg, lead=LEAD_XY)
-        record["orientation"]["aligned"] = wait_aligned(robot, rotation, align["tolerance_deg"],
-                                                        align["timeout_s"])
-        log.info("Step 1: straight down onto the table (table - %.1f mm)", press)
-    else:
-        log.info("Step 1: one move down onto the nut (TCP %.1f, %.1f, table - %.1f mm)",
-                 tcp[0], tcp[1], press)
+    spiral = cfg["pick"]["spiral"]
+    # Down to just above the nut, then without a stop a spiral search down onto the table:
+    # if the target is off by up to the spiral radius, the plate slides over the nut until
+    # the open iris passes over it and the nut drops in (THEORY 5)
+    start = frames.flange_for_tcp([tcp[0], tcp[1], table_z + spiral["start_height_mm"]],
+                                  rotation, cfg["frames"]["flange_to_tcp_mm"])
+    log.info("Step 1: down to the nut (TCP %.1f, %.1f), spiral from table + %.0f mm "
+             "(radius %.1f mm, %.1f turns) to table - %.1f mm", tcp[0], tcp[1],
+             spiral["start_height_mm"], spiral["radius_mm"], spiral["turns"], press)
+    rate = cfg["robot"]["stream_rate_hz"]
+    approach = plan_move(robot.flange_pose(), start, config.motion_limits(cfg), rate, LEAD_XY)
+    search = spiral_down(start, spiral["start_height_mm"] + press, spiral["radius_mm"],
+                         spiral["turns"], spiral["duration_s"], rate)
+    robot.follow(chain(approach, search))
     # If the iris misses, the bottom plate stands on the nut instead of the table: accept
     # that (the arm stands still) and record it instead of aborting
-    move_to(robot, grasp, cfg, lead=LEAD_XY, extra_tolerance_mm=press + nut["height_mm"])
+    robot.wait_until_arrived(search[-1].t_base_flange, cfg["robot"]["arrival_tolerance_mm"]
+                             + press + nut["height_mm"])
+    record["spiral_end_tcp_mm"] = [round(float(v), 2) for v in frames.tcp_position(
+        search[-1].t_base_flange, cfg["frames"]["flange_to_tcp_mm"])]
     record["orientation"]["landed"] = orientation_error(robot, rotation)
     landed = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])
     above_table = float(landed[2] - table_z)

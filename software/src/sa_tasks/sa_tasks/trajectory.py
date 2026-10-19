@@ -82,6 +82,28 @@ def plan_move(start: np.ndarray, goal: np.ndarray, limits: MotionLimits, rate_hz
     return path
 
 
+def spiral_down(start: np.ndarray, depth_mm: float, radius_mm: float, turns: float,
+                duration_s: float, rate_hz: float) -> List[Waypoint]:
+    """Search descent: an Archimedean spiral around the start xy whose radius grows from 0 to
+    radius_mm over the given turns while z goes down by depth_mm, same orientation. Radius,
+    angle and depth share one minimum-jerk parameter, so the path starts and ends at rest."""
+    steps = max(int(np.ceil(duration_s * rate_hz)), 1)
+    path = []
+    for i in range(1, steps + 1):
+        s = min_jerk(i / steps)
+        angle = 2.0 * np.pi * turns * s
+        t = start.copy()
+        t[:3, 3] += [radius_mm * s * np.cos(angle), radius_mm * s * np.sin(angle), -depth_mm * s]
+        path.append(Waypoint(duration_s * i / steps, t))
+    return path
+
+
+def chain(first: List[Waypoint], second: List[Waypoint]) -> List[Waypoint]:
+    """second starts where first ends (in time): one path, no stop in between."""
+    offset = first[-1].time_s if first else 0.0
+    return first + [Waypoint(w.time_s + offset, w.t_base_flange) for w in second]
+
+
 def straight_down(start: np.ndarray, depth_mm: float, speed_mm_s: float,
                   rate_hz: float) -> List[Waypoint]:
     """Constant-speed vertical path (contact search), same orientation."""

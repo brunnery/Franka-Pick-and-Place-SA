@@ -50,7 +50,8 @@ vision:
   node: /vision_node
   detection_topic: /vision/detection
   camera_info_topic: /camera_info
-  settle_s: 1.0                # wait after arrival before frames count (robot rings down)
+  settle_s: 0.6                # wait after arrival before frames count (robot rings down;
+                               # 19.10.: 1.0 -> 0.6 for a faster cycle)
   timeout_s: 10.0              # no settled detection within this time -> abort
   # Reject detections whose target lies farther from the camera axis than this (outside the
   # work area or at the image border, where perspective errors grow; THEORY 4)
@@ -66,16 +67,17 @@ robot:
     float: 2                   # modes.float_stiffness (compliant in all axes)
   stream_rate_hz: 100.0        # reference poses per second while moving
   motion:
-    max_speed_mm_s: 100.0      # peak speed of every axis group (controller limit 300)
+    max_speed_mm_s: 150.0      # peak speed of every axis group (controller limit 300;
+                               # 19.10.: 100 -> 150 for a faster cycle)
     max_angular_speed_deg_s: 20.0
     lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
     min_duration_s: 1.0
   # Arrived = standing still within the tolerance. The impedance controller keeps a few mm
   # of steady-state error (first run 18.10.: 3.6 mm); the remaining error is logged.
   arrival_tolerance_mm: 8.0
-  arrival_speed_mm_s: 2.0      # "standing still"
+  arrival_speed_mm_s: 3.0      # "standing still" (19.10.: 2 -> 3)
   arrival_timeout_s: 15.0      # after the end of the path
-  arrival_settle_s: 0.5        # both conditions must hold this long
+  arrival_settle_s: 0.3        # both conditions must hold this long (19.10.: 0.5 -> 0.3)
   max_taught_tilt_deg: 10.0    # taught poses more tilted than this are refused (only their
                                # position is used; the check catches gross teaching errors)
   # Both observation poses use the z of this taught pose ("" = each its own taught z)
@@ -87,13 +89,15 @@ pick:
   # (normal z stiffness 1500 N/m -> 3 N at 2 mm)
   press_depth_mm: 2.0
   close_iris: true             # close the iris on the nut before moving back up
-  # Intermediate stop straight above the nut: wait until the measured orientation matches
-  # the commanded one, then go vertically down. height_mm 0 = one continuous move.
-  align:
-    height_mm: 30.0            # TCP above the table at the stop
-    tolerance_deg: 1.2         # measured vs. commanded orientation (first runs: the arm keeps
-                               # about 1 deg, 0.2 was never reached)
-    timeout_s: 5.0             # continue after this even if not within the tolerance
+  # Search descent (replaces the intermediate stop with re-alignment, 19.10.): one move to
+  # start_height_mm above the table straight over the nut, then without stopping an outward
+  # spiral (radius 0 -> radius_mm) while going down to table - press_depth_mm. Covers a
+  # target error up to about radius_mm + capture range of the open iris (THEORY 5).
+  spiral:
+    start_height_mm: 10.0      # TCP above the table where the spiral starts (nut: 8 mm)
+    radius_mm: 6.0             # final radius (verification residuals 2.5-4.5 mm)
+    turns: 2.0                 # 3 mm between turns, well below the nut size
+    duration_s: 4.0            # whole spiral, minimum-jerk (peak below 20 mm/s along it)
 
 place:
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread

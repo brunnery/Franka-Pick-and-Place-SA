@@ -56,7 +56,9 @@ def test_pick_puts_the_tcp_over_the_nut_flat_on_the_table():
     assert result["nut"]["position_mm"][:2] == pytest.approx(NUT, abs=1e-6)
     lowest = min(robot.history, key=lambda t: t[2, 3])
     tcp = frames.tcp_position(lowest, T_FT)
-    assert tcp == pytest.approx([*NUT, TABLE_Z - CFG["pick"]["press_depth_mm"]], abs=1e-6)
+    assert tcp[2] == pytest.approx(TABLE_Z - CFG["pick"]["press_depth_mm"], abs=1e-6)
+    # the search spiral ends radius_mm from the target
+    assert np.linalg.norm(tcp[:2] - NUT) == pytest.approx(CFG["pick"]["spiral"]["radius_mm"])
     assert frames.tilt_deg(lowest[:3, :3]) == pytest.approx(0.0, abs=1e-6)
     assert gripper.commands == ["OPEN", "CLOSE"]
     assert robot.pose == pytest.approx(OBSERVE_NUT)  # back at the start pose
@@ -71,21 +73,25 @@ def test_locate_only_does_not_descend():
     assert min(t[2, 3] for t in robot.history) == pytest.approx(OBSERVE_NUT[2, 3])
 
 
-def test_pick_stops_above_the_nut_and_then_goes_straight_down():
+def test_pick_spirals_down_from_just_above_the_nut():
     robot, _, _, result = run_pick()
-    height = CFG["pick"]["align"]["height_mm"]
-    stop_z = TABLE_Z + height + T_FT[2]
+    spiral = CFG["pick"]["spiral"]
+    start_z = TABLE_Z + spiral["start_height_mm"] + T_FT[2]
     lowest = int(np.argmin([t[2, 3] for t in robot.history]))
-    at_stop = [i for i, t in enumerate(robot.history[:lowest]) if abs(t[2, 3] - stop_z) < 1e-6]
-    assert at_stop, "no intermediate stop"
-    after = robot.history[at_stop[0]:lowest + 1]
-    assert all(np.allclose(t[:2, 3], NUT) for t in after)  # vertical from the stop on
-    assert set(result["orientation"]) == {"observe", "aligned", "landed"}
+    at_start = [i for i, t in enumerate(robot.history[:lowest])
+                if abs(t[2, 3] - start_z) < 1e-6 and np.allclose(t[:2, 3], NUT)]
+    assert at_start, "the spiral does not start straight above the nut"
+    search = robot.history[at_start[-1]:lowest + 1]
+    radii = [float(np.linalg.norm(t[:2, 3] - NUT)) for t in search]
+    assert max(radii) == pytest.approx(spiral["radius_mm"])
+    assert all(b <= a + 1e-9 for a, b in zip([t[2, 3] for t in search],
+                                              [t[2, 3] for t in search[1:]]))  # only down
+    assert set(result["orientation"]) == {"observe", "landed"}
 
 
 def test_pick_records_where_the_gripper_landed():
     _, _, _, result = run_pick()
-    assert result["landed_tcp_mm"][:2] == pytest.approx(NUT, abs=1e-6)
+    assert result["landed_tcp_mm"] == pytest.approx(result["spiral_end_tcp_mm"], abs=0.01)
     assert result["landed_above_table_mm"] == pytest.approx(-CFG["pick"]["press_depth_mm"])
 
 
