@@ -1,62 +1,70 @@
+// Test sequence (loop): iris motors back and forth IRIS_CYCLES times, then rotation motor.
+// The iris motors run in opposite directions ("forward" = A FORWARD, B BACKWARD).
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 
-// Motorshield mit Standardadresse 0x60
+// Port mapping (same as iris_gripper). M1 is blocked: never connect a motor to it.
+const uint8_t PORT_BLOCKED = 1;
+const uint8_t PORT_IRIS_A = 2;
+const uint8_t PORT_IRIS_B = 3;
+const uint8_t PORT_ROT = 4;
+static_assert(PORT_IRIS_A != PORT_BLOCKED && PORT_IRIS_B != PORT_BLOCKED && PORT_ROT != PORT_BLOCKED,
+              "Motor port M1 is blocked, do not use it");
+
+// Speeds (0-255) and timings
+const uint8_t SPEED_IRIS = 100;
+const uint8_t SPEED_ROT = 255;
+const unsigned long IRIS_MS = 2000;    // iris run time per direction
+const unsigned long ROT_MS = 8000;
+const unsigned long PAUSE_MS = 250;    // short stop between direction changes, spares the gears
+const uint8_t IRIS_CYCLES = 2;         // iris back and forth this often before the rotation
+
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
+Adafruit_DCMotor *irisA;
+Adafruit_DCMotor *irisB;
+Adafruit_DCMotor *rot;
 
-// M1 ist gesperrt: dort nie einen Motor anschliessen
-Adafruit_DCMotor *motor2 = AFMS.getMotor(2);
-Adafruit_DCMotor *motor3 = AFMS.getMotor(3);
-Adafruit_DCMotor *motor4 = AFMS.getMotor(4);
+void stopAll() {
+  irisA->run(RELEASE);
+  irisB->run(RELEASE);
+  rot->run(RELEASE);
+  delay(PAUSE_MS);
+}
 
-const uint8_t SPEED = 100;               // 0-255, langsam fuer den ersten Test
-const unsigned long DAUER = 2000;       // M2/M3 Laufzeit proRichtung in ms
-const unsigned long PAUSE = 250;        // Pause zwischen Richtungswechseln in ms
-const uint8_t ZYKLEN_M2M3 = 2;          // so oft hin und her vor M4
-const unsigned long DAUER_M4 = 8000;    // M4 Laufzeit in ms
-const uint8_t SPEED_M4 = 255;           // M4 auf Maximum
+void runIris(bool forward) {
+  irisA->run(forward ? FORWARD : BACKWARD);
+  irisB->run(forward ? BACKWARD : FORWARD);
+  delay(IRIS_MS);
+  stopAll();
+}
+
+void runRot() {
+  rot->run(FORWARD);
+  delay(ROT_MS);
+  stopAll();
+}
 
 void setup() {
   Serial.begin(9600);
-
   if (!AFMS.begin()) {
-    Serial.println("Motorshield nicht gefunden");
+    Serial.println("Motor shield not found");
     while (1);
   }
-
-  motor2->setSpeed(SPEED);
-  motor4->setSpeed(SPEED_M4);
-  motor3->setSpeed(SPEED);
-}
-
-void stopp() {
-  // kurz anhalten, schont Motoren und Getriebe
-  motor2->run(RELEASE);
-  motor4->run(RELEASE);
-  motor3->run(RELEASE);
-  delay(PAUSE);
-}
-
-// Ein Zyklus M2/M3 gegenlaeufig: 3 s in eine Richtung, 3 s zurueck
-void zyklusM2M3() {
-  motor2->run(BACKWARD);
-  motor3->run(FORWARD);
-  delay(DAUER);
-  stopp();
-
-  motor2->run(FORWARD);
-  motor3->run(BACKWARD);
-  delay(DAUER);
-  stopp();
+  irisA = AFMS.getMotor(PORT_IRIS_A);
+  irisB = AFMS.getMotor(PORT_IRIS_B);
+  rot = AFMS.getMotor(PORT_ROT);
+  irisA->setSpeed(SPEED_IRIS);
+  irisB->setSpeed(SPEED_IRIS);
+  rot->setSpeed(SPEED_ROT);
 }
 
 void loop() {
-  for (uint8_t i = 0; i < ZYKLEN_M2M3; i++) {
-    zyklusM2M3();
+  for (uint8_t i = 0; i < IRIS_CYCLES; i++) {
+    Serial.println("Iris backward");
+    runIris(false);
+    Serial.println("Iris forward");
+    runIris(true);
   }
-
-  // danach M4 fuer 8 Sekunden
-  motor4->run(FORWARD);
-  delay(DAUER_M4);
-  stopp();
+  Serial.println("Rotation");
+  runRot();
 }
