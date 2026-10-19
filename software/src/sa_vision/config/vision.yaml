@@ -1,4 +1,5 @@
-# sa_vision/vision_node: one object on a blank background, no size or shape filter.
+# sa_vision/vision_node: object on a blank background -> hexagon centre. Shape and size
+# filter only when several objects are in view.
 vision_node:
   ros__parameters:
     publish_debug: true
@@ -8,7 +9,7 @@ vision_node:
     debug_steps_scale: 0.5
     target: nut                     # set by sa_tasks, not used here
     d_source: yaml                  # set by sa_tasks, not used here
-    object_plane_distance_mm: 400.0 # set by sa_tasks (only for point_camera / s in mm)
+    object_plane_distance_mm: 400.0 # set by sa_tasks (point_camera, s in mm, size filter)
     detection:
       blur_kernel_px: 5             # Gaussian kernel against sensor noise, odd
       # Background = the image blurred with this sigma: much larger than the object
@@ -23,4 +24,14 @@ vision_node:
       min_area_px: 300              # smaller blobs count as noise
       border_margin_px: 2           # blobs within this distance of the image border are
                                     # ignored (gripper/robot in view, object cut off)
-      angle_step_deg: 1.0           # orientation search of the hexagon fit
+      angle_step_deg: 1.0           # orientation search of the hexagon fit and width ratio
+      # Only with several objects in view:
+      # 1. shape: width ratio of the hull (smallest / largest width). Hexagon 0.866 (bench
+      #    16.10. with shadow 0.62-0.82), lying bolt well below, round washer about 1.0
+      min_width_ratio: 0.6
+      max_width_ratio: 0.95
+      # 2. size, if several are nut-shaped: closest to the target width across flats
+      #    (s = s_px * d / f) and within the tolerance. The soft shadow makes s about 30 %
+      #    too large (bench: 17 mm for the 13 mm nut), hence the wide tolerance
+      target_across_flats_mm: 13.0  # M8
+      size_tolerance: 0.4

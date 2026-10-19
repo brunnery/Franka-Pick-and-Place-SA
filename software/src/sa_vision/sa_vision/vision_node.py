@@ -2,11 +2,19 @@
 
   ros2 launch software/launch/vision.launch.py
 
-No size or shape filter. Steps: greyscale -> blur -> background = heavily blurred
-image (the table) -> band-stop around the table: foreground where |I - B| / B > threshold
-(darker or brighter than the table) -> close/open -> largest blob that
-does not touch the image border (robot parts reaching into the view, a cut object) ->
-regular hexagon fitted to its convex hull -> centre of the hexagon.
+Steps: greyscale -> blur -> background = heavily blurred image (the table) -> band-stop
+around the table: foreground where |I - B| / B > threshold (darker or brighter than the
+table) -> close/open -> blobs that do not touch the image border (robot parts reaching
+into the view, a cut object) and are not specks -> regular hexagon fitted to the convex
+hull -> centre of the hexagon.
+
+One object in view: it is taken, no filter. Several objects: only then
+  1. shape filter: width ratio of the hull (smallest / largest width over all directions;
+     hexagon 0.866, elongated bolt lower, round washer 1.0) in [min_width_ratio,
+     max_width_ratio], else rejected (red in the overlay);
+  2. one nut-like object left: taken; several: size filter, the one whose width across
+     flats (s_px * d / f) is closest to target_across_flats_mm and within size_tolerance
+     is taken, the others are nut-like but not chosen (orange).
 
 Hexagon fit: for each orientation theta (0-60 deg), the hull is enclosed by three
 pairs of parallel lines with normals theta, theta+60, theta+120. Each pair gives a
@@ -39,6 +47,9 @@ except ImportError:  # pragma: no cover
 MM_TO_M = 1e-3
 HEXAGON_DIRECTIONS = np.radians([0.0, 60.0, 120.0])
 OVERLAY_GREEN, OVERLAY_RED, OVERLAY_YELLOW = (0, 200, 0), (0, 0, 255), (0, 220, 255)
+OVERLAY_ORANGE = (0, 140, 255)
+# Verdicts of the objects in view (multi-object filter)
+CHOSEN, REJECTED_SHAPE, NOT_CHOSEN = "chosen", "shape", "size"
 
 
 @dataclass
@@ -74,9 +85,53 @@ def fit_hexagon(points: np.ndarray, angle_step_deg: float) -> Hexagon:
     return best[1]
 
 
-def find_object(image: np.ndarray, p: dict, steps: Optional[dict] = None) -> tuple:
-    """(hexagon or None, foreground mask, status). p: the "detection" parameters.
-    If steps is a dict, the binary mask before close/open is stored in it (debug view)."""
+@dataclass
+class Candidate:
+    hull: np.ndarray
+    hexagon: Hexagon
+    width_ratio: float     # smallest / largest width of the hull
+    verdict: str = NOT_CHOSEN
+
+
+def width_ratio(points: np.ndarray, angle_step_deg: float) -> float:
+    """Smallest / largest width of the points over all directions (0-180 deg)."""
+    points = np.asarray(points, float).reshape(-1, 2)
+    angles = np.radians(np.arange(0.0, 180.0, angle_step_deg))
+    projections = points @ np.stack([np.cos(angles), np.sin(angles)])
+    widths = projections.max(axis=0) - projections.min(axis=0)
+    return float(widths.min() / widths.max())
+
+
+def choose(candidates: list, p: dict, target_px: Optional[float]) -> tuple:
+    """Multi-object filter (module docstring). Sets the verdicts; (chosen or None, status)."""
+    nut_like = []
+    for candidate in candidates:
+        if p["min_width_ratio"] <= candidate.width_ratio <= p["max_width_ratio"]:
+            nut_like.append(candidate)
+        else:
+            candidate.verdict = REJECTED_SHAPE
+    n = len(candidates)
+    if not nut_like:
+        return None, f"{n} objects, none nut-shaped"
+    if len(nut_like) == 1:
+        nut_like[0].verdict = CHOSEN
+        return nut_like[0], f"ok (shape, 1 of {n} objects)"
+    if target_px is None:
+        return None, f"{len(nut_like)} nut-shaped objects, size unknown"
+    errors = [abs(c.hexagon.across_flats_px - target_px) / target_px for c in nut_like]
+    best = int(np.argmin(errors))
+    if errors[best] > p["size_tolerance"]:
+        return None, f"{len(nut_like)} nut-shaped objects, none near the target size"
+    nut_like[best].verdict = CHOSEN
+    return nut_like[best], f"ok (shape + size, 1 of {n} objects)"
+
+
+def find_object(image: np.ndarray, p: dict, steps: Optional[dict] = None,
+                target_px: Optional[float] = None, objects: Optional[list] = None) -> tuple:
+    """(hexagon or None, foreground mask, status). p: the "detection" parameters,
+    target_px: target width across flats in px (size filter, only with several objects).
+    If steps is a dict, the binary mask before close/open is stored in it (debug view);
+    if objects is a list, the Candidates in view are appended to it (overlay)."""
     gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (p["blur_kernel_px"],) * 2, 0).astype(np.float32)
     # The background is smooth: blur a downscaled copy (much faster) and scale it back
@@ -102,10 +157,21 @@ def find_object(image: np.ndarray, p: dict, steps: Optional[dict] = None) -> tup
     contours = [c for c in contours if inside(c)]
     if not contours:
         return None, mask, "nothing found"
-    largest = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest) < p["min_area_px"]:
+    blobs = [c for c in contours if cv2.contourArea(c) >= p["min_area_px"]]
+    if not blobs:
         return None, mask, "nothing found (only specks)"
-    return fit_hexagon(cv2.convexHull(largest), p["angle_step_deg"]), mask, "ok"
+    candidates = []
+    for blob in blobs:
+        hull = cv2.convexHull(blob)
+        candidates.append(Candidate(hull, fit_hexagon(hull, p["angle_step_deg"]),
+                                    width_ratio(hull, p["angle_step_deg"])))
+    if objects is not None:
+        objects.extend(candidates)
+    if len(candidates) == 1:   # one object in view: no filter
+        candidates[0].verdict = CHOSEN
+        return candidates[0].hexagon, mask, "ok"
+    chosen, status = choose(candidates, p, target_px)
+    return (chosen.hexagon if chosen else None), mask, status
 
 
 AXIS_PX = 70        # length of the frame arrows in the overlay
@@ -126,9 +192,12 @@ def _axes(out: np.ndarray, origin: tuple, axes: tuple, colour: tuple) -> None:
 
 
 def draw(image: np.ndarray, hexagon: Optional[Hexagon], principal_point: tuple,
-         offset_mm: Optional[tuple], distance_mm: float) -> np.ndarray:
+         offset_mm: Optional[tuple], distance_mm: float, objects: tuple = (),
+         mm_per_px: Optional[float] = None, status: str = "") -> np.ndarray:
     """Minimal overlay: camera frame (top left), robot frame (bottom right), image centre,
-    hexagon, and as text only the offset in robot axes and the distance d."""
+    hexagon, and as text only the offset in robot axes and the distance d. With several
+    objects: rejected by shape red (label: width ratio), nut-shaped but not chosen orange
+    (label: s in mm), chosen green; without a result the status in red."""
     out = image.copy()
     height, width = out.shape[:2]
     m = FRAME_MARGIN_PX
@@ -138,6 +207,20 @@ def draw(image: np.ndarray, hexagon: Optional[Hexagon], principal_point: tuple,
     pp = tuple(int(round(c)) for c in principal_point)
     cv2.drawMarker(out, pp, OVERLAY_YELLOW, cv2.MARKER_CROSS, 40, 2)
     lines = []
+    if len(objects) > 1:
+        for candidate in objects:
+            x, y, _, _ = cv2.boundingRect(candidate.hull)
+            if candidate.verdict == REJECTED_SHAPE:
+                colour, label = OVERLAY_RED, f"w {candidate.width_ratio:.2f}"
+            else:
+                colour = OVERLAY_GREEN if candidate.verdict == CHOSEN else OVERLAY_ORANGE
+                label = (f"{candidate.hexagon.across_flats_px * mm_per_px:.1f} mm"
+                         if mm_per_px else f"{candidate.hexagon.across_flats_px:.0f} px")
+            if candidate.verdict != CHOSEN:
+                cv2.polylines(out, [candidate.hull], True, colour, 2)
+            cv2.putText(out, label, (x, max(y - 8, 20)), FONT, 0.7, colour, 2)
+    if hexagon is None and status:
+        lines.append(status)
     if hexagon is not None:
         centre = tuple(int(round(c)) for c in hexagon.centre)
         cv2.polylines(out, [np.round(hexagon.corners()).astype(np.int32)], True, OVERLAY_GREEN, 2)
@@ -171,20 +254,22 @@ def draw_steps(image: np.ndarray, binary: np.ndarray, result: np.ndarray, thresh
 
 DETECTION_PARAMETERS = ("blur_kernel_px", "background_sigma_px", "background_downscale", "threshold",
                         "morph_kernel_px", "close_iterations", "min_area_px", "border_margin_px",
-                        "angle_step_deg")
+                        "angle_step_deg", "min_width_ratio", "max_width_ratio",
+                        "target_across_flats_mm", "size_tolerance")
+DOUBLE_PARAMETERS = ("background_sigma_px", "threshold", "angle_step_deg", "min_width_ratio",
+                     "max_width_ratio", "target_across_flats_mm", "size_tolerance")
 
 
 class SimpleVisionNode(Node):
     def __init__(self):
         super().__init__("vision_node")
         for name in DETECTION_PARAMETERS:
-            kind = Parameter.Type.DOUBLE if name in ("background_sigma_px", "threshold",
-                                                     "angle_step_deg") else Parameter.Type.INTEGER
+            kind = Parameter.Type.DOUBLE if name in DOUBLE_PARAMETERS else Parameter.Type.INTEGER
             self.declare_parameter(f"detection.{name}", kind)
         self.declare_parameter("publish_debug", Parameter.Type.BOOL)
         self.declare_parameter("debug_view", Parameter.Type.STRING)
         self.declare_parameter("debug_steps_scale", Parameter.Type.DOUBLE)
-        # Set by sa_tasks; only used for point_camera (no size filter here)
+        # Set by sa_tasks; used for point_camera and the size filter (several objects)
         self.declare_parameter("object_plane_distance_mm", Parameter.Type.DOUBLE)
         self.declare_parameter("target", Parameter.Type.STRING)
         self.declare_parameter("d_source", Parameter.Type.STRING)
@@ -205,15 +290,19 @@ class SimpleVisionNode(Node):
         image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         p = {name: self.get_parameter(f"detection.{name}").value for name in DETECTION_PARAMETERS}
         steps = {} if self.get_parameter("debug_view").value == "steps" else None
-        hexagon, mask, status = find_object(image, p, steps)
+        d_mm = self.get_parameter("object_plane_distance_mm").value
+        mm_per_px = d_mm / self.k[0, 0]
+        objects = []
+        hexagon, mask, status = find_object(image, p, steps,
+                                            p["target_across_flats_mm"] / mm_per_px, objects)
         out = Detection(header=msg.header, valid=hexagon is not None, status=status)
         nan = float("nan")
         out.u = out.v = out.u_undistorted = out.v_undistorted = nan
         out.point_camera.x = out.point_camera.y = out.point_camera.z = nan
         out.across_flats_mm = out.area_px = out.hole_area_px = nan
         out.width_ratio = out.compactness = nan
-        d_mm = self.get_parameter("object_plane_distance_mm").value
         out.plane_distance = d_mm * MM_TO_M
+        out.num_candidates = sum(c.verdict != REJECTED_SHAPE for c in objects)
         offset = None
         if hexagon is not None:
             out.u, out.v = hexagon.centre
@@ -222,15 +311,15 @@ class SimpleVisionNode(Node):
             out.u_undistorted, out.v_undistorted = float(und[0]), float(und[1])
             ray = np.linalg.solve(self.k, [und[0], und[1], 1.0]) * d_mm * MM_TO_M
             out.point_camera.x, out.point_camera.y, out.point_camera.z = ray.tolist()
-            out.across_flats_mm = hexagon.across_flats_px * d_mm / self.k[0, 0]
+            out.across_flats_mm = hexagon.across_flats_px * mm_per_px
             # Offset of the object from the image centre in robot axes:
             # x_robo = -y_cam, y_robo = -x_cam (CLAUDE.md)
             offset = (-ray[1] / MM_TO_M, -ray[0] / MM_TO_M)
             out.width_ratio = hexagon.regularity
-            out.num_candidates = 1
         self.pub.publish(out)
         if self.get_parameter("publish_debug").value:
-            debug = draw(image, hexagon, (self.k[0, 2], self.k[1, 2]), offset, d_mm)
+            debug = draw(image, hexagon, (self.k[0, 2], self.k[1, 2]), offset, d_mm, objects,
+                         mm_per_px, status)
             if steps is not None:
                 debug = draw_steps(image, steps["binary"], debug, p["threshold"],
                                    self.get_parameter("debug_steps_scale").value)
