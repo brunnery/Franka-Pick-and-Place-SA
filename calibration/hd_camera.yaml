@@ -1,6 +1,15 @@
 # Intrinsic calibration of the eye-in-hand USB camera (HutoPi 720p, OV9726)
-# Date: 14.10.2026, ROS 2 camera_calibration (mono pinhole, plumb_bob)
-# Board: 9x12 squares (8x11 inner corners), 30 mm squares, 68 samples
+# Date: 19.10.2026, ROS 2 camera_calibration (mono pinhole, plumb_bob)
+# Board: 9x12 squares (8x11 inner corners), 30 mm squares
+# Mean of three independent runs (73, 74, 57 samples, fresh images each, camera fixed,
+# board moved). Spread between runs (std): fx 2.9, fy 4.8, cx 7.9, cy 5.1 px; on the table
+# at d = 416 mm the runs differ from their mean by <= 2.1 mm. Previous calibration
+# (14.10.: fx 2077.2, fy 2083.7, cx 695.4, cy 405.6) lies within 0.75 mm of this mean.
+# Per run (fx, fy, cx, cy):
+#   1: 2093.670318, 2088.291584, 687.117029, 407.234242
+#   2: 2099.237548, 2097.603058, 696.156923, 398.278081
+#   3: 2095.112382, 2091.133150, 702.963603, 406.847769
+# Projection matrix: cv2.getOptimalNewCameraMatrix(K, D, alpha = 0), as the calibrator does.
 # Valid only for 1280x720. Recalibrate after changing the resolution or the lens.
 image_width: 1280
 image_height: 720
@@ -8,12 +17,12 @@ camera_name: hd_camera
 camera_matrix:
   rows: 3
   cols: 3
-  data: [2077.155838, 0.000000, 695.441022, 0.000000, 2083.725681, 405.574535, 0.000000, 0.000000, 1.000000]
+  data: [2096.006749, 0.000000, 695.412518, 0.000000, 2092.342597, 404.120031, 0.000000, 0.000000, 1.000000]
 distortion_model: plumb_bob
 distortion_coefficients:
   rows: 1
   cols: 5
-  data: [0.137350, -0.749399, -0.002155, 0.001190, 0.000000]
+  data: [0.076537, -0.479303, -0.002570, 0.002013, 0.000000]
 rectification_matrix:
   rows: 3
   cols: 3
@@ -21,4 +30,4 @@ rectification_matrix:
 projection_matrix:
   rows: 3
   cols: 4
-  data: [2088.671875, 0.000000, 695.850246, 0.000000, 0.000000, 2095.340820, 404.333906, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]
+  data: [2102.147974, 0.000000, 696.893424, 0.000000, 0.000000, 2101.268557, 403.370122, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000]

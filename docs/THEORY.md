@@ -84,19 +84,19 @@ $$
 with Levenberg–Marquardt, initialised from the closed-form homography solution [Zhang 2000]. The RMS reprojection error is reported as the calibration quality measure. Tool: ROS 2 `camera_calibration`.
 
 ### 1.4 Calibration result – **used**
-14.10.2026, 1280 × 720 px, board with 8 × 11 inner corners and 30 mm squares, 68 views. File: `calibration/hd_camera.yaml`.
+19.10.2026, 1280 × 720 px, board with 8 × 11 inner corners and 30 mm squares; mean of three independent runs (73, 74 and 57 views, new images in each run, camera fixed on the robot, board moved by hand). File: `calibration/hd_camera.yaml`.
 
 | Parameter | Value |
 |---|---|
-| $f_x,\ f_y$ | 2077.2 px, 2083.7 px |
-| $c_x,\ c_y$ | 695.4 px, 405.6 px |
-| $k_1, k_2, p_1, p_2, k_3$ | 0.137, −0.749, −0.0022, 0.0012, 0 |
-| Field of view (h × v) | $2\arctan\frac{W}{2f_x} = 34.2°$ × $2\arctan\frac{H}{2f_y} = 19.6°$ |
+| $f_x,\ f_y$ | 2096.0 px, 2092.3 px |
+| $c_x,\ c_y$ | 695.4 px, 404.1 px |
+| $k_1, k_2, p_1, p_2, k_3$ | 0.077, −0.479, −0.0026, 0.0020, 0 |
+| Field of view (h × v) | $2\arctan\frac{W}{2f_x} = 34.0°$ × $2\arctan\frac{H}{2f_y} = 19.5°$ |
 
-Two calibrations from overlapping sample sets differed by less than 0.4 % in $f$ and less than 1 px in $(c_x, c_y)$, which indicates a stable estimate.
+**Repeatability.** Between the three runs the standard deviation is 2.9 / 4.8 px in $f_x$ / $f_y$ and 7.9 / 5.1 px in $c_x$ / $c_y$ (range 15.8 px in $c_x$). Mapped onto a plane at $d = 416$ mm (undistortion plus pinhole), a single run deviates from the mean by at most 2.1 mm anywhere in the image, two runs from each other by at most 3.5 mm. The first calibration (14.10., 68 views: $f_x = 2077.2$, $f_y = 2083.7$, $c_x = 695.4$, $c_y = 405.6$ px) lies within 0.75 mm of the mean, 0.3 mm at the image centre. An earlier check with two overlapping sample sets (< 1 px in $(c_x, c_y)$) was therefore too optimistic. The intrinsics contribute about ±2 mm to the target error and cannot explain the constant offset of about (−9, +8) mm found at the robot (Section 3.3): that would need a principal point error of about 45 px.
 
 Consequences for the method:
-- **Ground resolution** $d/f$: 0.096 mm/px at $d = 200$ mm, 0.144 mm/px at 300 mm, 0.193 mm/px at 400 mm. The M8 test nut (13 mm across flats) spans about 90 px at 300 mm, an M4 nut (7 mm) still about 48 px.
+- **Ground resolution** $d/f$: 0.095 mm/px at $d = 200$ mm, 0.143 mm/px at 300 mm, 0.191 mm/px at 400 mm. The M8 test nut (13 mm across flats) spans about 90 px at 300 mm, an M4 nut (7 mm) still about 48 px.
 - **Narrow field of view:** at $d = 300$ mm the image covers only about 185 × 104 mm on the table. Each work area must fit into this footprint from its observation pose.
 - **Principal point offset:** the optical axis meets the image at $(695, 406)$, i.e. 55 px right of and 46 px below the image centre $(640, 360)$. At $d = 300$ mm this is about 8 mm and 7 mm on the table. Centring an object on the geometric image centre, as in the BA, therefore does not place it on the optical axis; the back-projection in Section 3 uses $(c_x, c_y)$ and avoids this bias.
 
