@@ -1,0 +1,13 @@
+step: pick
+robot: franka
+started: '2026-10-19T15:45:32.995866'
+orientation:
+  observe:
+    tilt_deg: 1.329
+    to_commanded_deg: 1.382
+result: 'failed: no nut found within 10.0 s (last status: no detection message)'
+duration_s: 20.27
+arrival_errors_mm:
+- - 4.29
+  - -1.6
+  - 2.24

@@ -1,0 +1,60 @@
+step: pick
+robot: franka
+started: '2026-10-19T16:07:11.143182'
+orientation:
+  observe:
+    tilt_deg: 0.604
+    to_commanded_deg: 0.69
+  landed:
+    tilt_deg: 1.544
+    to_commanded_deg: 1.888
+nut:
+  target: nut
+  position_mm:
+  - 401.0629415904678
+  - -152.11959108947326
+  - 15.95999999999998
+  offset_from_axis_mm: 94.3213799606384
+  camera_axis_mm:
+  - 453.34080223225806
+  - -230.62785819808212
+  - 15.95999999999998
+  plane_distance_mm: 407.6415657949415
+  pixel_undistorted:
+  - 298.15793240056814
+  - 671.5141755342675
+tcp_move:
+  total_xy_mm:
+  - -10.56
+  - 81.05
+  from_image_xy_mm:
+  - -52.28
+  - 78.51
+  tcp_to_camera_axis_xy_mm:
+  - 41.72
+  - 2.54
+tcp_target_mm:
+- 401.0629415904678
+- -152.11959108947326
+- 9.96
+spiral_end_tcp_mm:
+- 407.06
+- -152.12
+- 9.96
+landed_tcp_mm:
+- 406.35
+- -151.38
+- 14.05
+landed_above_table_mm: 2.09
+result: ok
+duration_s: 28.34
+arrival_errors_mm:
+- - 2.15
+  - -0.4
+  - 2.79
+- - 1.13
+  - 3.34
+  - 4.05
+- - -2.06
+  - 2.55
+  - -2.17
