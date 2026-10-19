@@ -94,7 +94,7 @@ place:
   max_descend_mm: 12.0         # below the approach pose; no contact by then -> abort
   contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
   screw:
-    direction: 1               # M1 direction that tightens (+1 / -1), check on the hardware
+    direction: 1               # M4 direction that tightens (+1 / -1), check on the hardware
     duration_ms: 8000          # time-based, no sensor (CLAUDE.md)
     speed: 200                 # motor shield speed 0-255
     follow_depth_mm: 10.0      # reference this far below the contact pose while screwing

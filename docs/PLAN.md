@@ -39,9 +39,10 @@ Kernänderungen gegenüber der BA:
 
 ```
 Workstation ──USB-C (serial)──► Arduino UNO R4 Minima + Adafruit Motor Shield v2.3
+     │                               ├─ M1   GESPERRT, nie einen Motor anschliessen
      │                               ├─ M2 ┐ Iris (gegensinnig)
-     │                               ├─ M4 ┘
-     │                               └─ M1   Rotation ganzer Gripper (Schleifring)
+     │                               ├─ M3 ┘
+     │                               └─ M4   Rotation ganzer Gripper (Schleifring)
      ├──USB-A──► HutoPi 720p USB-Kamera (OV9726), eye-in-hand
      └──Ethernet──► FR3 (franka_ros2, Cartesian Impedance Controller aus BA)
 ```
@@ -87,7 +88,7 @@ Arbeitsbereiche für Mutter (**Area N**) und Schraube (**Area S**) sind fest. Zu
 | B3 | Eine Bewegung zur Anfahrpose: Mutter koaxial 5 mm über Gewindespitze | HIGH | Pose erreicht |
 | B4 | Senkrecht absenken (5 mm/s) bis Mutter aufsitzt (Wiggle erst, wenn nötig) | HIGH | \|ΔFz\| > 4 N, sonst Abbruch nach 12 mm |
 | B5 | Optional: kurz rückwärts drehen (Gewindeanfang finden) | LOW | Zeit |
-| B6 | M1 vorwärts drehen, Roboter folgt in −z (Modus float, Soll 10 mm unter Kontakt) | LOW | Zeit t_screw |
+| B6 | M4 vorwärts drehen, Roboter folgt in −z (Modus float, Soll 10 mm unter Kontakt) | LOW | Zeit t_screw |
 | B7 | Iris öffnen, Soll = Ist, Modus normal, zurück zur Beobachtungspose S | HIGH | – |
 
 Pick (Schritt 1, `ros2 run sa_tasks pick`) und Place & Screw (Schritt 2, `ros2 run sa_tasks place_screw`) sind **getrennt startbar**; ein kombinierter Ablauf kommt mit dem Bringup-Launch. Beobachtungsposen und Tischhöhe werden mit `teach_poses` am Roboter aufgenommen (`sa_tasks/config/poses.yaml`).
@@ -145,7 +146,7 @@ Arduino → PC:  <id> ACK\n            sofort nach gültigem Befehl
 |---|---|
 | `OPEN <ms> <speed>` | Iris öffnen für ms, dann Motoren aus |
 | `CLOSE <ms> <speed> <hold_speed>` | Iris schliessen für ms → DONE → weiter mit hold_speed (Halten) |
-| `ROT <+1/-1> <ms> <speed>` | M1 drehen für ms → DONE → aus. Iris hält weiter |
+| `ROT <+1/-1> <ms> <speed>` | M4 drehen für ms → DONE → aus. Iris hält weiter |
 | `STOP` | alle Motoren aus |
 | `PING` | → `<id> DONE` (Lebenszeichen + Watchdog-Reset) |
 | `STATE` | → `<id> DONE iris=<open/closing/holding/opening/off> rot=<on/off>` |
@@ -236,7 +237,7 @@ Antwort (08.10.): Kamera zeigt **immer nach vorne (+x_robo)**, d.h. EE-Gierwinke
 **F29.** Bestätigen: Wenn die Kamera vorne sitzt, ist der Gripper (bzw. die Halterung) im Kamerabild **unten**? (Damit gilt F27 genau in dieser Konfiguration.)
 Antwort: 
 
-**F30.** Sitzt die Kamera auf dem **drehenden** Teil (M1 dreht sie mit) oder auf dem fixen Teil am Flansch? Falls sie mitdreht: Orientierung nach dem Schrauben unbekannt → vor jedem Bild zurückdrehen nötig.
+**F30.** Sitzt die Kamera auf dem **drehenden** Teil (M4 dreht sie mit) oder auf dem fixen Teil am Flansch? Falls sie mitdreht: Orientierung nach dem Schrauben unbekannt → vor jedem Bild zurückdrehen nötig.
 Antwort: 
 
 **F22.** Stiftschraube: Ist die Gesamthöhe 20 mm Basis + 19 mm Gewinde = 39 mm, oder 20 mm insgesamt? Schaut das Gewinde oben aus der Basis heraus?
@@ -285,6 +286,7 @@ Antwort:
 | 16.10. | Workstation: franka_ros2 **v2.2.0 + libfranka 0.19.0** nativ in `~/franka_ros2_ws` (wie Matteos Container, mit dem der Controller am 13.10. lief); `cartesian_impedance_control` + `messages_fr3` in `software/src`. `sa_vision` baut nur `--packages-up-to sa_vision`, Vision unabhängig vom Controller. Kamera über `/dev/v4l/by-id/...` (videoN wechselt beim Umstecken) | System-libfranka 0.13.2 zu alt; Workstation nur von mir genutzt. Am Ende ein Bringup-Launch, der Vision, Controller und Gripper einbindet |
 | 16.10. | Kanten **nach Nähe gruppieren** (`edge_group_ratio` 0.1, Hülle nur der Kantenpixel) statt Schliessen + Füllen; **Referenzbild nur bei passender Beleuchtung** (Median I/R in [0.8, 1.25], sonst ignoriert + Warnung) | Live-Test mit anderem Licht (Lampe aus/anders, harter Schatten): Referenz passte nicht (Median 0.45), Umriss der Mutter offen → 0 Treffer. Gruppierung: Bench weiter 26/26 + 11/11, Handbilder 18/27 statt 12/27. Mutter neben ihrem harten Schatten bleibt unsichtbar → **diffuses Licht von oben ist Voraussetzung**, Lampenposition gehört zur Beobachtungspose |
 | 16.10. | **Neue Gripper-/Kamerahalterung (CAD 16.10.):** `T_flange_cam` = (0, 44.4, 57.223) mm (vorher 60.223), `T_flange_tcp` = (0, 0, 118.823) mm (vorher 113.823). Bezugspunkt Kamera = unterster Punkt des Gehäuses (Linse 5 mm höher), Flansch = Auflagefläche (Zentrierzylinder ragt in den Arm). Kamera-Orientierung unverändert → Achsen-Mapping F27/F28 und `camera_to_robot_xy` bleiben. Fusion-Baugruppe jetzt in Basis-Achsen (Kamera bei +x), Messung als Delta Flansch → Punkt. CAD-Werte < 0.2 mm = 0 (CLAUDE.md vereinheitlicht). STEP + STL in `cad/export/`. 3D-Viewer (`visualization/`) nachgeführt: neues Gripper-Mesh, `GRIP_LEN` = 118.823 mm (vorher 156.3, alter Entwurf), IK erreicht alle Wegpunkte | Kamera 3 mm höher, Gripper 5 mm länger → Kamera bei aufliegendem Gripper 61.6 mm über Tisch (vorher 53.6). Gleicher Bezugspunkt wie das Lineal am Bench → Befund „Projektionszentrum ≈ 9 mm darüber“ bleibt gültig, Kalibrierung am Roboter wie geplant. Kontrolle im Mesh: Kameragehäuse unten bei z = −57.22, Bodenplatte bei −118.82 |
+| 19.10. | **Motorbelegung fix:** Iris = M2 + M3 (gegensinnig), Rotation = M4. **Port M1 ist gesperrt**, dort nie einen Motor anschliessen (ersetzt die provisorische Annahme M2 + M4 / M1 aus F5) | Entscheid Yannick (19.10.); Firmware prüft per `static_assert`, dass kein Port = M1 ist; Testsketch `sketch_sep24a` angepasst |
 | 18.10. | **Stand Ende Session 18.10.:** mit Korrektur (−9.0, +8.2) mm + Zwischenhalt (30 mm, Ausrichten, senkrecht runter) sehr gute Treffer; **ohne** Korrektur nur 1/2 → Korrektur bleibt vorerst aktiv. Gemessene Neigung des Flansches: Beobachtung 0.65–1.35°, Zwischenhalt 1.0–1.5° (0.2° nie erreicht → Toleranz 1.2°), nach Landung 1.3–2.1°. Gripper wirkt sichtbar nicht gerade. **Nächste Schritte:** (1) Halter-Neigung messen (`sa_teach` → 4 × `flat`, Proben vergleichen), (2) `use_gripper_tilt: true` + Korrektur 0 + 5 Verifikationsläufe mit neuen `truth`-Punkten, (3) mechanisch prüfen, ob Gripper/Kamera am Adapter schief sitzen; (4) Gripper-Firmware + Serial-Bridge (Pick ist noch Mock), (5) Stiftschraube: Bilder der stehenden Schraube, Schritt 2 testen. `messages_fr3` noch nicht im Repo (keine Lizenz) | Für die nächste Session |
 | 18.10. | **Versuch: Zwischenhalt über der Mutter** (`pick.align`, 30 mm über Tisch): xy-Bewegung bis senkrecht über die Mutter, warten bis gemessene = kommandierte Orientierung (0.2°, max 5 s), dann senkrecht runter. Neigung bei Beobachtung, Zwischenhalt und Landung im Run-Record | Yannick: einfacher Test, ob eine Schräglage beim Absenken die Fehlgriffe verursacht, vor dem Test mit gemessener Halter-Neigung |
 | 18.10. | **Versuch: Gripper statt Flansch waagrecht** (`use_gripper_tilt`, Standard aus). Neigung des Grippers gegenüber dem Flansch wird mit `sa_teach` → `flat` gemessen (Bodenplatte flach auf den Tisch gedrückt, 3–4 Proben gemittelt, in `poses.yaml`); eingeschaltet kommandieren alle Bewegungen den Gripper-Frame {G} auf (1, 0, 0, 0), Kamera und TCP in {G}. Wahrheitspunkte speichern jetzt die Flansch-Pose, `compare_runs` rechnet sie mit der aktuellen Neigung neu. A/B-Test: Schalter an + `target_correction_mm` = 0 | Yannick sieht den Gripper schräg auf den Tisch zufahren und will keine fest codierte Korrektur. Eine Halter-Neigung von ≈ 1.5° erklärt den Versatz (−9, +8) mm vollständig; bei den Wahrheitspunkten stand der Flansch 0.9–3.2° schräg |

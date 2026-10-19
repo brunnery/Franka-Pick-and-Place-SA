@@ -3,10 +3,13 @@
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 
-// Port mapping
-const uint8_t PORT_IRIS_A = 1;
+// Port mapping. M1 is blocked: never connect a motor to it.
+const uint8_t PORT_BLOCKED = 1;
+const uint8_t PORT_IRIS_A = 2;
 const uint8_t PORT_IRIS_B = 3;
 const uint8_t PORT_ROT = 4;
+static_assert(PORT_IRIS_A != PORT_BLOCKED && PORT_IRIS_B != PORT_BLOCKED && PORT_ROT != PORT_BLOCKED,
+              "Motor port M1 is blocked, do not use it");
 
 // Speeds (0-255) and timings
 const uint8_t SPEED_IRIS = 200;
