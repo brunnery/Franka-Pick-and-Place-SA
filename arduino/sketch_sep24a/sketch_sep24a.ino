@@ -9,11 +9,12 @@ Adafruit_DCMotor *motor2 = AFMS.getMotor(2);
 Adafruit_DCMotor *motor3 = AFMS.getMotor(3);
 Adafruit_DCMotor *motor4 = AFMS.getMotor(4);
 
-const uint8_t SPEED = 180;               // 0-255, langsam fuer den ersten Test
-const unsigned long DAUER = 3000;       // M2/M3 Laufzeit proRichtung in ms
+const uint8_t SPEED = 100;               // 0-255, langsam fuer den ersten Test
+const unsigned long DAUER = 2000;       // M2/M3 Laufzeit proRichtung in ms
 const unsigned long PAUSE = 250;        // Pause zwischen Richtungswechseln in ms
 const uint8_t ZYKLEN_M2M3 = 2;          // so oft hin und her vor M4
 const unsigned long DAUER_M4 = 8000;    // M4 Laufzeit in ms
+const uint8_t SPEED_M4 = 255;           // M4 auf Maximum
 
 void setup() {
   Serial.begin(9600);
@@ -24,7 +25,7 @@ void setup() {
   }
 
   motor2->setSpeed(SPEED);
-  motor4->setSpeed(SPEED);
+  motor4->setSpeed(SPEED_M4);
   motor3->setSpeed(SPEED);
 }
 
