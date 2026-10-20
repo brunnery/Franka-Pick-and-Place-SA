@@ -1,4 +1,6 @@
-// Test: iris motors M2 and M3 run in opposite directions for RUN_MS, pause, then reverse.
+// Test: iris motors M2 and M3 run once "forward" (M2 FORWARD, M3 BACKWARD) for RUN_MS, then
+// stop. Result 19.10.: this OPENS the iris (iris_gripper: CLOSE_IS_A_FORWARD = false).
+// Press reset on the board to run it again.
 #include <Wire.h>
 #include <Adafruit_MotorShield.h>
 
@@ -10,22 +12,12 @@ static_assert(PORT_IRIS_A != PORT_BLOCKED && PORT_IRIS_B != PORT_BLOCKED,
               "Motor port M1 is blocked, do not use it");
 
 // Speed (0-255) and timings
-const uint8_t SPEED_IRIS = 200;
-const unsigned long RUN_MS = 3000;     // run time per direction
-const unsigned long PAUSE_MS = 1000;   // pause between runs
+const uint8_t SPEED_IRIS = 100;
+const unsigned long RUN_MS = 1500;     // run time
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *irisA;
 Adafruit_DCMotor *irisB;
-
-void runIris(bool forward) {
-  irisA->run(forward ? FORWARD : BACKWARD);
-  irisB->run(forward ? BACKWARD : FORWARD);
-  delay(RUN_MS);
-  irisA->run(RELEASE);
-  irisB->run(RELEASE);
-  delay(PAUSE_MS);
-}
 
 void setup() {
   Serial.begin(9600);
@@ -37,11 +29,14 @@ void setup() {
   irisB = AFMS.getMotor(PORT_IRIS_B);
   irisA->setSpeed(SPEED_IRIS);
   irisB->setSpeed(SPEED_IRIS);
+
+  Serial.println("Iris open (M2 FORWARD, M3 BACKWARD)");
+  irisA->run(BACKWARD);
+  irisB->run(FORWARD);
+  delay(RUN_MS);
+  irisA->run(RELEASE);
+  irisB->run(RELEASE);
+  Serial.println("Stopped");
 }
 
-void loop() {
-  Serial.println("Iris forward (M2 FORWARD, M3 BACKWARD)");
-  runIris(true);
-  Serial.println("Iris backward (M2 BACKWARD, M3 FORWARD)");
-  runIris(false);
-}
+void loop() {}
