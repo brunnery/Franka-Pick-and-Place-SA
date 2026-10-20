@@ -1,0 +1,26 @@
+step: place_and_screw
+robot: franka
+started: '2026-10-20T08:39:09.675042'
+candidates:
+- rank: 1
+  position_mm:
+  - 412.3
+  - 218.07
+  - 31.96
+  offset_from_axis_mm: 29.21
+  size_mm: 7.42
+  width_ratio: 0.512
+  shape_ok: false
+attempts:
+- candidate: 1
+  move: 1
+  nearest: null
+result: 'failed: none of the 1 object(s) tried is a stud'
+duration_s: 12.91
+arrival_errors_mm:
+- - 2.74
+  - 0.35
+  - 2.94
+- - -1.8
+  - -0.01
+  - -0.72

@@ -1,0 +1,71 @@
+step: place_and_screw
+robot: franka
+started: '2026-10-20T09:27:08.861643'
+candidates:
+- rank: 1
+  position_mm:
+  - 415.76
+  - 218.35
+  - 31.96
+  offset_from_axis_mm: 29.68
+  size_mm: 10.81
+  width_ratio: 0.687
+  shape_ok: true
+attempts:
+- candidate: 1
+  move: 1
+  nearest:
+    rank: 1
+    position_mm:
+    - 415.19
+    - 217.51
+    - 31.96
+    offset_from_axis_mm: 3.53
+    size_mm: 10.01
+    width_ratio: 0.748
+    shape_ok: true
+stud:
+  target: stud
+  position_mm:
+  - 415.19
+  - 217.51
+  - 31.96
+  offset_from_axis_mm: 3.53
+  camera_axis_mm:
+  - 412.3344555842199
+  - 219.57492733479594
+  - 31.95999999999998
+  plane_distance_mm: 392.3387950973819
+  candidate: 1
+  centring_moves: 1
+tcp_move:
+  total_xy_mm:
+  - 46.58
+  - -1.37
+  from_image_xy_mm:
+  - 2.86
+  - -2.06
+  tcp_to_camera_axis_xy_mm:
+  - 43.72
+  - 0.69
+approach_tcp_mm:
+- 415.19
+- 217.51
+- 55.96
+approach_only: true
+approach_reached_tcp_mm:
+- 415.26
+- 216.45
+- 59.5
+result: ok
+duration_s: 19.27
+arrival_errors_mm:
+- - 3.76
+  - 1.23
+  - -1.23
+- - -1.85
+  - -0.21
+  - -0.87
+- - 1.95
+  - -3.25
+  - 3.51

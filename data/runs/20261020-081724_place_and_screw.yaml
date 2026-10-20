@@ -1,0 +1,9 @@
+step: place_and_screw
+robot: franka
+started: '2026-10-20T08:17:16.433674'
+result: aborted by user
+duration_s: 8.56
+arrival_errors_mm:
+- - 0.21
+  - -0.58
+  - -3.4

@@ -1,0 +1,30 @@
+step: place_and_screw
+robot: franka
+started: '2026-10-20T08:19:26.053581'
+candidates:
+- rank: 1
+  position_mm:
+  - 422.91
+  - 324.37
+  - 31.96
+  offset_from_axis_mm: 112.23
+  size_mm: 12.16
+  width_ratio: 0.295
+  shape_ok: false
+- rank: 2
+  position_mm:
+  - 427.5
+  - 223.42
+  - 31.96
+  offset_from_axis_mm: 46.43
+  size_mm: 17.74
+  width_ratio: 0.604
+  shape_ok: false
+attempts: []
+result: 'failed: goal not reached within 15.0 s (error x -41.5 y -104.8 z -3.4 mm,
+  speed 0.0 mm/s)'
+duration_s: 18.76
+arrival_errors_mm:
+- - 0.21
+  - -0.58
+  - -3.4

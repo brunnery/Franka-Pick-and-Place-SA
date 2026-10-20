@@ -1,0 +1,5 @@
+step: pick
+robot: franka
+started: '2026-10-20T07:50:38.229668'
+result: aborted by user
+duration_s: 4.35

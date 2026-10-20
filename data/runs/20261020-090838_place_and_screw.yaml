@@ -1,0 +1,11 @@
+step: place_and_screw
+robot: franka
+started: '2026-10-20T09:08:33.173011'
+candidates: []
+result: 'failed: no object within 125.0 mm of the camera axis at the stud observation
+  pose (0 in view)'
+duration_s: 5.28
+arrival_errors_mm:
+- - 3.36
+  - 0.78
+  - -0.23

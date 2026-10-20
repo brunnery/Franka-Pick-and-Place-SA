@@ -1,0 +1,89 @@
+step: place_and_screw
+robot: franka
+started: '2026-10-20T09:32:38.322079'
+candidates:
+- rank: 1
+  position_mm: &id002
+  - 415.97
+  - 218.83
+  - 31.96
+  offset_from_axis_mm: 29.7
+  size_mm: 10.78
+  width_ratio: 0.74
+  shape_ok: true
+attempts:
+- candidate: 1
+  move: 1
+  nearest:
+    rank: 1
+    position_mm: &id001
+    - 415.05
+    - 217.49
+    - 31.96
+    offset_from_axis_mm: 3.64
+    size_mm: 10.18
+    width_ratio: 0.746
+    shape_ok: true
+stud:
+  target: stud
+  position_mm:
+  - 415.05
+  - 217.49
+  - 31.96
+  uncorrected_mm: *id001
+  observed_mm: *id002
+  offset_from_axis_mm: 3.64
+  camera_axis_mm:
+  - 412.3431919281688
+  - 219.92577245364328
+  - 31.95999999999998
+  plane_distance_mm: 392.2584737920434
+  candidate: 1
+  centring_moves: 1
+tcp_move:
+  total_xy_mm:
+  - 46.41
+  - -1.57
+  from_image_xy_mm:
+  - 2.71
+  - -2.44
+  tcp_to_camera_axis_xy_mm:
+  - 43.7
+  - 0.86
+approach_tcp_mm:
+- 415.05
+- 217.49
+- 55.96
+approach_only: true
+approach_reached_tcp_mm:
+- 415.06
+- 216.46
+- 59.37
+check:
+  '1':
+  - 415.97
+  - 218.83
+  '2':
+  - 415.05
+  - 217.49
+  '3':
+  - 415.06
+  - 216.46
+  centred_minus_observed_mm:
+  - -0.92
+  - -1.34
+  tcp_minus_centred_mm:
+  - 0.01
+  - -1.03
+result: ok
+duration_s: 19.16
+arrival_errors_mm:
+- - 4.08
+  - 1.28
+  - -1.01
+- - -1.98
+  - -0.3
+  - -0.95
+- - 1.78
+  - -3.14
+  - 3.38
