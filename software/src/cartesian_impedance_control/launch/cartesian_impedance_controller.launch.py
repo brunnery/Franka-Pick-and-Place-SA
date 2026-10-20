@@ -6,6 +6,8 @@
 # Added 2026-10-13: record:=true (default) records /cartesian_impedance_controller/debug and
 # /franka_robot_state_broadcaster/robot_state with ros2 bag into
 # bag_dir/<YYYY-MM-DD_HHMM>_<bag_name> (docs/controller-tuning.md); Ctrl+C on the launch also closes the bag.
+# Added 2026-10-20: start_pose:=false loads start_pose_off.yaml into the controller (no start move at
+# activation; used by software/launch/task.launch.py).
 
 import datetime
 import os
@@ -16,6 +18,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from ament_index_python.packages import get_package_share_directory
 
 
 def bag_recorder(context):
@@ -51,12 +54,14 @@ def generate_launch_description():
         [FindPackageShare('cartesian_impedance_control'), 'launch', 'controllers.yaml'])
 
     # Spawn impedance controller node (loaded, configured and activated)
-    impedance_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['cartesian_impedance_controller'],
-        output='screen',
-    )
+    def impedance_spawner(context):
+        arguments = ['cartesian_impedance_controller']
+        if LaunchConfiguration('start_pose').perform(context).lower() not in ('true', '1'):
+            arguments += ['--param-file', os.path.join(
+                get_package_share_directory('cartesian_impedance_control'), 'launch',
+                'start_pose_off.yaml')]
+        return [Node(package='controller_manager', executable='spawner', arguments=arguments,
+                     output='screen')]
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -81,6 +86,10 @@ def generate_launch_description():
             default_value='false',
             description='Use Franka Gripper as an end-effector, otherwise, the robot is loaded '
                         'without an end-effector.'),
+        DeclareLaunchArgument(
+            'start_pose',
+            default_value='true',
+            description='Start move of the controller at activation (controllers.yaml start_pose).'),
         DeclareLaunchArgument(
             'record',
             default_value='true',
@@ -108,5 +117,5 @@ def generate_launch_description():
         ),
 
         OpaqueFunction(function=bag_recorder),
-        impedance_spawner,
+        OpaqueFunction(function=impedance_spawner),
     ])

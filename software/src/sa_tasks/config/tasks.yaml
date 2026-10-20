@@ -36,23 +36,33 @@ frames:
   # use_gripper_tilt) and try to replace this constant with it.
   # 19.10.: set to 0 for a test with the new calibration and the offset logging (tcp_move);
   # the previous value was [-9.0, 8.2].
-  target_correction_mm: [0.0, 0.0]
+  # 20.10.: [-1, +1] from 3 approach runs over the stud (sa_place_approach): vision and robot
+  # repeatable to +-0.2 mm, iris by hand about 1 mm too far in +x and -y -> constant
+  # camera -> TCP offset (mount, CAD). Applies to nut and stud. Then by eye at the stud
+  # (Yannick): [-1.5, 2.5], [-1.5, 3.5], then [-1.5, 4.0]
+  target_correction_mm: [-1.5, 4.0]
 
 objects:
   nut:
     height_mm: 8.0             # M8 locknut; top face for the size filter of the detection
     centre_height_mm: 4.0      # height of the silhouette centroid (bench fit: ~mid-height)
-  stud:
-    base_height_mm: 20.0       # top face of the square base: plane of the detected centre
-    top_height_mm: 39.0        # tip of the thread above the table
+  stud:                        # M8 stud on a square base 10 x 10 x 20 mm, 39 mm in total
+    base_height_mm: 20.0       # top face of the square base: d for the size filter
+    # Plane of the detected centre. The final position is taken with the camera centred
+    # over the stud (place.stud_search), where the plane barely matters
+    centre_height_mm: 20.0
+    top_height_mm: 39.0        # tip of the thread above the table (20.10.: 39 mm, Yannick)
 
 vision:
   node: /vision_node
   detection_topic: /vision/detection
   camera_info_topic: /camera_info
-  settle_s: 0.6                # wait after arrival before frames count (robot rings down;
+  settle_s: 0.6                # wait after arrival before the tracks start (robot rings down;
                                # 19.10.: 1.0 -> 0.6 for a faster cycle)
   timeout_s: 10.0              # no settled detection within this time -> abort
+  # vision_node locks its result after tracking.lock_after_frames images (vision.yaml); a view
+  # that has not locked on anything after this many images is empty (stud search: lost)
+  empty_view_frames: 30
   # Reject detections whose target lies farther from the camera axis than this (outside the
   # work area or at the image border, where perspective errors grow; THEORY 4)
   max_offset_from_axis_mm: 125.0  # image half-width at d = 416 mm: about 128 mm (y), 70 mm (x)
@@ -78,6 +88,10 @@ robot:
   arrival_speed_mm_s: 3.0      # "standing still" (19.10.: 2 -> 3)
   arrival_timeout_s: 15.0      # after the end of the path
   arrival_settle_s: 0.3        # both conditions must hold this long (19.10.: 0.5 -> 0.3)
+  # Before the first move of a step: arm still this long (below arrival_speed_mm_s), so the
+  # controller's own start move after activation is over. References sent during it were
+  # not always taken (20.10.: place --locate-only went to the start pose)
+  start_settle_s: 1.0
   max_taught_tilt_deg: 10.0    # taught poses more tilted than this are refused (only their
                                # position is used; the check catches gross teaching errors)
   # Both observation poses use the z of this taught pose ("" = each its own taught z)
@@ -100,20 +114,40 @@ pick:
     duration_s: 4.0            # whole spiral, minimum-jerk (peak below 20 mm/s along it)
 
 place:
+  # Stud search (THEORY 2.0): the tall stud is a clean square only from directly above. From
+  # observe_stud all objects in view are ranked (vision_node, most likely stud first); the
+  # camera axis is centred over each in turn at the observation height and the shape judged
+  # there. The first that passes is the stud.
+  stud_search:
+    max_candidates: 3          # objects tried at most
+    max_centring_moves: 2      # moves per object to bring it under the camera axis
+    # This close to the axis -> judge the shape and take the position (parallax of the thread
+    # tip at 10 mm: about 0.5 mm). 20.10.: 4 -> 10 mm, the steady-state error of the
+    # controller (2-3 mm) plus the ringing caused extra moves; now usually one move
+    centred_tolerance_mm: 10.0
+    lost_radius_mm: 20.0       # after a move the largest object within this radius of the
+                               # axis is taken; none -> lost
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
   descend_speed_mm_s: 5.0      # contact search
   max_descend_mm: 12.0         # below the approach pose; no contact by then -> abort
   contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
   screw:
-    direction: 1               # M4 direction that tightens (+1 / -1), check on the hardware
+    direction: 1               # M4 direction that tightens: +1 = FORWARD (checked 19.10., test_m4)
     duration_ms: 8000          # time-based, no sensor (CLAUDE.md)
     speed: 200                 # motor shield speed 0-255
     follow_depth_mm: 10.0      # reference this far below the contact pose while screwing
                                # (float stiffness: the arm follows the thread compliantly)
 
 gripper:
-  backend: mock                # mock (log only) until the serial bridge exists
-  open: {duration_ms: 1500, speed: 200}
-  close: {duration_ms: 1500, speed: 200, hold_speed: 120}
+  backend: serial              # serial (arduino/iris_gripper over USB) | mock (log only)
+  port: /dev/ttyACM0           # UNO R4 Minima; check with: ls /dev/ttyACM* /dev/serial/by-id
+  baud: 115200                 # = BAUD in the firmware
+  connect_timeout_s: 3.0       # first PING (opening the port may reset the board)
+  ack_timeout_s: 0.5           # board must acknowledge a command within this time
+  done_margin_s: 1.0           # DONE expected within the commanded duration + this
+  ping_period_s: 0.5           # keep-alive; firmware watchdog: all motors off after 2 s
+  open: {duration_ms: 1500, speed: 100}       # 20.10.: values of test_m2_m3 (Yannick)
+  # Close for duration_ms, then keep pressing with hold_speed until the next open (holding)
+  close: {duration_ms: 1500, speed: 100, hold_speed: 60}
 
 log_dir: data/runs             # one YAML record per run, relative to the repository root

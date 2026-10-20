@@ -113,6 +113,94 @@ def locate(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,
             "pixel_undistorted": [observation.u_undistorted, observation.v_undistorted]}
 
 
+def candidate_positions(robot: Robot, vision: Vision, cfg: dict, table_z: float, target: str,
+                        size_plane_mm: float, centre_plane_mm: float, lock: bool) -> tuple:
+    """All objects of one view at their base positions, in the rank order of vision_node
+    (lock: see Vision.view). Returns (camera axis point on the centre plane, d, [dict per
+    object])."""
+    t_base_camera = robot.flange_pose() @ config.camera_in_flange(cfg)
+    distance = frames.distance_along_axis(t_base_camera, table_z + size_plane_mm)
+    view = vision.view(target, distance, lock)
+    plane_z = table_z + centre_plane_mm
+    axis = frames.object_in_base(view.k[0, 2], view.k[1, 2], view.k, t_base_camera, plane_z)
+    objects = []
+    for rank, candidate in enumerate(view.candidates, 1):
+        point = frames.object_in_base(candidate.u_undistorted, candidate.v_undistorted, view.k,
+                                      t_base_camera, plane_z)
+        offset = float(np.linalg.norm(point[:2] - axis[:2]))
+        objects.append({"rank": rank, "position_mm": [round(float(v), 2) for v in point],
+                        "offset_from_axis_mm": round(offset, 2),
+                        "size_mm": round(candidate.size_mm, 2),
+                        "width_ratio": round(candidate.width_ratio, 3),
+                        "shape_ok": bool(candidate.shape_ok)})
+    return axis, distance, objects
+
+
+def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: np.ndarray,
+              record: dict) -> dict:
+    """Stud search (THEORY 2.0): the stud is a clean square only when seen from directly
+    above. All objects seen from the observation pose are tried in rank order: the camera
+    axis is moved over the object (from the measured pose, so the steady-state error of the
+    controller is corrected too) until it is within centred_tolerance_mm, then its shape is
+    judged there. After a move the largest object within lost_radius_mm of the axis counts
+    (dark spots on the stud itself can be separate small blobs nearer to the axis). The
+    first object that passes is the stud; its position comes from that centred image,
+    where the parallax of the tall stud is negligible."""
+    stud = cfg["objects"]["stud"]
+    search = cfg["place"]["stud_search"]
+    planes = (stud["base_height_mm"], stud["centre_height_mm"])
+    # Choosing among several objects: locked on objects confirmed over several images
+    axis, _, seen = candidate_positions(robot, vision, cfg, table_z, TARGET_STUD, *planes,
+                                        lock=True)
+    record["candidates"] = seen
+    limit = cfg["vision"]["max_offset_from_axis_mm"]
+    candidates = [c for c in seen if c["offset_from_axis_mm"] <= limit]
+    if not candidates:
+        raise SequenceError(f"no object within {limit} mm of the camera axis at the stud "
+                            f"observation pose ({len(seen)} in view)")
+    candidates = candidates[:search["max_candidates"]]
+    log.info("Step 2: %d object(s) in view, trying %d in rank order", len(seen), len(candidates))
+    attempts = record["attempts"] = []
+    goal = observe.copy()  # last commanded pose = where `axis` was measured
+    for candidate in candidates:
+        position = np.asarray(candidate["position_mm"][:2], float)
+        for move in range(1, search["max_centring_moves"] + 1):
+            goal[:2, 3] += position - axis[:2]
+            move_to(robot, goal, cfg)
+            # Centred: the median over the last images, no lock (worked well, 20.10.)
+            axis, distance, now = candidate_positions(robot, vision, cfg, table_z, TARGET_STUD,
+                                                      *planes, lock=False)
+            near = [c for c in now if c["offset_from_axis_mm"] <= search["lost_radius_mm"]]
+            nearest = max(near, key=lambda c: c["size_mm"]) if near else None
+            attempts.append({"candidate": candidate["rank"], "move": move, "nearest": nearest})
+            if nearest is None:
+                log.warning("candidate #%d lost after centring move %d", candidate["rank"], move)
+                break
+            position = np.asarray(nearest["position_mm"][:2], float)
+            if nearest["offset_from_axis_mm"] > search["centred_tolerance_mm"]:
+                continue
+            if not nearest["shape_ok"]:
+                log.info("candidate #%d seen from above: width ratio %.2f, %.1f mm: not a stud",
+                         candidate["rank"], nearest["width_ratio"], nearest["size_mm"])
+                break
+            point = np.asarray(nearest["position_mm"], float)
+            point[:2] += np.asarray(cfg["frames"]["target_correction_mm"], float)
+            log.info("stud = candidate #%d (width ratio %.2f, %.1f mm) at x %.1f y %.1f mm, "
+                     "%.1f mm from the camera axis after %d move(s)", candidate["rank"],
+                     nearest["width_ratio"], nearest["size_mm"], point[0], point[1],
+                     nearest["offset_from_axis_mm"], move)
+            return {"target": TARGET_STUD, "position_mm": point.tolist(),
+                    "uncorrected_mm": nearest["position_mm"],
+                    "observed_mm": candidate["position_mm"],
+                    "offset_from_axis_mm": nearest["offset_from_axis_mm"],
+                    "camera_axis_mm": axis.tolist(), "plane_distance_mm": distance,
+                    "candidate": candidate["rank"], "centring_moves": move}
+        else:
+            log.warning("candidate #%d not centred within %d moves", candidate["rank"],
+                        search["max_centring_moves"])
+    raise SequenceError(f"none of the {len(candidates)} object(s) tried is a stud")
+
+
 def tcp_move(robot: Robot, cfg: dict, found: dict) -> dict:
     """Split the horizontal move of the TCP from the observation pose to the detected object
     into the part the image gives (object relative to the camera axis, incl. the target
@@ -149,6 +237,7 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     observe = observation_pose(poses, "observe_nut", cfg)
 
     robot.set_mode(cfg["robot"]["modes"]["normal"])
+    vision.prepare(TARGET_NUT)
     gripper.open()
     log.info("Step 1: moving to the nut observation pose")
     move_to(robot, observe, cfg)
@@ -202,10 +291,40 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     return record
 
 
+def position_check(found: dict, reached_tcp: np.ndarray) -> dict:
+    """Stud xy at three stages (approach_only): 1 seen from the observation pose (off-axis,
+    locked), 2 seen with the camera centred over it (the target, before target_correction_mm),
+    3 the TCP measured at the approach pose. 2 - 1 large: the camera model is off (same
+    stud, two views); 3 - 2: what the robot did not reach. TCP visibly off the real stud
+    although 3 - 2 is small: constant camera -> TCP offset (target_correction_mm)."""
+    observed = np.asarray(found["observed_mm"][:2], float)
+    centred = np.asarray(found["uncorrected_mm"][:2], float)
+    tcp = np.asarray(reached_tcp[:2], float)
+    rows = [("1 observation pose (off-axis)", observed), ("2 centred (target)", centred),
+            ("3 TCP reached", tcp)]
+    for label, xy in rows:
+        log.info("check %-30s x %7.2f  y %7.2f mm", label, *xy)
+    log.info("check 2 - 1 (camera model)       x %+6.2f  y %+6.2f mm", *(centred - observed))
+    log.info("check 3 - 2 (robot)              x %+6.2f  y %+6.2f mm", *(tcp - centred))
+    log.info("check: now measure the bottom plate centre against the stud axis by hand")
+    check = {label.split()[0]: [round(float(v), 2) for v in xy] for label, xy in rows}
+    check["centred_minus_observed_mm"] = [round(float(v), 2) for v in centred - observed]
+    check["tcp_minus_centred_mm"] = [round(float(v), 2) for v in tcp - centred]
+    return check
+
+
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
-                    poses: config.Poses) -> dict:
+                    poses: config.Poses, locate_only: bool = False,
+                    approach_only: bool = False, record: Optional[dict] = None) -> dict:
     """Step 2: observation pose over the stud -> detect it -> one move to just above the
-    thread -> descend until contact -> screw (compliant) -> release -> back up."""
+    thread -> descend until contact -> screw (compliant) -> release -> back up.
+
+    locate_only: stop after the detection (test of the stud detection and its position).
+    approach_only: stop at the approach pose above the thread tip and hold it there (check
+    the centring by eye; no contact search, screwing or gripper command).
+    record: filled step by step, so an abort (Ctrl-C) keeps what was measured so far."""
+    record = {} if record is None else record
+    record["step"] = "place_and_screw"
     robot = ToolRobot(robot, config.tool_in_flange(cfg, poses))
     table_z = poses.table_z()
     stud = cfg["objects"]["stud"]
@@ -216,18 +335,35 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     observe = observation_pose(poses, "observe_stud", cfg)
 
     robot.set_mode(modes["normal"])
+    vision.prepare(TARGET_STUD)
     log.info("Step 2: moving to the stud observation pose")
     move_to(robot, observe, cfg)
-    found = locate(robot, vision, cfg, table_z, TARGET_STUD, stud["base_height_mm"],
-                   stud["base_height_mm"])
-    move = tcp_move(robot, cfg, found)
+    found = find_stud(robot, vision, cfg, table_z, observe, record)
+    record["stud"] = found
+    record["tcp_move"] = tcp_move(robot, cfg, found)
+    if locate_only:
+        log.info("Step 2 (locate only): stud at x %.1f y %.1f mm, no descent",
+                 *found["position_mm"][:2])
+        record["locate_only"] = True
+        return record
 
     # The nut sits in the iris with its bottom face at the TCP plane
     tcp = [found["position_mm"][0], found["position_mm"][1],
            table_z + stud["top_height_mm"] + place["approach_clearance_mm"]]
+    record["approach_tcp_mm"] = tcp
     approach = frames.flange_for_tcp(tcp, rotation, cfg["frames"]["flange_to_tcp_mm"])
     log.info("Step 2: one move to %.1f mm above the thread", place["approach_clearance_mm"])
     move_to(robot, approach, cfg, lead=LEAD_XY)
+    if approach_only:
+        reached = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])
+        error = reached[:2] - np.asarray(tcp[:2])
+        log.info("Step 2 (approach only): TCP at x %.1f y %.1f z %.1f mm (%.1f mm above the "
+                 "thread tip), %+.1f / %+.1f mm from the stud; holding here", *reached,
+                 reached[2] - table_z - stud["top_height_mm"], *error)
+        record["approach_only"] = True
+        record["approach_reached_tcp_mm"] = [round(float(v), 2) for v in reached]
+        record["check"] = position_check(found, reached)
+        return record
 
     descent = straight_down(approach, place["max_descend_mm"], place["descend_speed_mm_s"], rate)
     if not robot.follow(descent, stop_on_contact_n=place["contact_force_n"]):
@@ -235,6 +371,8 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
         raise SequenceError(f"no contact within {place['max_descend_mm']} mm below the "
                             "approach pose: nut not on the thread?")
     contact = robot.flange_pose()
+    record["contact_tcp_mm"] = frames.tcp_position(
+        contact, cfg["frames"]["flange_to_tcp_mm"]).tolist()
     log.info("Step 2: contact at TCP z = table + %.1f mm, screwing",
              frames.tcp_position(contact, cfg["frames"]["flange_to_tcp_mm"])[2] - table_z)
 
@@ -251,6 +389,4 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     robot.set_mode(modes["normal"])
     log.info("Step 2: back to the observation pose")
     move_to(robot, observe, cfg, lead=LEAD_Z)
-    return {"step": "place_and_screw", "stud": found, "tcp_move": move, "approach_tcp_mm": tcp,
-            "contact_tcp_mm": frames.tcp_position(contact,
-                                                  cfg["frames"]["flange_to_tcp_mm"]).tolist()}
+    return record

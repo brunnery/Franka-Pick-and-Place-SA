@@ -21,7 +21,7 @@ from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import Int16
 
 from sa_tasks import config, frames
-from sa_tasks.interfaces import Observation
+from sa_tasks.interfaces import Candidate, Observation, View
 from sa_tasks.trajectory import Waypoint
 from sa_vision import geometry
 
@@ -31,6 +31,9 @@ M_TO_MM = 1000.0
 POLL_S = 0.01
 ARRIVAL_POLL_S = 0.05  # long enough for a meaningful speed estimate from two poses
 FORCE_BASELINE_SAMPLES = 20
+# FrankaRobotState.robot_mode, for error messages (2 = move: the controller is in charge)
+ROBOT_MODES = {0: "other", 1: "idle", 2: "move", 3: "guiding", 4: "reflex",
+               5: "user stopped", 6: "automatic error recovery"}
 
 
 def pose_msg_to_matrix(pose) -> np.ndarray:
@@ -102,6 +105,37 @@ class FrankaRobot:
                                    "is the impedance controller running (sa_robot)?")
             time.sleep(POLL_S)
         self.state.wait(self.timeout)
+        self._wait_until_still()
+
+    def _wait_until_still(self) -> None:
+        """At activation the controller makes its own start move (controllers.yaml,
+        start_pose); references sent during it were not always taken (20.10.: the arm went
+        to the start pose instead of the observation pose). So the first move waits until
+        the arm has stood still for start_settle_s."""
+        settle, timeout = self.cfg["start_settle_s"], self.cfg["arrival_timeout_s"]
+        max_speed = self.cfg["arrival_speed_mm_s"]
+        deadline = time.monotonic() + timeout
+        still_since = None
+        last_position, last_time = self.flange_pose()[:3, 3], time.monotonic()
+        waited = False
+        while True:
+            time.sleep(ARRIVAL_POLL_S)
+            position, now = self.flange_pose()[:3, 3], time.monotonic()
+            speed = float(np.linalg.norm(position - last_position)) / max(now - last_time, 1e-3)
+            last_position, last_time = position, now
+            if speed <= max_speed:
+                still_since = still_since or now
+                if now - still_since >= settle:
+                    if waited:
+                        log.info("controller start move over, arm still")
+                    return
+            else:
+                if not waited:
+                    log.info("arm moving (controller start move?): waiting until it stands still")
+                waited, still_since = True, None
+            if now > deadline:
+                raise RuntimeError(f"arm not still within {timeout} s after the controller "
+                                   f"start (speed {speed:.1f} mm/s)")
 
     def flange_pose(self) -> np.ndarray:
         return self.state.flange_and_ee(self.timeout)[0]
@@ -164,8 +198,10 @@ class FrankaRobot:
             else:
                 still_since = None
             if now > deadline:
+                mode = self.state.wait(self.timeout).robot_mode
                 raise RuntimeError(f"goal not reached within {timeout} s (error x {error[0]:+.1f} "
-                                   f"y {error[1]:+.1f} z {error[2]:+.1f} mm, speed {speed:.1f} mm/s)")
+                                   f"y {error[1]:+.1f} z {error[2]:+.1f} mm, speed {speed:.1f} "
+                                   f"mm/s, robot mode: {ROBOT_MODES.get(mode, mode)})")
             time.sleep(ARRIVAL_POLL_S)
 
 
@@ -191,15 +227,23 @@ class RosVision:
         with self._lock:
             self._info = msg
 
-    def _set_parameters(self, target: str, plane_distance_mm: float) -> None:
+    def prepare(self, target: str) -> None:
+        """Select the target in vision_node at the start of a step, so the overlay shows the
+        right polygon before the first detection is asked for."""
+        self._set_parameters(target)
+
+    def _set_parameters(self, target: str, plane_distance_mm: Optional[float] = None,
+                        lock: bool = False) -> None:
         if not self.params.wait_for_service(timeout_sec=self.cfg["timeout_s"]):
             raise RuntimeError(f"{self.cfg['node']} not running (sa_vision)")
         values = [
             ("target", ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=target)),
             ("d_source", ParameterValue(type=ParameterType.PARAMETER_STRING, string_value="yaml")),
-            ("object_plane_distance_mm",
-             ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=plane_distance_mm)),
+            ("lock", ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=lock)),
         ]
+        if plane_distance_mm is not None:
+            values.append(("object_plane_distance_mm", ParameterValue(
+                type=ParameterType.PARAMETER_DOUBLE, double_value=plane_distance_mm)))
         request = SetParameters.Request(
             parameters=[ParameterMsg(name=name, value=value) for name, value in values])
         future = self.params.call_async(request)
@@ -213,10 +257,36 @@ class RosVision:
             raise RuntimeError(f"vision_node refused parameters: {failed}")
 
     def observe(self, target: str, plane_distance_mm: float) -> Observation:
-        self._set_parameters(target, plane_distance_mm)
-        # Only frames taken after the robot has rung down count
-        earliest = self.node.get_clock().now().nanoseconds + int(self.cfg["settle_s"] * 1e9)
-        deadline = time.monotonic() + self.cfg["settle_s"] + self.cfg["timeout_s"]
+        # The nut: median over the last images, no lock (as before 20.10.)
+        msg, info = self._settled(target, plane_distance_mm, False,
+                                  lambda m: m.valid and m.frames_since_reset >= m.frames_window)
+        return Observation(msg.u_undistorted, msg.v_undistorted, geometry.camera_matrix(info.k),
+                           (info.width, info.height))
+
+    def view(self, target: str, plane_distance_mm: float, lock: bool = True) -> View:
+        """Objects of one view, most likely target first. lock: the objects vision_node has
+        locked on (possibly none, once empty_view_frames images showed nothing); else the
+        medians once a full window of images has been taken."""
+        if lock:
+            def accept(m):
+                return m.locked or m.frames_since_reset >= self.cfg["empty_view_frames"]
+        else:
+            def accept(m):
+                return m.frames_since_reset >= m.frames_window
+        msg, info = self._settled(target, plane_distance_mm, lock, accept)
+        candidates = [Candidate(c.u_undistorted, c.v_undistorted, c.size_mm, c.width_ratio,
+                                c.shape_ok) for c in msg.candidates]
+        return View(candidates, geometry.camera_matrix(info.k), (info.width, info.height),
+                    msg.status)
+
+    def _settled(self, target: str, plane_distance_mm: float, lock: bool, accept):
+        """First detection message after the request for which accept(msg). The request
+        (target, distance) is sent only after settle_s, when the robot has rung down: it
+        starts the tracks of vision_node over, so no image of the motion is in the median."""
+        time.sleep(self.cfg["settle_s"])
+        self._set_parameters(target, plane_distance_mm, lock)
+        earliest = self.node.get_clock().now().nanoseconds
+        deadline = time.monotonic() + self.cfg["timeout_s"]
         last_status = "no detection message"
         while time.monotonic() < deadline:
             with self._lock:
@@ -225,10 +295,8 @@ class RosVision:
                 stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
                 if stamp >= earliest:
                     last_status = msg.status
-                    if msg.valid and info is not None:
-                        return Observation(msg.u_undistorted, msg.v_undistorted,
-                                           geometry.camera_matrix(info.k),
-                                           (info.width, info.height))
+                    if info is not None and accept(msg):
+                        return msg, info
             time.sleep(POLL_S)
         raise RuntimeError(f"no {target} found within {self.cfg['timeout_s']} s "
                            f"(last status: {last_status})")

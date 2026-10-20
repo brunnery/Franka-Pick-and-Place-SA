@@ -6,7 +6,7 @@ methods, so they run unchanged against the mocks (unit tests, dry runs).
 import logging
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Protocol
+from typing import Callable, List, Optional, Protocol
 
 import numpy as np
 
@@ -26,6 +26,27 @@ class Observation:
     status: str = "ok"
 
 
+@dataclass
+class Candidate:
+    """One object in view (Detection.candidates), ranked by vision_node."""
+
+    u_undistorted: float
+    v_undistorted: float
+    size_mm: float
+    width_ratio: float
+    shape_ok: bool
+
+
+@dataclass
+class View:
+    """All objects in one settled image, most likely target first, and the intrinsics."""
+
+    candidates: List[Candidate]
+    k: np.ndarray
+    image_size: tuple
+    status: str = "ok"
+
+
 class Robot(Protocol):
     def flange_pose(self) -> np.ndarray: ...                       # T_B_F, mm
     def force_z(self) -> float: ...                                # external force along z_B, N
@@ -38,10 +59,15 @@ class Gripper(Protocol):
     def open(self) -> None: ...
     def close(self) -> None: ...
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None: ...
+    def shutdown(self) -> None: ...
 
 
 class Vision(Protocol):
     def observe(self, target: str, plane_distance_mm: float) -> Observation: ...
+    # lock: vision_node locks on objects confirmed over several images (choosing among
+    # objects); else the median over the last images (measuring a centred object)
+    def view(self, target: str, plane_distance_mm: float, lock: bool = True) -> View: ...
+    def prepare(self, target: str) -> None: ...                   # select the target early
 
 
 class MockRobot:
@@ -99,6 +125,9 @@ class MockGripper:
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None:
         self._log(f"ROT {direction:+d} {duration_ms} ms speed {speed}")
 
+    def shutdown(self) -> None:
+        pass
+
     def _log(self, command: str) -> None:
         log.info("[mock gripper] %s", command)
         self.commands.append(command.split()[0])
@@ -116,3 +145,36 @@ class MockVision:
         if math.isnan(self.u):
             raise RuntimeError(f"no {target} found")
         return Observation(self.u, self.v, self.k, self.image_size)
+
+    def prepare(self, target: str) -> None:
+        pass
+
+    def view(self, target: str, plane_distance_mm: float, lock: bool = True) -> View:
+        self.requests.append((target, plane_distance_mm))
+        candidates = [] if math.isnan(self.u) else [Candidate(self.u, self.v, 0.0, 0.0, True)]
+        return View(candidates, self.k, self.image_size)
+
+
+class SceneVision:
+    """Objects at fixed base positions, seen from wherever the robot is (tests of the stud
+    search). project(position) -> (u, v) of the undistorted pixel or None outside the view;
+    objects: (position_mm, size_mm, width_ratio, shape_ok); listed in the given order."""
+
+    def __init__(self, project: Callable, objects: list, k: np.ndarray, image_size=(1280, 720)):
+        self.project, self.objects, self.k, self.image_size = project, objects, k, image_size
+        self.requests: List[tuple] = []
+
+    def observe(self, target: str, plane_distance_mm: float) -> Observation:
+        raise NotImplementedError("SceneVision only provides view()")
+
+    def prepare(self, target: str) -> None:
+        pass
+
+    def view(self, target: str, plane_distance_mm: float, lock: bool = True) -> View:
+        self.requests.append((target, plane_distance_mm))
+        candidates = []
+        for position, size, ratio, shape_ok in self.objects:
+            pixel = self.project(position)
+            if pixel is not None:
+                candidates.append(Candidate(pixel[0], pixel[1], size, ratio, shape_ok))
+        return View(candidates, self.k, self.image_size)

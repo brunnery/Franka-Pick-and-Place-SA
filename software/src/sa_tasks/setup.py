@@ -24,6 +24,7 @@ setup(
         "console_scripts": [
             "pick = sa_tasks.task_node:main_pick",
             "place_screw = sa_tasks.task_node:main_place",
+            "full = sa_tasks.task_node:main_full",
             "teach_poses = sa_tasks.teach_poses:main",
             "compare_runs = sa_tasks.verification:main",
         ],

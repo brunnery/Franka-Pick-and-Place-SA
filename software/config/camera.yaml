@@ -5,6 +5,7 @@
     image_width: 1280
     image_height: 720
     pixel_format: mjpeg2rgb
+    # Supported at 1280x720: 30, 25, 15, 10. 10 fps (less heat) to be tested separately (20.10.)
     framerate: 30.0
     camera_name: hd_camera
     frame_id: camera_optical_frame

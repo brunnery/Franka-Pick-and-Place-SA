@@ -6,10 +6,12 @@ import pytest
 import yaml
 from pathlib import Path
 
-from sa_vision.vision_node import CHOSEN, REJECTED_SHAPE, find_object, fit_hexagon
+from sa_vision.vision_node import CHOSEN, REJECTED_SHAPE, find_object, fit_hexagon, fit_polygon
 
-PARAMS = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" /
-                         "vision.yaml").read_text())["vision_node"]["ros__parameters"]["detection"]
+YAML = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" /
+                       "vision.yaml").read_text())["vision_node"]["ros__parameters"]
+PARAMS = {**YAML["detection"], **YAML["targets"]["nut"]}
+STUD = {**YAML["detection"], **YAML["targets"]["stud"]}
 
 
 def hexagon_corners(centre, s, angle_deg):
@@ -69,3 +71,53 @@ def test_several_nuts_size_filter_takes_the_target_size():
     hexagon, _, status = find_object(image, PARAMS, None, 66.0)
     assert status.startswith("ok")
     assert hexagon.centre == pytest.approx((900.0, 360.0), abs=1.5)
+
+
+@pytest.mark.parametrize("angle", [0.0, 23.0, 61.0])
+def test_fit_square_recovers_centre_side_angle(angle):
+    a = np.radians(angle + 45.0 + 90.0 * np.arange(4))
+    corners = np.stack([500.0 + 40.0 * math.sqrt(2) * np.cos(a),
+                        300.0 + 40.0 * math.sqrt(2) * np.sin(a)], axis=1)
+    square = fit_polygon(corners, 4, 1.0)
+    assert square.centre == pytest.approx((500.0, 300.0), abs=0.5)
+    assert square.across_flats_px == pytest.approx(80.0, rel=0.02)
+    assert square.regularity < 0.01
+
+
+def test_standing_stud_square_with_thread_gives_the_base_centre():
+    # Seen from above: square base, the thread a disc inside it
+    image = np.full((720, 1280), 190, np.uint8)
+    cv2.rectangle(image, (600, 330), (660, 390), 90, -1)
+    cv2.circle(image, (630, 360), 24, 60, -1)
+    square, _, status = find_object(image, STUD, target="stud")
+    assert status == "ok" and square.sides == 4
+    assert square.centre == pytest.approx((630.0, 360.0), abs=1.5)
+
+
+def test_stud_target_rejects_a_nut_by_shape():
+    image = np.full((720, 1280), 185, np.uint8)
+    cv2.rectangle(image, (300, 330), (360, 390), 60, -1)                 # stud base
+    corners = hexagon_corners((900.0, 360.0), 66.0, 10.0)
+    cv2.fillPoly(image, [np.round(corners).astype(np.int32)], 60)         # a nut
+    objects = []
+    square, _, status = find_object(image, STUD, None, 60.0, objects, "stud")
+    assert status.startswith("ok")
+    assert square.centre == pytest.approx((330.0, 360.0), abs=1.5)
+    assert sorted(o.verdict for o in objects) == sorted([CHOSEN, REJECTED_SHAPE])
+
+
+def test_tracker_confirms_steady_objects_with_the_median_and_drops_flicker():
+    from sa_vision.vision_node import Candidate, Polygon, Tracker
+    tracker = Tracker(5, 15.0, 3)
+    centres = [(500.0, 300.0), (501.0, 300.0), (499.0, 301.0), (512.0, 290.0), (500.0, 299.0)]
+    for i, centre in enumerate(centres):
+        stud = Candidate(None, Polygon(centre, 50.0, 0.0, 0.0, 4), 0.7)
+        objects = [stud]
+        if i % 2 == 0:  # a speck seen only in every other image
+            objects.append(Candidate(None, Polygon((900.0, 100.0), 10.0, 0.0, 0.0, 4), 0.5))
+        tracked = tracker.update(objects)
+    confirmed = [c for c in tracked if c.seen >= 5]
+    assert len(confirmed) == 1
+    assert confirmed[0].polygon.centre == pytest.approx((500.0, 300.0))
+    tracker.reset()
+    assert tracker.frames_since_reset == 0 and tracker.tracks == []

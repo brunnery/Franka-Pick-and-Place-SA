@@ -2,7 +2,10 @@
 
   ros2 run sa_tasks pick           # step 1: nut -> gripper, back to the observation pose
   ros2 run sa_tasks place_screw    # step 2: stud -> place, screw, release, back up
-  options: --robot mock (dry run, vision still real). Starts without confirmation.
+  ros2 run sa_tasks full           # step 1 + 2 in one process (the iris keeps holding: the
+                                   # gripper watchdog lets go 2 s after a process ends)
+  options: --robot mock (dry run, vision still real); pick and place_screw: --locate-only
+  (observation pose + detection only); place_screw: --approach-only (stop above the thread). Starts without confirmation.
 
 Needs: sa_vision (camera + vision_node) and, with the real robot, the impedance
 controller (sa_robot). Writes one YAML record per run to log_dir of tasks.yaml.
@@ -18,7 +21,7 @@ import rclpy
 import yaml
 from rclpy.executors import SingleThreadedExecutor
 
-from sa_tasks import config, sequences
+from sa_tasks import config, sequences, serial_gripper
 from sa_tasks.interfaces import MockGripper, MockRobot
 from sa_tasks.ros_interfaces import FrankaRobot, RosVision
 
@@ -30,7 +33,9 @@ def make_gripper(cfg: dict):
     backend = cfg["gripper"]["backend"]
     if backend == "mock":
         return MockGripper()
-    raise ValueError(f"gripper backend '{backend}' not implemented yet (only 'mock')")
+    if backend == "serial":
+        return serial_gripper.connect(cfg["gripper"])
+    raise ValueError(f"gripper backend must be 'mock' or 'serial', not '{backend}'")
 
 
 def make_robot(node, cfg: dict, backend: str, poses: config.Poses, start_pose: str):
@@ -58,9 +63,12 @@ def run(step: str) -> None:
     parser.add_argument("--config", type=Path, default=config.DEFAULT_TASKS)
     parser.add_argument("--poses", type=Path, default=config.DEFAULT_POSES)
     parser.add_argument("--robot", choices=ROBOT_BACKENDS, help="override robot.backend")
-    if step == "pick":
+    if step in ("pick", "place_and_screw"):
         parser.add_argument("--locate-only", action="store_true",
                             help="observation pose + detection only, no descent")
+    if step == "place_and_screw":
+        parser.add_argument("--approach-only", action="store_true",
+                            help="stop above the thread tip and hold (no contact, no gripper)")
     args, ros_args = parser.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     log = logging.getLogger("sa_tasks")
@@ -68,7 +76,7 @@ def run(step: str) -> None:
     cfg = config.load_tasks(args.config)
     poses = config.Poses(args.poses)
     backend = args.robot or cfg["robot"]["backend"]
-    start_pose = "observe_nut" if step == "pick" else "observe_stud"
+    start_pose = "observe_stud" if step == "place_and_screw" else "observe_nut"
 
     rclpy.init(args=ros_args)
     node = rclpy.create_node(f"sa_tasks_{step}")
@@ -78,10 +86,12 @@ def run(step: str) -> None:
     spinner.start()
     started = time.monotonic()
     record = {"step": step, "robot": backend, "started": datetime.now().isoformat()}
-    robot = None
+    robot = gripper = None
     try:
         robot = make_robot(node, cfg, backend, poses, start_pose)
-        gripper = make_gripper(cfg)
+        # locate / approach only never use the iris: no board needed
+        no_gripper = getattr(args, "locate_only", False) or getattr(args, "approach_only", False)
+        gripper = MockGripper() if no_gripper else make_gripper(cfg)
         vision = RosVision(node, cfg)
         table = poses.table_z()
         observe = poses.get(start_pose)
@@ -91,8 +101,15 @@ def run(step: str) -> None:
         if step == "pick":
             sequences.pick(robot, gripper, vision, cfg, poses, locate_only=args.locate_only,
                            record=record)
+        elif step == "full":
+            record["pick"] = {}
+            sequences.pick(robot, gripper, vision, cfg, poses, record=record["pick"])
+            record["place"] = {}
+            sequences.place_and_screw(robot, gripper, vision, cfg, poses, record=record["place"])
         else:
-            record.update(sequences.place_and_screw(robot, gripper, vision, cfg, poses))
+            sequences.place_and_screw(robot, gripper, vision, cfg, poses,
+                                      locate_only=args.locate_only,
+                                      approach_only=args.approach_only, record=record)
         record["result"] = "ok"
         log.info("done in %.1f s", time.monotonic() - started)
     except KeyboardInterrupt:
@@ -103,6 +120,8 @@ def run(step: str) -> None:
         log.error("%s", error)
     finally:
         record["duration_s"] = round(time.monotonic() - started, 2)
+        if gripper is not None:
+            gripper.shutdown()
         if robot is not None and getattr(robot, "arrivals", None):
             record["arrival_errors_mm"] = robot.arrivals
         log.info("record: %s", write_record(cfg, record))
@@ -118,6 +137,10 @@ def main_pick():
 
 def main_place():
     run("place_and_screw")
+
+
+def main_full():
+    run("full")
 
 
 if __name__ == "__main__":

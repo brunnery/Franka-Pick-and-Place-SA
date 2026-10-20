@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from sa_tasks import config, frames, sequences
-from sa_tasks.interfaces import MockGripper, MockRobot, MockVision
+from sa_tasks.interfaces import MockGripper, MockRobot, MockVision, SceneVision
 from sa_vision import geometry
 
 CFG = config.load_tasks()
@@ -214,11 +214,23 @@ def test_untaught_pose_and_tilted_teach_are_refused():
         run_pick(poses=FakePoses(observe_nut=tilted))
 
 
-def run_place(contact_tcp_z):
+def scene(robot, objects):
+    """SceneVision over objects ((x, y), shape_ok) on the stud centre plane, seen from
+    wherever the mock robot is."""
+    height = CFG["objects"]["stud"]["centre_height_mm"]
+
+    def project(position):
+        u, v = pixel_of(position[:2], height, robot.flange_pose())
+        return (u, v) if 0 <= u < 1280 and 0 <= v < 720 else None
+
+    return SceneVision(project, [(np.asarray(xy, float), 10.0, 0.71, ok) for xy, ok in objects],
+                       K)
+
+
+def run_place(contact_tcp_z, objects=((STUD, True),)):
     robot = MockRobot(OBSERVE_NUT.copy(), T_FT[2], contact_tcp_z_mm=contact_tcp_z)
     gripper = MockGripper()
-    u, v = pixel_of(STUD, CFG["objects"]["stud"]["base_height_mm"], OBSERVE_STUD)
-    vision = MockVision(u, v, K)
+    vision = scene(robot, objects)
     return robot, gripper, vision, sequences.place_and_screw(robot, gripper, vision, CFG,
                                                              FakePoses())
 
@@ -227,8 +239,8 @@ def test_place_finds_contact_on_the_thread_and_screws():
     thread_tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
     robot, gripper, vision, result = run_place(contact_tcp_z=thread_tip - 1.0)
     assert vision.requests[0][0] == "stud"
-    assert result["stud"]["position_mm"][:2] == pytest.approx(STUD, abs=1e-6)
-    assert result["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=1e-6)
+    assert result["stud"]["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
+    assert result["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
     assert thread_tip - 1.0 - 4.0 / 1.5 - 0.5 <= result["contact_tcp_mm"][2] <= thread_tip
     assert gripper.commands == ["ROT", "OPEN"]
     assert robot.mode == CFG["robot"]["modes"]["normal"]
@@ -239,3 +251,44 @@ def test_place_without_contact_aborts_and_backs_off():
     robot = None
     with pytest.raises(sequences.SequenceError, match="no contact"):
         robot, *_ = run_place(contact_tcp_z=None)
+
+
+def test_stud_search_centres_the_camera_over_the_stud():
+    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
+    vision = scene(robot, [(STUD, True)])
+    record = {}
+    found = sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, record)
+    assert found["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
+    assert found["offset_from_axis_mm"] <= CFG["place"]["stud_search"]["centred_tolerance_mm"]
+    assert found["candidate"] == 1
+
+
+def test_stud_search_skips_an_object_that_is_no_stud_from_above():
+    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
+    other = STUD + np.array([-30.0, 25.0])
+    vision = scene(robot, [(other, False), (STUD, True)])
+    record = {}
+    found = sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, record)
+    assert found["candidate"] == 2
+    assert found["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
+    assert [a["candidate"] for a in record["attempts"]][0] == 1
+
+
+def test_stud_search_without_a_stud_aborts():
+    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
+    vision = scene(robot, [(STUD + np.array([-30.0, 25.0]), False)])
+    with pytest.raises(sequences.SequenceError, match="none of the 1"):
+        sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, {})
+
+
+def test_place_approach_only_stops_above_the_thread_tip():
+    robot = MockRobot(OBSERVE_NUT.copy(), T_FT[2])
+    gripper = MockGripper()
+    vision = scene(robot, [(STUD, True)])
+    result = sequences.place_and_screw(robot, gripper, vision, CFG, FakePoses(),
+                                       approach_only=True)
+    tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
+    reached = result["approach_reached_tcp_mm"]
+    assert reached[:2] == pytest.approx(STUD, abs=0.01)
+    assert reached[2] == pytest.approx(tip + CFG["place"]["approach_clearance_mm"])
+    assert gripper.commands == []

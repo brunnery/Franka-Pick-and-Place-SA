@@ -1,13 +1,30 @@
-# sa_vision/vision_node: object on a blank background -> hexagon centre. Shape and size
-# filter only when several objects are in view.
+# sa_vision/vision_node: object on a blank background -> centre of a hexagon (nut) or
+# square (stud). Shape and size filter only when several objects are in view.
 vision_node:
   ros__parameters:
     publish_debug: true
-    # vision/debug: "overlay" = result only, "steps" = camera image | binary mask | result
-    # side by side, each scaled by debug_steps_scale
+    # vision/debug: "overlay" = result only, "steps" = camera image | binary mask on top, each
+    # scaled by debug_steps_scale, and the result below at twice that scale
     debug_view: steps
     debug_steps_scale: 0.5
-    target: nut                     # set by sa_tasks, not used here
+    # Objects are tracked over the images; only a track found in `frames` images counts, with
+    # the median of those positions and sizes (overlay and Detection). Started over with each
+    # request of sa_tasks (after the robot has settled). 20.10.: the stud search locked on
+    # flickering specks in 2 of 3 runs, the overlay jittered
+    tracking:
+      frames: 5
+      # About 7.5 mm at d = 400 mm. 20.10.: 15 px (3 mm) was smaller than the jumps of the
+      # stud's centre, its track kept breaking and it never counted (0 objects found)
+      match_radius_px: 40.0
+      max_misses: 3                 # images in a row without the object before its track ends
+      # After this many images (and the target confirmed) the result is locked until the next
+      # request of sa_tasks: position and overlay stay fixed while the live image runs on
+      lock_after_frames: 10
+    target: nut                     # nut | stud, set by sa_tasks (selects targets.<target>)
+    # Set by sa_tasks per request: true = lock on objects confirmed over several images
+    # (stud search, choosing at the observation pose), false = median over the last images
+    # (centred stud, nut)
+    lock: false
     d_source: yaml                  # set by sa_tasks, not used here
     object_plane_distance_mm: 400.0 # set by sa_tasks (point_camera, s in mm, size filter)
     detection:
@@ -24,14 +41,52 @@ vision_node:
       min_area_px: 300              # smaller blobs count as noise
       border_margin_px: 2           # blobs within this distance of the image border are
                                     # ignored (gripper/robot in view, object cut off)
-      angle_step_deg: 1.0           # orientation search of the hexagon fit and width ratio
-      # Only with several objects in view:
-      # 1. shape: width ratio of the hull (smallest / largest width). Hexagon 0.866 (bench
-      #    16.10. with shadow 0.62-0.82), lying bolt well below, round washer about 1.0
-      min_width_ratio: 0.6
-      max_width_ratio: 0.95
-      # 2. size, if several are nut-shaped: closest to the target width across flats
-      #    (s = s_px * d / f) and within the tolerance. The soft shadow makes s about 30 %
-      #    too large (bench: 17 mm for the 13 mm nut), hence the wide tolerance
-      target_across_flats_mm: 13.0  # M8
-      size_tolerance: 0.4
+      angle_step_deg: 1.0           # orientation search of the polygon fit and width ratio
+    # Per target (parameter "target", set by sa_tasks: nut in step 1, stud in step 2).
+    # sides: polygon fitted to the hull. The rest is used only with several objects in view:
+    # 1. shape: width ratio of the hull (smallest / largest width) in [min, max]
+    # 2. size, if several have the shape: closest to target_size_mm (width across flats,
+    #    s = s_px * d / f, d to the top face) and within size_tolerance
+    # Stud: the strict band (1. + 2.) is judged by sa_tasks only with the camera centred
+    # over a candidate; the candidates come from the loose search_* filter
+    targets:
+      nut:
+        sides: 6
+        segmentation: band          # band: |I/B - 1| > detection.threshold | dark: I/B < dark_threshold
+        dark_threshold: 0.75        # (only for segmentation dark)
+        inner_circle_mm: 0.0        # overlay only: circle in the polygon, 0 = none
+        # Hexagon 0.866 (bench 16.10. with shadow 0.62-0.82), lying bolt well below, round
+        # washer about 1.0
+        min_width_ratio: 0.6
+        max_width_ratio: 0.95
+        # The soft shadow makes s about 30 % too large (bench: 17 mm for the 13 mm nut),
+        # hence the wide tolerance
+        target_size_mm: 13.0        # M8
+        size_tolerance: 0.4
+        # Loose filter of Detection.candidates (only the stud search uses the list)
+        search_min_size_mm: 3.0
+        search_max_size_mm: 40.0
+        search_min_width_ratio: 0.0
+      stud:
+        sides: 4                    # square base 10 x 10 mm, the M8 thread stands inside it
+        # dark: the soft shadow (0.8-0.9 x table) made the base 16 mm instead of 10 mm and
+        # turned the square (20.10.); the base itself is nearly black. First guess, tune live:
+        # ros2 param set /vision_node targets.stud.dark_threshold 0.5
+        segmentation: dark
+        dark_threshold: 0.6
+        inner_circle_mm: 8.0        # overlay: the M8 thread inside the square
+        # Square 0.707. Not yet measured on real images (20.10.): band and tolerance are
+        # first guesses, tune them with the stud in view
+        min_width_ratio: 0.6
+        max_width_ratio: 0.82
+        target_size_mm: 10.0
+        size_tolerance: 0.4
+        # Loose filter of the stud search candidates (seen off-axis the stud is no square:
+        # 20.10. at 46 mm from the axis 17.7 mm, width ratio 0.56-0.60). Drops specks (dirt,
+        # 4-7 mm) and lines (table marks, width ratio 0.3); the rest is ranked by area and
+        # tried. 20.10.: 6 -> 8 mm (specks of ~6 mm got in), back to 6 mm: the stud itself
+        # measured 8.06 mm once and was lost after centring. Specks are now handled by the
+        # tracking + lock (observation pose) and "largest near the axis" (centred)
+        search_min_size_mm: 6.0
+        search_max_size_mm: 40.0
+        search_min_width_ratio: 0.4
