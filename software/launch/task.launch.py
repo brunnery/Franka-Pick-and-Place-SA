@@ -2,9 +2,8 @@
 
 Usage (franka_ros2_ws and workspace built and sourced, PYTHONNOUSERSITE=1):
   ros2 launch software/launch/task.launch.py step:=<pick|place_screw|full>
-      [locate_only:=true] [approach_only:=true] [view:=false] [record:=true]
+      [approach_only:=true] [view:=false] [record:=true]
 
-locate_only (pick, place_screw): observation pose + detection only, no descent.
 approach_only (place_screw): stud search, then stop and hold above the thread tip.
 The step starts once the spawner of cartesian_impedance_controller has exited successfully
 (controller active), not after a fixed delay. Robot and vision keep running after the step
@@ -38,9 +37,11 @@ def start_step_when_controller_active(event, context):
         return [LogInfo(msg=f"spawning {CONTROLLER} failed: {step} not started")]
     if step not in STEPS:
         return [LogInfo(msg=f"step must be one of {STEPS}, not '{step}': nothing started")]
+    # locate_only was removed (20.10.): refuse it, else an old alias would run the full step
+    if "locate_only" in context.launch_configurations:
+        return [LogInfo(msg="locate_only no longer exists, use approach_only:=true: "
+                            "nothing started")]
     arguments = []
-    if LaunchConfiguration("locate_only").perform(context).lower() in ("true", "1"):
-        arguments.append("--locate-only")
     if LaunchConfiguration("approach_only").perform(context).lower() in ("true", "1"):
         arguments.append("--approach-only")
     return [LogInfo(msg=f"{CONTROLLER} active: starting {step} {' '.join(arguments)}"),
@@ -50,8 +51,6 @@ def start_step_when_controller_active(event, context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("step", description="sa_tasks step: " + " | ".join(STEPS)),
-        DeclareLaunchArgument("locate_only", default_value="false",
-                              description="pick / place_screw: detection only, no descent."),
         DeclareLaunchArgument("approach_only", default_value="false",
                               description="place_screw: stop and hold above the thread tip."),
         DeclareLaunchArgument("view", default_value="true",

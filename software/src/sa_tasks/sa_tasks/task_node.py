@@ -1,21 +1,19 @@
-"""Entry points of step 1 and step 2.
+"""Entry points of step 1 and step 2 (usually started by software/launch/task.launch.py).
 
   ros2 run sa_tasks pick           # step 1: nut -> gripper, back to the observation pose
   ros2 run sa_tasks place_screw    # step 2: stud -> place, screw, release, back up
-  ros2 run sa_tasks full           # step 1 + 2 in one process (the iris keeps holding: the
-                                   # gripper watchdog lets go 2 s after a process ends)
-  options: --robot mock (dry run, vision still real); pick and place_screw: --locate-only
-  (observation pose + detection only); place_screw: --approach-only (stop above the thread). Starts without confirmation.
+                                   #   --approach-only: stop above the thread (no gripper)
+  ros2 run sa_tasks full           # step 1 + 2 in one process (the gripper watchdog lets go
+                                   # 2 s after a process ends)
+  --robot mock: dry run without the robot, vision still real.
 
-Needs: sa_vision (camera + vision_node) and, with the real robot, the impedance
-controller (sa_robot). Writes one YAML record per run to log_dir of tasks.yaml.
+Writes one YAML record per run to log_dir of tasks.yaml.
 """
 import argparse
 import logging
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 
 import rclpy
 import yaml
@@ -25,58 +23,17 @@ from sa_tasks import config, sequences, serial_gripper
 from sa_tasks.interfaces import MockGripper, MockRobot
 from sa_tasks.ros_interfaces import FrankaRobot, RosVision
 
-REPO_ROOT = config.PACKAGE_DIR.parents[2]
-ROBOT_BACKENDS = ("franka", "mock")
-
-
-def make_gripper(cfg: dict):
-    backend = cfg["gripper"]["backend"]
-    if backend == "mock":
-        return MockGripper()
-    if backend == "serial":
-        return serial_gripper.connect(cfg["gripper"])
-    raise ValueError(f"gripper backend must be 'mock' or 'serial', not '{backend}'")
-
-
-def make_robot(node, cfg: dict, backend: str, poses: config.Poses, start_pose: str):
-    if backend not in ROBOT_BACKENDS:
-        raise ValueError(f"robot backend must be one of {ROBOT_BACKENDS}, not '{backend}'")
-    if backend == "mock":
-        # Dry run: the robot "is" at the observation pose, the camera on its stand looks
-        # at the real scene
-        return MockRobot(poses.get(start_pose), cfg["frames"]["flange_to_tcp_mm"][2])
-    robot = FrankaRobot(node, cfg)
-    robot.check_controller()
-    return robot
-
-
-def write_record(cfg: dict, record: dict) -> Path:
-    directory = REPO_ROOT / cfg["log_dir"]
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{datetime.now():%Y%m%d-%H%M%S}_{record['step']}.yaml"
-    path.write_text(yaml.safe_dump(record, sort_keys=False))
-    return path
+log = logging.getLogger("sa_tasks")
 
 
 def run(step: str) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--config", type=Path, default=config.DEFAULT_TASKS)
-    parser.add_argument("--poses", type=Path, default=config.DEFAULT_POSES)
-    parser.add_argument("--robot", choices=ROBOT_BACKENDS, help="override robot.backend")
-    if step in ("pick", "place_and_screw"):
-        parser.add_argument("--locate-only", action="store_true",
-                            help="observation pose + detection only, no descent")
-    if step == "place_and_screw":
-        parser.add_argument("--approach-only", action="store_true",
-                            help="stop above the thread tip and hold (no contact, no gripper)")
+    parser.add_argument("--robot", choices=("franka", "mock"), default="franka")
+    parser.add_argument("--approach-only", action="store_true")
     args, ros_args = parser.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
-    log = logging.getLogger("sa_tasks")
-
-    cfg = config.load_tasks(args.config)
-    poses = config.Poses(args.poses)
-    backend = args.robot or cfg["robot"]["backend"]
-    start_pose = "observe_stud" if step == "place_and_screw" else "observe_nut"
+    cfg = config.load_tasks()
+    poses = config.Poses()
 
     rclpy.init(args=ros_args)
     node = rclpy.create_node(f"sa_tasks_{step}")
@@ -85,36 +42,27 @@ def run(step: str) -> None:
     spinner = threading.Thread(target=executor.spin, daemon=True)
     spinner.start()
     started = time.monotonic()
-    record = {"step": step, "robot": backend, "started": datetime.now().isoformat()}
+    record = {"step": step, "started": datetime.now().isoformat()}
     robot = gripper = None
     try:
-        robot = make_robot(node, cfg, backend, poses, start_pose)
-        # locate / approach only never use the iris: no board needed
-        no_gripper = getattr(args, "locate_only", False) or getattr(args, "approach_only", False)
-        gripper = MockGripper() if no_gripper else make_gripper(cfg)
-        vision = RosVision(node, cfg)
-        table = poses.table_z()
-        observe = poses.get(start_pose)
-        log.info("robot %s, gripper %s, table z %.1f mm, %s at %s mm", backend,
-                 cfg["gripper"]["backend"], table, start_pose,
-                 [round(v, 1) for v in observe[:3, 3]])
-        if step == "pick":
-            sequences.pick(robot, gripper, vision, cfg, poses, locate_only=args.locate_only,
-                           record=record)
-        elif step == "full":
-            record["pick"] = {}
-            sequences.pick(robot, gripper, vision, cfg, poses, record=record["pick"])
-            record["place"] = {}
-            sequences.place_and_screw(robot, gripper, vision, cfg, poses, record=record["place"])
+        if args.robot == "mock":  # the robot "is" at the observation pose
+            start = "observe_stud" if step == "place_and_screw" else "observe_nut"
+            robot = MockRobot(poses.get(start), cfg["frames"]["flange_to_tcp_mm"][2])
         else:
-            sequences.place_and_screw(robot, gripper, vision, cfg, poses,
-                                      locate_only=args.locate_only,
-                                      approach_only=args.approach_only, record=record)
+            robot = FrankaRobot(node, cfg)
+        gripper = MockGripper() if args.approach_only else serial_gripper.connect(cfg["gripper"])
+        vision = RosVision(node, cfg)
+        if step in ("pick", "full"):
+            record["pick"] = {}
+            sequences.pick(robot, gripper, vision, cfg, poses, record["pick"])
+        if step in ("place_and_screw", "full"):
+            record["place"] = {}
+            sequences.place_and_screw(robot, gripper, vision, cfg, poses, record["place"],
+                                      args.approach_only)
         record["result"] = "ok"
         log.info("done in %.1f s", time.monotonic() - started)
     except KeyboardInterrupt:
         record["result"] = "aborted by user"
-        log.warning("aborted: the arm holds the last reference")
     except Exception as error:  # noqa: BLE001 - every failure ends up in the record
         record["result"] = f"failed: {error}"
         log.error("%s", error)
@@ -122,9 +70,12 @@ def run(step: str) -> None:
         record["duration_s"] = round(time.monotonic() - started, 2)
         if gripper is not None:
             gripper.shutdown()
-        if robot is not None and getattr(robot, "arrivals", None):
-            record["arrival_errors_mm"] = robot.arrivals
-        log.info("record: %s", write_record(cfg, record))
+        record["arrival_errors_mm"] = getattr(robot, "arrivals", [])
+        directory = config.PACKAGE_DIR.parents[2] / cfg["log_dir"]
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{datetime.now():%Y%m%d-%H%M%S}_{step}.yaml"
+        path.write_text(yaml.safe_dump(record, sort_keys=False))
+        log.info("record: %s", path)
         # Stop the spinning thread before the context goes, else rclcpp aborts
         executor.shutdown()
         spinner.join(timeout=1.0)
@@ -141,7 +92,3 @@ def main_place():
 
 def main_full():
     run("full")
-
-
-if __name__ == "__main__":
-    main_pick()

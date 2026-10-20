@@ -17,13 +17,12 @@ setup(
     zip_safe=True,
     maintainer="brunnery",
     maintainer_email="brunnery99@gmail.com",
-    description="Object finder (hexagon centre), camera tools and pixel-to-robot geometry.",
+    description="Nut and stud finder (vision_node), camera controls.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "vision_node = sa_vision.vision_node:main",
-            "capture_images = sa_vision.capture_images:main",
             "apply_camera_controls = sa_vision.camera_controls:main",
         ],
     },

@@ -14,7 +14,6 @@
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>franka_msgs</exec_depend>
   <exec_depend>sa_interfaces</exec_depend>
-  <exec_depend>sa_vision</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 

@@ -19,7 +19,6 @@ from sa_tasks import gripper_protocol as protocol
 
 log = logging.getLogger("sa_tasks")
 
-BAUD = {115200: termios.B115200, 57600: termios.B57600, 9600: termios.B9600}
 READ_POLL_S = 0.1
 
 
@@ -28,15 +27,13 @@ class GripperError(RuntimeError):
 
 
 class SerialLink:
-    """Raw serial port: write text, read whole lines."""
+    """Raw serial port (115200 baud, = BAUD in the firmware): write text, read whole lines."""
 
-    def __init__(self, port: str, baud: int):
-        if baud not in BAUD:
-            raise ValueError(f"baud {baud} not supported, use one of {sorted(BAUD)}")
+    def __init__(self, port: str):
         self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
         tty.setraw(self.fd)
         attrs = termios.tcgetattr(self.fd)
-        attrs[4] = attrs[5] = BAUD[baud]
+        attrs[4] = attrs[5] = termios.B115200
         termios.tcsetattr(self.fd, termios.TCSANOW, attrs)
         termios.tcflush(self.fd, termios.TCIOFLUSH)
         self.buffer = b""
@@ -47,8 +44,7 @@ class SerialLink:
     def read_line(self, timeout_s: float) -> Optional[str]:
         """One line without the line end, or None if none arrived within timeout_s."""
         while b"\n" not in self.buffer:
-            ready, _, _ = select.select([self.fd], [], [], timeout_s)
-            if not ready:
+            if not select.select([self.fd], [], [], timeout_s)[0]:
                 return None
             chunk = os.read(self.fd, 256)
             if not chunk:
@@ -71,11 +67,12 @@ class SerialGripper:
         self.write_lock = threading.Lock()
         self.waiting: Dict[int, queue.Queue] = {}
         self.stopped = threading.Event()
+        self.pinger = None
         self.reader = threading.Thread(target=self._read_loop, daemon=True)
         self.reader.start()
         # The board may just be booting (opening the port can reset it): wait for a PING
         try:
-            self._command(lambda i: protocol.simple(i, "PING"), cfg["connect_timeout_s"], 0.0)
+            self._command(protocol.ping, cfg["connect_timeout_s"], 0.0)
         except GripperError:
             self.shutdown()
             raise
@@ -85,28 +82,21 @@ class SerialGripper:
 
     def open(self) -> None:
         c = self.cfg["open"]
-        log.info("gripper: open iris (%d ms, speed %d)", c["duration_ms"], c["speed"])
         self._timed(lambda i: protocol.open_iris(i, c["duration_ms"], c["speed"]),
                     c["duration_ms"])
 
     def close(self) -> None:
         c = self.cfg["close"]
-        log.info("gripper: close iris (%d ms, speed %d), then hold with %d", c["duration_ms"],
-                 c["speed"], c["hold_speed"])
         self._timed(lambda i: protocol.close_iris(i, c["duration_ms"], c["speed"],
                                                   c["hold_speed"]), c["duration_ms"])
 
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None:
-        log.info("gripper: rotate %+d (%d ms, speed %d)", direction, duration_ms, speed)
         self._timed(lambda i: protocol.rotate(i, direction, duration_ms, speed), duration_ms)
-
-    def stop(self) -> None:
-        self._command(lambda i: protocol.simple(i, "STOP"), self.cfg["ack_timeout_s"], 0.0)
 
     def shutdown(self) -> None:
         """Stop pinging and close the port; the board's watchdog switches the motors off."""
         self.stopped.set()
-        for thread in (getattr(self, "pinger", None), self.reader):
+        for thread in (self.pinger, self.reader):
             if thread is not None:
                 thread.join(timeout=1.0)
         self.link.close()
@@ -116,10 +106,11 @@ class SerialGripper:
                       duration_ms / 1000.0 + self.cfg["done_margin_s"])
 
     def _command(self, build: Callable[[int], str], first_timeout_s: float,
-                 done_timeout_s: float) -> str:
+                 done_timeout_s: float) -> None:
         """Send one command; wait for ACK then DONE (timed commands) or DONE directly."""
         id_ = next(self.ids)
         text = build(id_)
+        log.info("gripper: %s", text.strip())
         replies: queue.Queue = queue.Queue()
         self.waiting[id_] = replies
         try:
@@ -129,8 +120,7 @@ class SerialGripper:
             if reply.kind == protocol.ACK:
                 reply = self._next(replies, done_timeout_s, text)
             if reply.kind != protocol.DONE:
-                raise GripperError(f"'{text.strip()}': {reply.kind} {reply.text}".strip())
-            return reply.text
+                raise GripperError(f"'{text.strip()}': {reply.kind} {reply.text}")
         finally:
             self.waiting.pop(id_, None)
 
@@ -147,23 +137,19 @@ class SerialGripper:
     def _read_loop(self) -> None:
         while not self.stopped.is_set():
             line = self.link.read_line(READ_POLL_S)
-            if line is None:
-                continue
-            reply = protocol.parse_reply(line)
+            reply = protocol.parse_reply(line) if line is not None else None
             if reply is None:
-                log.debug("gripper: ignored line '%s'", line)
-            elif reply.kind == "WATCHDOG":
+                continue
+            if reply.kind == "WATCHDOG":
                 log.warning("gripper: watchdog fired, all motors off")
-            elif reply.kind == "READY":
-                log.info("gripper: board ready")
             elif reply.id in self.waiting:
                 self.waiting[reply.id].put(reply)
 
     def _ping_loop(self) -> None:
         while not self.stopped.wait(self.cfg["ping_period_s"]):
             with self.write_lock:
-                self.link.write(protocol.simple(next(self.ids), "PING"))
+                self.link.write(protocol.ping(next(self.ids)))
 
 
 def connect(cfg: dict) -> SerialGripper:
-    return SerialGripper(SerialLink(cfg["port"], cfg["baud"]), cfg)
+    return SerialGripper(SerialLink(cfg["port"]), cfg)

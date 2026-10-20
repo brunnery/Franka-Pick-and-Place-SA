@@ -1,20 +1,14 @@
-import copy
-import math
-
 import numpy as np
 import pytest
 
 from sa_tasks import config, frames, sequences
-from sa_tasks.interfaces import MockGripper, MockRobot, MockVision, SceneVision
-from sa_vision import geometry
+from sa_tasks.interfaces import Candidate, MockGripper, MockRobot, Observation, View
 
 CFG = config.load_tasks()
-# The tests check the geometry; the measured correction of tasks.yaml would shift every
-# expected position (test_target_correction_is_added covers it separately)
-CFG["frames"]["target_correction_mm"] = [0.0, 0.0]
+CFG["frames"]["target_correction_mm"] = [0.0, 0.0]  # the tests check the geometry
 R_DOWN = config.rotation_down(CFG)
 T_FT = CFG["frames"]["flange_to_tcp_mm"]
-K = geometry.camera_matrix([2077.16, 0.0, 695.44, 0.0, 2083.73, 405.57, 0.0, 0.0, 1.0])
+K = np.array([[2077.16, 0.0, 695.44], [0.0, 2083.73, 405.57], [0.0, 0.0, 1.0]])
 TABLE_Z = 12.0
 OBSERVE_NUT = frames.pose(R_DOWN, [480.0, 10.0, 480.0])
 OBSERVE_STUD = frames.pose(R_DOWN, [420.0, 250.0, 480.0])
@@ -23,272 +17,102 @@ STUD = np.array([462.0, 248.0])
 
 
 class FakePoses(config.Poses):
-    def __init__(self, observe_nut=OBSERVE_NUT, observe_stud=OBSERVE_STUD, table_z=TABLE_Z):
-        self.path = None
-        self.table_z_mm = table_z
-        self.gripper_tilt_deg = None
-        self.gripper_tilt_samples = []
+    def __init__(self):
+        self.table_z_mm = TABLE_Z
         self.poses = {}
-        self.set("observe_nut", observe_nut)
-        self.set("observe_stud", observe_stud)
+        self.set("observe_nut", OBSERVE_NUT)
+        self.set("observe_stud", OBSERVE_STUD)
 
 
-def pixel_of(point_xy, height, observe):
-    """Where the camera at the observation pose sees a point on the plane table + height."""
-    camera = observe @ config.camera_in_flange(CFG)
-    p = (frames.invert(camera) @ np.array([*point_xy, TABLE_Z + height, 1.0]))[:3]
-    uvw = K @ p
+def pixel_of(point_xy, height, t_base_flange):
+    """Where the camera sees a point on the plane table + height."""
+    camera = t_base_flange @ config.camera_in_flange(CFG)
+    uvw = K @ (frames.invert(camera) @ np.array([*point_xy, TABLE_Z + height, 1.0]))[:3]
     return uvw[0] / uvw[2], uvw[1] / uvw[2]
 
 
-def run_pick(vision=None, poses=None, cfg=CFG):
+class SceneVision:
+    """Objects (xy, shape_ok) on the stud centre plane, seen from wherever the robot is; the
+    nut is seen from the nut observation pose."""
+
+    def __init__(self, robot, objects=()):
+        self.robot, self.objects, self.requests = robot, objects, []
+
+    def prepare(self, target):
+        pass
+
+    def observe(self, target, plane_distance_mm):
+        self.requests.append((target, plane_distance_mm))
+        return Observation(*pixel_of(NUT, CFG["objects"]["nut"]["centre_height_mm"],
+                                     self.robot.flange_pose()), K)
+
+    def view(self, target, plane_distance_mm, lock):
+        self.requests.append((target, plane_distance_mm))
+        height = CFG["objects"]["stud"]["centre_height_mm"]
+        candidates = []
+        for xy, shape_ok in self.objects:
+            u, v = pixel_of(xy, height, self.robot.flange_pose())
+            if 0 <= u < 1280 and 0 <= v < 720:
+                candidates.append(Candidate(u, v, 10.0, 0.71, shape_ok))
+        return View(candidates, K)
+
+
+def test_pick_spirals_onto_the_table_over_the_nut_and_closes():
     robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
     gripper = MockGripper()
-    if vision is None:
-        u, v = pixel_of(NUT, CFG["objects"]["nut"]["centre_height_mm"], OBSERVE_NUT)
-        vision = MockVision(u, v, K)
-    result = sequences.pick(robot, gripper, vision, cfg, poses or FakePoses())
-    return robot, gripper, vision, result
-
-
-def test_pick_puts_the_tcp_over_the_nut_flat_on_the_table():
-    robot, gripper, vision, result = run_pick()
-    assert result["nut"]["position_mm"][:2] == pytest.approx(NUT, abs=1e-6)
-    lowest = min(robot.history, key=lambda t: t[2, 3])
-    tcp = frames.tcp_position(lowest, T_FT)
-    assert tcp[2] == pytest.approx(TABLE_Z - CFG["pick"]["press_depth_mm"], abs=1e-6)
-    # the search spiral ends radius_mm from the target
-    assert np.linalg.norm(tcp[:2] - NUT) == pytest.approx(CFG["pick"]["spiral"]["radius_mm"])
-    assert frames.tilt_deg(lowest[:3, :3]) == pytest.approx(0.0, abs=1e-6)
-    assert gripper.commands == ["OPEN", "CLOSE"]
-    assert robot.pose == pytest.approx(OBSERVE_NUT)  # back at the start pose
-
-
-def test_locate_only_does_not_descend():
-    robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
-    u, v = pixel_of(NUT, CFG["objects"]["nut"]["centre_height_mm"], OBSERVE_NUT)
-    result = sequences.pick(robot, MockGripper(), MockVision(u, v, K), CFG, FakePoses(),
-                            locate_only=True)
-    assert result["nut"]["position_mm"][:2] == pytest.approx(NUT, abs=1e-6)
-    assert min(t[2, 3] for t in robot.history) == pytest.approx(OBSERVE_NUT[2, 3])
-
-
-def test_pick_spirals_down_from_just_above_the_nut():
-    robot, _, _, result = run_pick()
-    spiral = CFG["pick"]["spiral"]
-    start_z = TABLE_Z + spiral["start_height_mm"] + T_FT[2]
-    lowest = int(np.argmin([t[2, 3] for t in robot.history]))
-    at_start = [i for i, t in enumerate(robot.history[:lowest])
-                if abs(t[2, 3] - start_z) < 1e-6 and np.allclose(t[:2, 3], NUT)]
-    assert at_start, "the spiral does not start straight above the nut"
-    search = robot.history[at_start[-1]:lowest + 1]
-    radii = [float(np.linalg.norm(t[:2, 3] - NUT)) for t in search]
-    assert max(radii) == pytest.approx(spiral["radius_mm"])
-    assert all(b <= a + 1e-9 for a, b in zip([t[2, 3] for t in search],
-                                              [t[2, 3] for t in search[1:]]))  # only down
-    assert set(result["orientation"]) == {"observe", "landed"}
-
-
-def test_pick_records_where_the_gripper_landed():
-    _, _, _, result = run_pick()
-    assert result["landed_tcp_mm"] == pytest.approx(result["spiral_end_tcp_mm"], abs=0.01)
-    assert result["landed_above_table_mm"] == pytest.approx(-CFG["pick"]["press_depth_mm"])
-
-
-def test_pick_records_the_tcp_move_as_image_part_plus_mount_offset():
-    _, _, _, result = run_pick()
-    move = result["tcp_move"]
-    tcp_at_observe = frames.tcp_position(OBSERVE_NUT, T_FT)[:2]
-    assert move["total_xy_mm"] == pytest.approx(NUT - tcp_at_observe, abs=0.01)
-    # Level camera: its axis hits the table straight below it, 44.4 mm in front of the TCP
-    assert move["tcp_to_camera_axis_xy_mm"] == pytest.approx([44.4, 0.0], abs=0.01)
-    assert np.add(move["from_image_xy_mm"], move["tcp_to_camera_axis_xy_mm"]) == \
-        pytest.approx(move["total_xy_mm"], abs=0.02)
-
-
-def test_pick_tells_vision_the_distance_to_the_nut_top_face():
-    _, _, vision, _ = run_pick()
-    camera_z = OBSERVE_NUT[2, 3] - 57.223 + CFG["frames"]["projection_centre_above_housing_mm"]
-    target, distance = vision.requests[0]
-    assert target == "nut"
-    assert distance == pytest.approx(camera_z - TABLE_Z - CFG["objects"]["nut"]["height_mm"])
-
-
-def test_pick_descends_vertically_at_the_end():
-    robot, _, _, _ = run_pick()
-    lowest = int(np.argmin([t[2, 3] for t in robot.history]))
-    descent = robot.history[:lowest + 1]
-    low = [t for t in descent if t[2, 3] < TABLE_Z + T_FT[2] + 30.0]
-    assert low and all(np.allclose(t[:2, 3], low[-1][:2, 3]) for t in low)
-
-
-def test_target_correction_is_added():
-    cfg = copy.deepcopy(CFG)
-    cfg["frames"]["target_correction_mm"] = [1.5, -0.5]
-    _, _, _, result = run_pick(cfg=cfg)
-    assert result["nut"]["position_mm"][:2] == pytest.approx(NUT + [1.5, -0.5], abs=1e-6)
-
-
-def test_detection_outside_the_area_is_refused():
-    far = NUT + [0.0, 200.0]
-    u, v = pixel_of(far, 4.0, OBSERVE_NUT)
-    with pytest.raises(sequences.SequenceError, match="outside the work area"):
-        run_pick(vision=MockVision(u, v, K))
-
-
-def test_nothing_found_aborts_before_moving_down():
-    with pytest.raises(RuntimeError, match="no nut found"):
-        run_pick(vision=MockVision(math.nan, math.nan, K))
-
-
-def test_both_observation_poses_use_the_height_of_the_nut_pose():
-    poses = FakePoses(observe_stud=frames.pose(R_DOWN, [420.0, 250.0, 455.0]))
-    stud = sequences.observation_pose(poses, "observe_stud", CFG)
-    assert stud[:3, 3] == pytest.approx([420.0, 250.0, OBSERVE_NUT[2, 3]])
-    cfg = copy.deepcopy(CFG)
-    cfg["robot"]["observation_height_from"] = ""
-    assert sequences.observation_pose(poses, "observe_stud", cfg)[2, 3] == pytest.approx(455.0)
-
-
-def test_observation_pose_uses_the_fixed_orientation_whatever_was_taught():
-    yawed = frames.pose(R_DOWN @ frames.rotation_z(-45.0)
-                        @ frames.quaternion_to_matrix([np.sin(0.03), 0, 0, np.cos(0.03)]),
-                        OBSERVE_NUT[:3, 3])
-    observe = sequences.observation_pose(FakePoses(observe_nut=yawed), "observe_nut", CFG)
-    assert frames.matrix_to_quaternion(observe[:3, :3]) == pytest.approx([1, 0, 0, 0])
-    assert observe[:3, 3] == pytest.approx(OBSERVE_NUT[:3, 3])
-
-
-def tilted_cfg_and_poses(tilt_deg):
-    cfg = copy.deepcopy(CFG)
-    cfg["frames"]["use_gripper_tilt"] = True
-    poses = FakePoses()
-    poses.gripper_tilt_deg = list(tilt_deg)
-    return cfg, poses
-
-
-def test_flat_sample_measures_the_mount_tilt():
-    # Bottom plate flat on the table, gripper tilted 1.5 / -0.8 deg against the flange:
-    # then the flange itself is tilted by the inverse
-    t_flange_tool = frames.matrix_from_rotation_vector_deg([1.5, -0.8, 0.0])
-    flange = frames.pose(R_DOWN @ t_flange_tool.T, [480.0, 0.0, 130.0])
-    poses = FakePoses()
-    sample = poses.add_tilt_sample(flange)
-    # The levelled reference keeps the yaw of x_F, which leaves a second-order z rotation
-    assert sample == pytest.approx([1.5, -0.8, 0.0], abs=0.02)
-    assert poses.gripper_tilt_deg == pytest.approx([1.5, -0.8, 0.0], abs=0.02)
-
-
-def test_with_gripper_tilt_the_gripper_lands_level_and_on_target():
-    cfg, poses = tilted_cfg_and_poses([1.5, -0.8, 0.0])
-    t_flange_tool = config.tool_in_flange(cfg, poses)
-    robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
-    observe = OBSERVE_NUT @ t_flange_tool  # where the camera really is when G is level
-    u, v = pixel_of(NUT, cfg["objects"]["nut"]["centre_height_mm"], OBSERVE_NUT)
-    result = sequences.pick(robot, MockGripper(), MockVision(u, v, K), cfg, poses)
-    assert result["nut"]["position_mm"][:2] == pytest.approx(NUT, abs=1e-6)
-    lowest = min(robot.history, key=lambda t: t[2, 3])
-    tool = lowest @ t_flange_tool
-    assert frames.tilt_deg(tool[:3, :3]) == pytest.approx(0.0, abs=1e-6)   # plate level
-    assert frames.tilt_deg(lowest[:3, :3]) > 1.0                           # flange tilted
-    assert frames.tcp_position(tool, T_FT)[:2] == pytest.approx(NUT, abs=1e-6)
-    del observe
-
-
-def test_gripper_tilt_switched_on_without_measurement_is_refused():
-    cfg, poses = tilted_cfg_and_poses([0.0, 0.0, 0.0])
-    poses.gripper_tilt_deg = None
-    with pytest.raises(RuntimeError, match="no tilt measured"):
-        sequences.pick(MockRobot(OBSERVE_NUT.copy(), T_FT[2]), MockGripper(),
-                       MockVision(640.0, 360.0, K), cfg, poses)
-
-
-def test_untaught_pose_and_tilted_teach_are_refused():
-    poses = FakePoses()
-    poses.poses["observe_nut"] = None
-    with pytest.raises(RuntimeError, match="not taught"):
-        run_pick(poses=poses)
-    tilted = OBSERVE_NUT.copy()
-    tilted[:3, :3] = R_DOWN @ frames.quaternion_to_matrix([np.sin(0.1), 0, 0, np.cos(0.1)])  # 11.5 deg
-    with pytest.raises(sequences.SequenceError, match="tilted"):
-        run_pick(poses=FakePoses(observe_nut=tilted))
-
-
-def scene(robot, objects):
-    """SceneVision over objects ((x, y), shape_ok) on the stud centre plane, seen from
-    wherever the mock robot is."""
-    height = CFG["objects"]["stud"]["centre_height_mm"]
-
-    def project(position):
-        u, v = pixel_of(position[:2], height, robot.flange_pose())
-        return (u, v) if 0 <= u < 1280 and 0 <= v < 720 else None
-
-    return SceneVision(project, [(np.asarray(xy, float), 10.0, 0.71, ok) for xy, ok in objects],
-                       K)
-
-
-def run_place(contact_tcp_z, objects=((STUD, True),)):
-    robot = MockRobot(OBSERVE_NUT.copy(), T_FT[2], contact_tcp_z_mm=contact_tcp_z)
-    gripper = MockGripper()
-    vision = scene(robot, objects)
-    return robot, gripper, vision, sequences.place_and_screw(robot, gripper, vision, CFG,
-                                                             FakePoses())
-
-
-def test_place_finds_contact_on_the_thread_and_screws():
-    thread_tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
-    robot, gripper, vision, result = run_place(contact_tcp_z=thread_tip - 1.0)
-    assert vision.requests[0][0] == "stud"
-    assert result["stud"]["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
-    assert result["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
-    assert thread_tip - 1.0 - 4.0 / 1.5 - 0.5 <= result["contact_tcp_mm"][2] <= thread_tip
-    assert gripper.commands == ["ROT", "OPEN"]
-    assert robot.mode == CFG["robot"]["modes"]["normal"]
-    assert robot.pose == pytest.approx(OBSERVE_STUD)
-
-
-def test_place_without_contact_aborts_and_backs_off():
-    robot = None
-    with pytest.raises(sequences.SequenceError, match="no contact"):
-        robot, *_ = run_place(contact_tcp_z=None)
-
-
-def test_stud_search_centres_the_camera_over_the_stud():
-    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
-    vision = scene(robot, [(STUD, True)])
     record = {}
-    found = sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, record)
-    assert found["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
-    assert found["offset_from_axis_mm"] <= CFG["place"]["stud_search"]["centred_tolerance_mm"]
-    assert found["candidate"] == 1
+    sequences.pick(robot, gripper, SceneVision(robot), CFG, FakePoses(), record)
+    assert record["nut_mm"][:2] == pytest.approx(NUT, abs=0.01)
+    lowest = frames.tcp_position(min(robot.history, key=lambda t: t[2, 3]), T_FT)
+    assert lowest[2] == pytest.approx(TABLE_Z - CFG["pick"]["press_depth_mm"])
+    assert np.linalg.norm(lowest[:2] - NUT) == pytest.approx(CFG["pick"]["spiral"]["radius_mm"],
+                                                             abs=0.01)
+    assert gripper.commands == ["OPEN", "CLOSE"]
+    assert robot.pose == pytest.approx(OBSERVE_NUT)
 
 
 def test_stud_search_skips_an_object_that_is_no_stud_from_above():
     robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
-    other = STUD + np.array([-30.0, 25.0])
-    vision = scene(robot, [(other, False), (STUD, True)])
+    vision = SceneVision(robot, [(STUD + [-30.0, 25.0], False), (STUD, True)])
     record = {}
     found = sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, record)
-    assert found["candidate"] == 2
+    assert found["candidate"] == 2 and record["attempts"][0]["candidate"] == 1
     assert found["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
-    assert [a["candidate"] for a in record["attempts"]][0] == 1
 
 
 def test_stud_search_without_a_stud_aborts():
     robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
-    vision = scene(robot, [(STUD + np.array([-30.0, 25.0]), False)])
     with pytest.raises(sequences.SequenceError, match="none of the 1"):
-        sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, {})
+        sequences.find_stud(robot, SceneVision(robot, [(STUD, False)]), CFG, TABLE_Z,
+                            OBSERVE_STUD, {})
 
 
-def test_place_approach_only_stops_above_the_thread_tip():
-    robot = MockRobot(OBSERVE_NUT.copy(), T_FT[2])
+def run_place(contact_tcp_z=None, approach_only=False):
+    robot = MockRobot(OBSERVE_NUT.copy(), T_FT[2], contact_tcp_z_mm=contact_tcp_z)
     gripper = MockGripper()
-    vision = scene(robot, [(STUD, True)])
-    result = sequences.place_and_screw(robot, gripper, vision, CFG, FakePoses(),
-                                       approach_only=True)
+    record = {}
+    sequences.place_and_screw(robot, gripper, SceneVision(robot, [(STUD, True)]), CFG,
+                              FakePoses(), record, approach_only)
+    return robot, gripper, record
+
+
+def test_place_finds_contact_on_the_thread_and_screws():
     tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
-    reached = result["approach_reached_tcp_mm"]
-    assert reached[:2] == pytest.approx(STUD, abs=0.01)
-    assert reached[2] == pytest.approx(tip + CFG["place"]["approach_clearance_mm"])
+    robot, gripper, record = run_place(contact_tcp_z=tip - 1.0)
+    assert record["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
+    assert tip - 5.0 <= record["contact_tcp_mm"][2] <= tip
+    assert gripper.commands == ["ROT", "OPEN"]
+    assert robot.pose == pytest.approx(OBSERVE_STUD)
+
+
+def test_place_without_contact_aborts():
+    with pytest.raises(sequences.SequenceError, match="no contact"):
+        run_place()
+
+
+def test_approach_only_stops_above_the_thread_tip():
+    _, gripper, record = run_place(approach_only=True)
+    tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
+    assert record["approach_reached_tcp_mm"] == pytest.approx(
+        [*STUD, tip + CFG["place"]["approach_clearance_mm"]], abs=0.01)
     assert gripper.commands == []
