@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import yaml
 
-from sa_vision.vision_node import (CHOSEN, Candidate, Polygon, Tracker, choose, find_objects,
-                                   fit_polygon, rank)
+from sa_vision.vision_node import (CHOSEN, Candidate, Polygon, Tracker, choose, edge_gradient,
+                                   find_objects, fit_polygon, rank, refine_square)
 
 YAML = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" /
                        "vision.yaml").read_text())["vision_node"]["ros__parameters"]
@@ -45,6 +45,20 @@ def test_standing_stud_is_ranked_first_and_square():
     ranked = rank(objects, STUD, 60.0, mm_per_px)
     assert len(ranked) == 1 and ranked[0].shape_ok
     assert ranked[0].polygon.centre == pytest.approx((630.0, 360.0), abs=1.5)
+
+
+def test_refine_square_moves_the_centre_off_a_soft_shadow_onto_the_base():
+    image = np.full((720, 1280), 190, np.uint8)
+    shadow = np.full_like(image, 190)
+    cv2.rectangle(shadow, (600, 330), (676, 390), 90, -1)          # 16 px to the right
+    image = np.minimum(image, cv2.GaussianBlur(shadow, (0, 0), 6))  # soft edge
+    cv2.rectangle(image, (600, 330), (659, 389), 50, -1)            # sharp base, 60 px
+    image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    _, objects = find_objects(image, STUD)
+    coarse = max(objects, key=lambda c: cv2.contourArea(c.hull)).polygon
+    refined = refine_square(edge_gradient(image, STUD), coarse, 60.0, STUD)
+    assert abs(coarse.centre[0] - 629.5) > 2.0
+    assert refined.centre == pytest.approx((629.5, 359.5), abs=1.0)
 
 
 def test_tracker_takes_the_median_and_never_confirms_a_flickering_speck():

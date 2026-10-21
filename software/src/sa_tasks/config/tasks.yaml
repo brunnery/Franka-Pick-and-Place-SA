@@ -20,10 +20,11 @@ frames:
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
   # camera in front (+x_B). Quaternion (x, y, z, w)
   flange_orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
-  # Constant xy correction of every target (base frame). 20.10.: by eye at the stud with the
-  # crooked mount (1 mm gap, reprint 21.10.): reset to [0, 0] after the reprint and measure
-  # again with sa_place_approach (check lines + hand measurement)
-  target_correction_mm: [-1.5, 4.0]
+  # Constant xy correction of every target (base frame). 20.10. [-1.5, 4.0] by eye with the
+  # crooked mount; reset after the reprint. 21.10.: +1.5 and +2.5 still looked 1 mm short by
+  # hand, +5.0 centred (13:20). Robot stops ~1 mm short in y; the free-hanging lower half
+  # tilts ~1.8 deg about x (bottom edges 45 / 49 mm, play in the rotating half)
+  target_correction_mm: [0.0, 5.0]
 
 objects:
   nut:
@@ -38,7 +39,9 @@ vision:
   node: /vision_node
   detection_topic: /vision/detection
   camera_info_topic: /camera_info
-  settle_s: 0.6                # after arrival, before the request (robot rings down)
+  raw_image_topic: /image_raw       # saved with the run record (each detection)
+  debug_image_topic: /vision/debug
+  settle_s: 0.4                # after arrival, before the request (robot rings down; 0.6 until 21.10.)
   timeout_s: 10.0              # no detection within this time -> abort
   empty_view_frames: 30        # lock: nothing locked after this many images -> view empty
   # Targets farther from the camera axis are refused (image half-width at d = 416 mm:
@@ -54,7 +57,7 @@ robot:
     float: 2                   # compliant in all axes
   stream_rate_hz: 100.0        # reference poses per second while moving
   motion:
-    max_speed_mm_s: 150.0      # peak speed of every axis group (controller limit 300)
+    max_speed_mm_s: 250.0      # peak speed of every axis group (controller limit 300; 150 until 21.10.)
     max_angular_speed_deg_s: 20.0
     lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
     min_duration_s: 1.0
@@ -63,8 +66,8 @@ robot:
   arrival_tolerance_mm: 8.0
   arrival_speed_mm_s: 3.0
   arrival_timeout_s: 15.0
-  arrival_settle_s: 0.3
-  start_settle_s: 1.0          # before the first move: arm still this long
+  arrival_settle_s: 0.15       # 0.3 until 21.10.
+  start_settle_s: 0.5          # before the first move: arm still this long (1.0 until 21.10.)
   observation_height_from: observe_nut   # both observation poses use this z ("" = own z)
   state_timeout_s: 5.0
 
@@ -76,7 +79,7 @@ pick:
     start_height_mm: 10.0
     radius_mm: 6.0
     turns: 2.0
-    duration_s: 4.0
+    duration_s: 2.5            # 4.0 until 21.10.
 
 place:
   # Stud search (THEORY 2.0): candidates locked at observe_stud, the camera centred over
@@ -86,9 +89,13 @@ place:
     max_centring_moves: 2
     centred_tolerance_mm: 10.0 # parallax of the thread tip at 10 mm: about 0.5 mm
     lost_radius_mm: 20.0       # largest object within this radius of the axis is judged
+  # 21.10. approach_only tests at -5/-10 (plate over the bare thread): xy right every time
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
   descend_speed_mm_s: 5.0      # contact search
-  max_descend_mm: 12.0         # below the approach pose; no contact by then -> abort
+  max_descend_mm: 17.0         # below the approach pose (12 until 21.10.)
+  # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the
+  # thread without reaching contact_force_n), false = back up and abort
+  screw_without_contact: true
   contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
   screw:
     direction: 1               # M4 FORWARD tightens (19.10., test_m4)
@@ -97,7 +104,8 @@ place:
     follow_depth_mm: 10.0      # reference this far below contact while screwing (float mode)
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
-  port: /dev/ttyACM0           # check with: ls /dev/serial/by-id
+  # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)
+  port: /dev/serial/by-id/usb-Arduino_UNO_R4_Minima_380B321437323335E07233324B572D3A-if00
   connect_timeout_s: 3.0       # first PING (opening the port may reset the board)
   ack_timeout_s: 0.5
   done_margin_s: 1.0           # DONE expected within the commanded duration + this

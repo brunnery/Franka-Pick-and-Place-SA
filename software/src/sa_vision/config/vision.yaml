@@ -1,7 +1,7 @@
 # sa_vision/vision_node (all parameters are declared from this file). docs/THEORY.md 2.0.
 vision_node:
   ros__parameters:
-    debug_steps_scale: 0.5          # vision/debug: camera | binary on top, result below (x2)
+    debug_steps_scale: 0.75         # vision/debug: binary | result side by side (0.5 until 21.10.)
     # Set by sa_tasks with every request (which starts the tracks over):
     target: nut                     # nut | stud: selects targets.<target>
     lock: false                     # true: lock on confirmed objects (stud at observe_stud)
@@ -56,9 +56,19 @@ vision_node:
         min_width_ratio: 0.6        # square 0.707
         max_width_ratio: 0.82
         target_size_mm: 10.0
-        size_tolerance: 0.4
+        # 0.4 until 21.10. TEMPORARY 0.8 (2-18 mm): the makeshift stud fixture enlarges the
+        # dark square (centred 12.6-16.7 mm instead of 11.3-12.1); back to 0.4 with the real one
+        size_tolerance: 0.8
         # Seen off-axis the stud is no square (17.7 mm, w 0.56-0.60 at 46 mm from the axis).
         # Drops specks and lines (table marks, w 0.3). 20.10.: 8 mm lost the stud (8.06 mm)
         search_min_size_mm: 6.0
         search_max_size_mm: 40.0
         search_min_width_ratio: 0.4
+        # Edge refinement of the centre (THEORY 2.0, 21.10.): the blob includes part of the
+        # soft shadow on one side; a pair of lines target_size_mm apart is shifted onto the
+        # sharp base edges. Dry test 21.10.: 0.2-0.7 mm correction with the camera centred
+        refine_edges: true
+        refine_search_fraction: 0.25  # +- this fraction of the side
+        refine_step_px: 0.25
+        refine_side_fraction: 0.8     # sampled part of each side (corners left out)
+        refine_samples: 25

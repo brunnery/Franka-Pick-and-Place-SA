@@ -7,6 +7,7 @@ import logging
 import time
 from typing import List, Optional
 
+import cv2
 import numpy as np
 from franka_msgs.msg import FrankaRobotState
 from geometry_msgs.msg import Pose
@@ -14,8 +15,9 @@ from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sa_interfaces.msg import Detection
-from sensor_msgs.msg import CameraInfo
+from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import Int16
 
 from sa_tasks import config, frames
@@ -155,14 +157,28 @@ class FrankaRobot:
             time.sleep(ARRIVAL_POLL_S)
 
 
+def image_to_bgr(msg: Image) -> np.ndarray:
+    """rgb8/bgr8 sensor_msgs/Image as an OpenCV BGR array."""
+    image = np.frombuffer(msg.data, np.uint8).reshape(msg.height, msg.step)[:, :msg.width * 3]
+    image = image.reshape(msg.height, msg.width, 3)
+    return cv2.cvtColor(image, cv2.COLOR_RGB2BGR) if msg.encoding == "rgb8" else image.copy()
+
+
 class RosVision:
-    """Asks vision_node for a target and waits for a detection taken after the request."""
+    """Asks vision_node for a target and waits for a detection taken after the request.
+    Keeps the camera and debug image of every answered request (snapshots) for the record."""
 
     def __init__(self, node: Node, cfg: dict):
         self.cfg = cfg["vision"]
         self.node = node
         self.detection: Optional[Detection] = None
         self.info: Optional[CameraInfo] = None
+        self.images = {}  # latest message per topic key
+        self.snapshots: List[tuple] = []  # (label, {key: Image})
+        for key in ("raw", "debug"):
+            node.create_subscription(Image, self.cfg[f"{key}_image_topic"],
+                                     lambda m, k=key: self.images.__setitem__(k, m),
+                                     qos_profile_sensor_data)
         node.create_subscription(Detection, self.cfg["detection_topic"],
                                  lambda m: setattr(self, "detection", m), 10)
         node.create_subscription(CameraInfo, self.cfg["camera_info_topic"],
@@ -176,6 +192,7 @@ class RosVision:
     def observe(self, target: str, plane_distance_mm: float) -> Observation:
         msg, k = self._settled(target, plane_distance_mm, False,
                                lambda m: m.valid and m.frames_since_reset >= m.frames_window)
+        self._snapshot(target)
         return Observation(msg.u_undistorted, msg.v_undistorted, k)
 
     def view(self, target: str, plane_distance_mm: float, lock: bool) -> View:
@@ -186,8 +203,19 @@ class RosVision:
                 return m.locked or m.frames_since_reset >= self.cfg["empty_view_frames"]
             return m.frames_since_reset >= m.frames_window
         msg, k = self._settled(target, plane_distance_mm, lock, accept)
+        self._snapshot(f"{target}_{'observe' if lock else 'centred'}")
         return View([Candidate(c.u_undistorted, c.v_undistorted, c.size_mm, c.width_ratio,
                                c.shape_ok) for c in msg.candidates], k)
+
+    def _snapshot(self, label: str) -> None:
+        self.snapshots.append((label, dict(self.images)))
+
+    def save_snapshots(self, prefix) -> None:
+        """<prefix>_<n>_<label>_<raw|debug>.png per answered request."""
+        for number, (label, images) in enumerate(self.snapshots, 1):
+            for key, msg in images.items():
+                path = f"{prefix}_{number}_{label}_{key}.png"
+                cv2.imwrite(path, image_to_bgr(msg))
 
     def _set(self, values: dict) -> None:
         if not self.params.wait_for_service(timeout_sec=self.cfg["timeout_s"]):

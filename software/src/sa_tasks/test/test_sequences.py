@@ -105,9 +105,15 @@ def test_place_finds_contact_on_the_thread_and_screws():
     assert robot.pose == pytest.approx(OBSERVE_STUD)
 
 
-def test_place_without_contact_aborts():
-    with pytest.raises(sequences.SequenceError, match="no contact"):
-        run_place()
+@pytest.mark.parametrize("screw_anyway", [True, False])
+def test_place_without_contact_screws_or_aborts(monkeypatch, screw_anyway):
+    monkeypatch.setitem(CFG["place"], "screw_without_contact", screw_anyway)
+    if screw_anyway:
+        _, gripper, record = run_place()
+        assert record["contact"] is False and gripper.commands == ["ROT", "OPEN"]
+    else:
+        with pytest.raises(sequences.SequenceError, match="no contact"):
+            run_place()
 
 
 def test_approach_only_stops_above_the_thread_tip():

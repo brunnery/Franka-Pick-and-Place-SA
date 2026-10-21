@@ -7,7 +7,8 @@
                                    # 2 s after a process ends)
   --robot mock: dry run without the robot, vision still real.
 
-Writes one YAML record per run to log_dir of tasks.yaml.
+Writes one YAML record per run to log_dir of tasks.yaml, with the camera and vision debug
+image of every detection next to it (<record>_<n>_<label>_<raw|debug>.png).
 """
 import argparse
 import logging
@@ -43,7 +44,7 @@ def run(step: str) -> None:
     spinner.start()
     started = time.monotonic()
     record = {"step": step, "started": datetime.now().isoformat()}
-    robot = gripper = None
+    robot = gripper = vision = None
     try:
         if args.robot == "mock":  # the robot "is" at the observation pose
             start = "observe_stud" if step == "place_and_screw" else "observe_nut"
@@ -54,7 +55,9 @@ def run(step: str) -> None:
         vision = RosVision(node, cfg)
         if step in ("pick", "full"):
             record["pick"] = {}
-            sequences.pick(robot, gripper, vision, cfg, poses, record["pick"])
+            # full: straight from the table to observe_stud, no stop at observe_nut
+            sequences.pick(robot, gripper, vision, cfg, poses, record["pick"],
+                           back_up=step == "pick")
         if step in ("place_and_screw", "full"):
             record["place"] = {}
             sequences.place_and_screw(robot, gripper, vision, cfg, poses, record["place"],
@@ -76,6 +79,8 @@ def run(step: str) -> None:
         path = directory / f"{datetime.now():%Y%m%d-%H%M%S}_{step}.yaml"
         path.write_text(yaml.safe_dump(record, sort_keys=False))
         log.info("record: %s", path)
+        if vision is not None:  # camera + vision images of each detection, next to the record
+            vision.save_snapshots(path.with_suffix(""))
         # Stop the spinning thread before the context goes, else rclcpp aborts
         executor.shutdown()
         spinner.join(timeout=1.0)

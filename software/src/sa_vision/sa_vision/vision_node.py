@@ -90,6 +90,46 @@ def width_ratio(points: np.ndarray, angle_step_deg: float) -> float:
     return float(widths.min() / widths.max())
 
 
+def edge_gradient(image: np.ndarray, p: dict) -> tuple:
+    """Sobel gradient (gx, gy) of the smoothed grey image, for refine_square."""
+    gray = cv2.GaussianBlur(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY),
+                            (p["blur_kernel_px"],) * 2, 0).astype(np.float32)
+    return cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+
+
+def refine_square(gradient: tuple, polygon: Polygon, side_px: float, p: dict) -> Polygon:
+    """Stud: move the centre of the coarse square onto the sharp edges of the base. The dark
+    blob can include part of the soft shadow on one side, which stretches it and pulls the
+    midline towards the shadow (21.10.). For each axis of the square, a pair of parallel lines
+    side_px apart (known base size) is shifted along the axis normal within +-search fraction
+    of the side; the shift with the largest mean gradient across both lines wins (sampled on
+    the inner part of each side, away from the corners). Size and angle stay as measured."""
+    gx, gy = gradient
+    theta = math.radians(polygon.angle_deg)
+    normals = (np.array([math.cos(theta), math.sin(theta)]),
+               np.array([-math.sin(theta), math.cos(theta)]))
+    coarse = np.asarray(polygon.centre, float)
+    centre = coarse.copy()
+    along = np.linspace(-0.5, 0.5, p["refine_samples"]) * p["refine_side_fraction"] * side_px
+    limit = p["refine_search_fraction"] * side_px
+    for k, normal in enumerate(normals):
+        tangent = normals[1 - k]
+        best = None
+        for shift in np.arange(-limit, limit + 1e-9, p["refine_step_px"]):
+            score = 0.0
+            for side in (-0.5, 0.5):
+                points = (coarse + normal * (shift + side * side_px)
+                          + along[:, None] * tangent).astype(np.float32)
+                u, v = points[None, :, 0], points[None, :, 1]
+                gu = cv2.remap(gx, u, v, cv2.INTER_LINEAR)[0]
+                gv = cv2.remap(gy, u, v, cv2.INTER_LINEAR)[0]
+                score += float(np.abs(gu * normal[0] + gv * normal[1]).mean())
+            if best is None or score > best[0]:
+                best = (score, shift)
+        centre += normal * best[1]
+    return replace(polygon, centre=(float(centre[0]), float(centre[1])))
+
+
 @dataclass
 class Candidate:
     hull: np.ndarray
@@ -230,7 +270,8 @@ def find_objects(image: np.ndarray, p: dict) -> tuple:
 
 
 def draw(image: np.ndarray, chosen: Optional[Candidate], objects: list, principal_point: tuple,
-         lines: list, mm_per_px: float, inner_circle_mm: float) -> np.ndarray:
+         lines: list, mm_per_px: float, inner_circle_mm: float,
+         square_px: float = 0.0) -> np.ndarray:
     """Image centre, robot axes (bottom right), the objects (red rejected, orange not chosen,
     numbered by rank), the chosen polygon green, and the text lines top right."""
     out = image.copy()
@@ -251,7 +292,11 @@ def draw(image: np.ndarray, chosen: Optional[Candidate], objects: list, principa
                     0.7, colour, 2)
     if chosen is not None:
         centre = tuple(int(round(v)) for v in chosen.polygon.centre)
-        cv2.polylines(out, [np.round(chosen.polygon.corners()).astype(np.int32)], True, GREEN, 2)
+        polygon = chosen.polygon
+        if square_px > 0:  # stud with refine_square: the hull (orange) and the known-size base
+            cv2.polylines(out, [chosen.hull], True, ORANGE, 1)
+            polygon = replace(polygon, across_flats_px=square_px)
+        cv2.polylines(out, [np.round(polygon.corners()).astype(np.int32)], True, GREEN, 2)
         if inner_circle_mm > 0:  # stud: the thread inside the square base
             cv2.circle(out, centre, int(round(inner_circle_mm / 2.0 / mm_per_px)), GREEN, 2)
         cv2.drawMarker(out, centre, GREEN, cv2.MARKER_CROSS, 20, 2)
@@ -271,14 +316,11 @@ def tile(image: np.ndarray, title: str, scale: float) -> np.ndarray:
     return out
 
 
-def debug_view(image: np.ndarray, binary: np.ndarray, result: np.ndarray, caption: str,
+def debug_view(binary: np.ndarray, result: np.ndarray, caption: str,
                scale: float) -> np.ndarray:
-    """Top: camera image | binary mask; below: the result at twice the scale, as wide."""
-    top = np.hstack([tile(image, "camera", scale), tile(binary, caption, scale)])
-    bottom = tile(result, "result", 2.0 * scale)
-    bottom = cv2.resize(bottom, (top.shape[1], round(bottom.shape[0] * top.shape[1]
-                                                     / bottom.shape[1])))
-    return np.vstack([top, bottom])
+    """Binary mask | result, side by side at the same scale (the camera image is the
+    background of the result)."""
+    return np.hstack([tile(binary, caption, scale), tile(result, "result", scale)])
 
 
 class VisionNode(Node):
@@ -326,6 +368,11 @@ class VisionNode(Node):
         mm_per_px = d_mm / self.k[0, 0]
         target_px = p["target_size_mm"] / mm_per_px
         binary, objects = find_objects(image, p)
+        refine = target == "stud" and p["refine_edges"]
+        if refine and objects:  # before tracking: the medians are taken of refined centres
+            gradient = edge_gradient(image, p)
+            for c in objects:
+                c.polygon = refine_square(gradient, c.polygon, target_px, p)
         status = choose(objects, p, target_px) if objects and target == "nut" else ""
         if self.reset_tracks:
             self.tracker.reset()
@@ -362,14 +409,18 @@ class VisionNode(Node):
 
         result = draw(image, chosen, objects, (self.k[0, 2], self.k[1, 2]),
                       lines if chosen is not None else [f"{target}: {status}"] + lines,
-                      mm_per_px, p["inner_circle_mm"])
+                      mm_per_px, p["inner_circle_mm"], target_px if refine else 0.0)
         if lock:
             label, colour = ("LOCKED", GREEN) if self.locked is not None else ("tracking", YELLOW)
             cv2.putText(result, label, (20, result.shape[0] - 20), FONT, 1.5, (0, 0, 0), 8)
             cv2.putText(result, label, (20, result.shape[0] - 20), FONT, 1.5, colour, 3)
         caption = (f"darker than {p['dark_threshold']:.2f} x table" if p["segmentation"] == "dark"
                    else f"table 1 +- {p['threshold']:.2f} removed")
-        debug = self.bridge.cv2_to_imgmsg(debug_view(image, binary, result, caption,
+        if refine and chosen is not None:  # the refined base square on the mask, 1:1
+            binary = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+            square = replace(chosen.polygon, across_flats_px=target_px)
+            cv2.polylines(binary, [np.round(square.corners()).astype(np.int32)], True, GREEN, 2)
+        debug = self.bridge.cv2_to_imgmsg(debug_view(binary, result, caption,
                                                      self.value("debug_steps_scale")), "bgr8")
         debug.header = msg.header
         self.debug_pub.publish(debug)

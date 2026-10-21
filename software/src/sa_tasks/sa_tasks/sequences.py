@@ -4,7 +4,8 @@ docs/PLAN.md Section 4, docs/THEORY.md Sections 2, 3 and 5. Only the Robot, Grip
 Vision interfaces are used, so the sequences run against mocks.
 """
 import logging
-from typing import Optional
+import threading
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -32,6 +33,23 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
     robot.follow(plan_move(robot.flange_pose(), goal, config.motion_limits(cfg),
                            cfg["robot"]["stream_rate_hz"], lead))
     robot.wait_until_arrived(goal, cfg["robot"]["arrival_tolerance_mm"])
+
+
+def move_while(robot: Robot, goal: np.ndarray, cfg: dict, action: Callable[[], None]) -> None:
+    """move_to while action() runs alongside (e.g. the iris opening); errors of both raise."""
+    errors = []
+
+    def run():
+        try:
+            action()
+        except Exception as error:  # noqa: BLE001 - re-raised below
+            errors.append(error)
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    move_to(robot, goal, cfg)
+    worker.join()
+    if errors:
+        raise errors[0]
 
 
 def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
@@ -109,9 +127,13 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
             axis, now = stud_view(robot, vision, cfg, table_z, lock=False)
             near = [c for c in now if c["offset_from_axis_mm"] <= search["lost_radius_mm"]]
             nearest = max(near, key=lambda c: c["size_mm"]) if near else None
-            attempts.append({"candidate": candidate["rank"], "move": move, "nearest": nearest})
+            attempts.append({"candidate": candidate["rank"], "move": move, "nearest": nearest,
+                             "seen": now})
             if nearest is None:
-                break  # lost
+                log.info("candidate #%d lost after centring move %d: %d object(s) in view, "
+                         "nearest %s mm from the axis", candidate["rank"], move, len(now),
+                         min((c["offset_from_axis_mm"] for c in now), default="-"))
+                break
             position = np.asarray(nearest["position_mm"][:2])
             if nearest["offset_from_axis_mm"] > search["centred_tolerance_mm"]:
                 continue
@@ -130,15 +152,16 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
 
 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: config.Poses,
-         record: dict) -> None:
-    """Step 1: observation pose -> detect the nut -> one move down with a spiral search until
-    the bottom plate rests on the table, the open iris over the nut -> close -> back up."""
+         record: dict, back_up: bool = True) -> None:
+    """Step 1: observation pose (the iris opens on the way) -> detect the nut -> one move down
+    with a spiral search until the bottom plate rests on the table, the open iris over the
+    nut -> close -> back up. back_up False (full run): stay on the table, the next move
+    (to observe_stud, z leading) lifts the nut in one motion."""
     table_z = poses.table_z()
     observe = observation_pose(poses, "observe_nut", cfg)
     robot.set_mode(cfg["robot"]["modes"]["normal"])
     vision.prepare(TARGET_NUT)
-    gripper.open()
-    move_to(robot, observe, cfg)
+    move_while(robot, observe, cfg, gripper.open)
     nut = record["nut_mm"] = locate_nut(robot, vision, cfg, table_z)
 
     # Down to just above the nut, then without a stop a spiral down onto the table: if the
@@ -160,7 +183,8 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: confi
     record["landed_tcp_mm"] = rounded(landed)
     log.info("landed: TCP %.1f mm above the table", landed[2] - table_z)
     gripper.close()
-    move_to(robot, observe, cfg, lead=LEAD_Z)
+    if back_up:
+        move_to(robot, observe, cfg, lead=LEAD_Z)
 
 
 def position_check(found: dict, reached_tcp: np.ndarray) -> dict:
@@ -211,10 +235,14 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
 
     descent = straight_down(approach, place["max_descend_mm"], place["descend_speed_mm_s"],
                             cfg["robot"]["stream_rate_hz"])
-    if not robot.follow(descent, stop_on_contact_n=place["contact_force_n"]):
-        move_to(robot, approach, cfg, lead=LEAD_Z)
-        raise SequenceError(f"no contact within {place['max_descend_mm']} mm: nut not on the "
-                            "thread?")
+    record["contact"] = robot.follow(descent, stop_on_contact_n=place["contact_force_n"])
+    if not record["contact"]:
+        if not place["screw_without_contact"]:
+            move_to(robot, approach, cfg, lead=LEAD_Z)
+            raise SequenceError(f"no contact within {place['max_descend_mm']} mm: nut not on "
+                                "the thread?")
+        log.warning("no contact within %.0f mm: screwing at the lowest point anyway",
+                    place["max_descend_mm"])
     contact = robot.flange_pose()
     record["contact_tcp_mm"] = rounded(frames.tcp_position(contact, tcp_offset))
     screw = place["screw"]
