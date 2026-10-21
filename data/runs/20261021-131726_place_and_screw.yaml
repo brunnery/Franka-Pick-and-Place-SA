@@ -1,0 +1,10 @@
+step: place_and_screw
+started: '2026-10-21T13:17:16.990871'
+place:
+  candidates: []
+result: 'failed: no object in the work area at the stud observation pose (0 in view)'
+duration_s: 9.42
+arrival_errors_mm:
+- - 2.87
+  - 2.3
+  - -1.25

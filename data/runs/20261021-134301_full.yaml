@@ -1,0 +1,44 @@
+step: full
+started: '2026-10-21T13:42:20.036918'
+pick:
+  nut_mm:
+  - 425.51
+  - -231.73
+  - 15.96
+  landed_tcp_mm:
+  - 430.89
+  - -231.04
+  - 13.39
+place:
+  candidates:
+  - rank: 1
+    position_mm:
+    - 409.48
+    - 197.71
+    - 31.96
+    offset_from_axis_mm: 33.28
+    size_mm: 10.55
+    width_ratio: 0.58
+    shape_ok: false
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: null
+result: 'failed: none of the 1 object(s) tried is a stud'
+duration_s: 41.66
+arrival_errors_mm:
+- - 2.07
+  - 0.09
+  - 2.22
+- - 1.12
+  - 2.29
+  - 3.41
+- - 1.64
+  - -1.16
+  - -2.82
+- - 0.02
+  - -2.21
+  - -0.68
+- - -1.37
+  - 0.56
+  - -1.32

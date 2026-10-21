@@ -1,0 +1,5 @@
+step: pick
+started: '2026-10-21T13:03:38.317738'
+result: 'failed: no impedance controller listening within 5.0 s'
+duration_s: 5.01
+arrival_errors_mm: []
