@@ -44,6 +44,10 @@ def ping(id_: int) -> str:
     return f"{id_} PING\n"
 
 
+def stop(id_: int) -> str:
+    return f"{id_} STOP\n"
+
+
 def parse_reply(line: str) -> Optional[Reply]:
     """One line from the board; None if it is not part of the protocol (e.g. noise)."""
     parts = line.strip().split(maxsplit=2)

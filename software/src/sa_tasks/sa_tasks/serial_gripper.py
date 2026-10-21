@@ -93,6 +93,10 @@ class SerialGripper:
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None:
         self._timed(lambda i: protocol.rotate(i, direction, duration_ms, speed), duration_ms)
 
+    def stop(self) -> None:
+        """All motors off at once (the iris lets go)."""
+        self._command(protocol.stop, self.cfg["ack_timeout_s"], 0.0)
+
     def shutdown(self) -> None:
         """Stop pinging and close the port; the board's watchdog switches the motors off."""
         self.stopped.set()
