@@ -27,6 +27,7 @@ setup(
             "full = sa_tasks.task_node:main_full",
             "teach_poses = sa_tasks.teach_poses:main",
             "gripper_test = sa_tasks.gripper_test:main",
+            "reach_test = sa_tasks.reach_test:main",
         ],
     },
 )

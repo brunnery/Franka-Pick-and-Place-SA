@@ -101,7 +101,7 @@ def test_place_finds_contact_on_the_thread_and_screws():
     robot, gripper, record = run_place(contact_tcp_z=tip - 1.0)
     assert record["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
     assert tip - 5.0 <= record["contact_tcp_mm"][2] <= tip
-    assert gripper.commands == ["ROT", "OPEN"]
+    assert gripper.commands == ["ROT", "ROT", "OPEN"]  # last ROT pressing down
     assert robot.pose == pytest.approx(OBSERVE_STUD)
 
 
@@ -110,7 +110,7 @@ def test_place_without_contact_screws_or_aborts(monkeypatch, screw_anyway):
     monkeypatch.setitem(CFG["place"], "screw_without_contact", screw_anyway)
     if screw_anyway:
         _, gripper, record = run_place()
-        assert record["contact"] is False and gripper.commands == ["ROT", "OPEN"]
+        assert record["contact"] is False and gripper.commands == ["ROT", "ROT", "OPEN"]  # last ROT pressing down
     else:
         with pytest.raises(sequences.SequenceError, match="no contact"):
             run_place()
@@ -122,3 +122,24 @@ def test_approach_only_stops_above_the_thread_tip():
     assert record["approach_reached_tcp_mm"] == pytest.approx(
         [*STUD, tip + CFG["place"]["approach_clearance_mm"]], abs=0.01)
     assert gripper.commands == []
+
+
+class LaggingRobot(MockRobot):
+    """Stops 4 mm short in y towards y = 0, like the impedance controller (22.10.)."""
+
+    def follow(self, path, stop_on_contact_n=None):
+        contact = super().follow(path, stop_on_contact_n)
+        self.pose[1, 3] -= 4.0 * np.sign(self.pose[1, 3])
+        return contact
+
+
+@pytest.mark.parametrize("y", [-200.0, 200.0])
+def test_precise_move_removes_the_steady_state_error(y):
+    robot = LaggingRobot(OBSERVE_NUT, T_FT[2])
+    goal = frames.pose(R_DOWN, [450.0, y, 100.0])
+    sequences.move_to(robot, goal, CFG)
+    assert abs(robot.pose[1, 3] - y) == pytest.approx(4.0)
+    reference = sequences.move_to(robot, goal, CFG, precise=True)
+    assert robot.pose[:3, 3] == pytest.approx(goal[:3, 3], abs=CFG["robot"]["fine_positioning"]
+                                              ["tolerance_mm"])
+    assert reference[1, 3] - y == pytest.approx(4.0 * np.sign(y), abs=0.5)

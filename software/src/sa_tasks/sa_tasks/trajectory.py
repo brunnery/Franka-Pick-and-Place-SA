@@ -98,12 +98,6 @@ def spiral_down(start: np.ndarray, depth_mm: float, radius_mm: float, turns: flo
     return path
 
 
-def chain(first: List[Waypoint], second: List[Waypoint]) -> List[Waypoint]:
-    """second starts where first ends (in time): one path, no stop in between."""
-    offset = first[-1].time_s if first else 0.0
-    return first + [Waypoint(w.time_s + offset, w.t_base_flange) for w in second]
-
-
 def straight_down(start: np.ndarray, depth_mm: float, speed_mm_s: float,
                   rate_hz: float) -> List[Waypoint]:
     """Constant-speed vertical path (contact search), same orientation."""

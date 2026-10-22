@@ -46,7 +46,7 @@ def main():
             tcp = frames.tcp_position(flange, cfg["frames"]["flange_to_tcp_mm"])
             if not command:
                 print(f"flange {flange[:3, 3].round(1).tolist()} mm, tilt "
-                      f"{frames.tilt_deg(flange[:3, :3]):.1f} deg, TCP z {tcp[2]:.1f} mm")
+                      f"{frames.tilt_deg(flange[:3, :3]):.1f} deg, TCP {tcp.round(1).tolist()} mm")
             elif command[0] == "table":
                 poses.table_z_mm = float(tcp[2])
                 poses.save()

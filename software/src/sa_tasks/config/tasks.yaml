@@ -15,16 +15,22 @@ frames:
   offset_chain_tolerance_mm: 0.2   # per axis (CLAUDE.md)
   # Camera axes in {F} (rows of R_F_C): x_C = +y_F, y_C = -x_F, z_C = +z_F
   camera_rotation_in_flange: [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+  # Tilt of the optical axis against the CAD, about x_F then y_F. The sensor of the cheap
+  # USB camera need not be square to its housing; intrinsics do not show it. 22.10.: camera
+  # centred over the stud (d = 393 mm), iris centred by hand (only y checked): the stud was
+  # 8.6 mm further in +y_B than computed -> atan(8.6 / 393) = 1.25 deg about x_F. y_F not
+  # measured yet (x_B: -2.4 mm, unchecked) -> 0
+  camera_tilt_in_flange_deg: [1.25, 0.0]
   # Projection centre above the lowest point of the housing (bench 16.10.: about 9 mm)
   projection_centre_above_housing_mm: 9.0
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
   # camera in front (+x_B). Quaternion (x, y, z, w)
   flange_orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
-  # Constant xy correction of every target (base frame). 20.10. [-1.5, 4.0] by eye with the
-  # crooked mount; reset after the reprint. 21.10.: +1.5 and +2.5 still looked 1 mm short by
-  # hand, +5.0 centred (13:20). Robot stops ~1 mm short in y; the free-hanging lower half
-  # tilts ~1.8 deg about x (bottom edges 45 / 49 mm, play in the rotating half)
-  target_correction_mm: [0.0, 5.0]
+  # Constant xy correction of every target (base frame). 20.-22.10. tuned by eye (+4 ... +8 in
+  # y), never valid on both sides of the table: the robot stopped short against its direction
+  # of travel and the camera axis is tilted. Both are modelled since 22.10. (fine_positioning,
+  # camera_tilt_in_flange_deg), so this stays 0 unless a residual is measured
+  target_correction_mm: [0.0, 0.0]
 
 objects:
   nut:
@@ -64,16 +70,26 @@ robot:
   # Arrived = standing still within the tolerance (the controller keeps a few mm of
   # steady-state error, z about 3.5 mm: no z integrator)
   arrival_tolerance_mm: 8.0
+  # Before the pick spiral and the stud approach: shift the reference by the remaining xy
+  # error until within tolerance_mm (22.10.: the arm stopped 3.5-4 mm short in y, always
+  # towards y = 0, so the sign flipped with the side of the table; THEORY 5)
+  # Reach test 22.10.: the error points against the last direction of travel (stiction; the
+  # controller's integral, limit 2.5 N, lets it creep on slowly), 1.5-4.5 mm; gain 1.0 left
+  # 0.9-1.3 mm overshoot at 2 of 10 points because of that creep -> 0.8
+  fine_positioning:
+    tolerance_mm: 0.5
+    max_steps: 3
+    gain: 0.8                  # fraction of the measured error removed per step
   arrival_speed_mm_s: 3.0
   arrival_timeout_s: 15.0
   arrival_settle_s: 0.15       # 0.3 until 21.10.
   start_settle_s: 0.5          # before the first move: arm still this long (1.0 until 21.10.)
-  observation_height_from: observe_nut   # both observation poses use this z ("" = own z)
+  observation_height_from: observe_stud  # both observation poses use this z ("" = own z); 22.10. poses swapped, same height as before
   state_timeout_s: 5.0
 
 pick:
   press_depth_mm: 2.0          # TCP below the table: plate flat with ~3 N preload
-  # One move to start_height_mm over the nut, then without a stop an outward spiral down to
+  # One move to start_height_mm over the nut, fine positioning there, then an outward spiral down to
   # table - press_depth_mm: covers a target error up to about radius_mm (THEORY 5)
   spiral:
     start_height_mm: 10.0
@@ -99,9 +115,14 @@ place:
   contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
   screw:
     direction: 1               # M4 FORWARD tightens (19.10., test_m4)
-    duration_ms: 8000          # time-based, no sensor (CLAUDE.md); M4 timing still open
-    speed: 200                 # motor shield speed 0-255
+    duration_ms: 4000          # time-based, no sensor (CLAUDE.md); M4 timing still open (22.10.: 5000 at 170, then 4000 at full speed)
+    speed: 255                 # motor shield speed 0-255, full (22.10.)
     follow_depth_mm: 10.0      # reference this far below contact while screwing (float mode)
+    # Last part of the rotation: reference depth_mm below contact, i.e. about
+    # 0.15 N/mm * depth_mm down (float stiffness z 150 N/m), to press the nut onto the stud (22.10.)
+    final_press:
+      duration_ms: 1500        # part of duration_ms, not added
+      depth_mm: 50.0           # ~7.5 N
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
   # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)
@@ -112,5 +133,13 @@ gripper:                       # arduino/iris_gripper over USB, 115200 baud
   ping_period_s: 0.5           # keep-alive; firmware watchdog: motors off after 2 s
   open: {duration_ms: 1500, speed: 100}
   close: {duration_ms: 1500, speed: 100, hold_speed: 60}  # then holds with hold_speed
+
+# ros2 run sa_tasks reach_test: TCP over a grid (centre, +-grid_mm in x and y) around each
+# centre, safely above the stud tip (top_height_mm 39). 22.10.: last nut and stud positions
+reach_test:
+  centres_mm: [[362.0, 167.0], [435.0, -193.0]]
+  grid_mm: 25.0
+  height_above_table_mm: 80.0
+  hold_s: 2.0                  # second reading: does the error still change while standing?
 
 log_dir: data/runs             # one YAML record per run, relative to the repository root

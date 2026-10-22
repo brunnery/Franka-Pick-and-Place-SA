@@ -11,7 +11,7 @@ import numpy as np
 
 from sa_tasks import config, frames
 from sa_tasks.interfaces import Gripper, Robot, Vision
-from sa_tasks.trajectory import (LEAD_XY, LEAD_Z, Waypoint, chain, plan_move, spiral_down,
+from sa_tasks.trajectory import (LEAD_XY, LEAD_Z, Waypoint, plan_move, spiral_down,
                                  straight_down)
 
 log = logging.getLogger("sa_tasks")
@@ -28,11 +28,37 @@ def rounded(values) -> list:
     return [round(float(v), 2) for v in values]
 
 
-def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = None) -> None:
-    """One continuous move of the flange from where it is to goal, then wait for arrival."""
-    robot.follow(plan_move(robot.flange_pose(), goal, config.motion_limits(cfg),
-                           cfg["robot"]["stream_rate_hz"], lead))
-    robot.wait_until_arrived(goal, cfg["robot"]["arrival_tolerance_mm"])
+def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = None,
+            precise: bool = False) -> np.ndarray:
+    """One continuous move of the flange from where it is to goal, then wait for arrival.
+    precise: then shift the reference by the remaining xy error of the TCP (from the measured
+    flange pose, so a tilt of the arm counts too) until it is within
+    fine_positioning.tolerance_mm (THEORY 5). Returns the last reference sent."""
+    limits, rate = config.motion_limits(cfg), cfg["robot"]["stream_rate_hz"]
+    tolerance = cfg["robot"]["arrival_tolerance_mm"]
+    robot.follow(plan_move(robot.flange_pose(), goal, limits, rate, lead))
+    robot.wait_until_arrived(goal, tolerance)
+    reference = goal
+    if not precise:
+        return reference
+    fine = cfg["robot"]["fine_positioning"]
+    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
+    target = frames.tcp_position(goal, tcp_offset)[:2]
+
+    def tcp_error() -> np.ndarray:
+        return frames.tcp_position(robot.flange_pose(), tcp_offset)[:2] - target
+    for _ in range(fine["max_steps"]):
+        error = tcp_error()
+        if np.linalg.norm(error) <= fine["tolerance_mm"]:
+            break
+        corrected = reference.copy()
+        corrected[:2, 3] -= fine["gain"] * error
+        robot.follow(plan_move(reference, corrected, limits, rate))
+        robot.wait_until_arrived(corrected, tolerance)
+        reference = corrected
+    log.info("fine positioning: TCP xy error x %+.1f y %+.1f mm, reference shifted by "
+             "x %+.1f y %+.1f mm", *tcp_error(), *(reference[:2, 3] - goal[:2, 3]))
+    return reference
 
 
 def move_while(robot: Robot, goal: np.ndarray, cfg: dict, action: Callable[[], None]) -> None:
@@ -153,9 +179,9 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: config.Poses,
          record: dict, back_up: bool = True) -> None:
-    """Step 1: observation pose (the iris opens on the way) -> detect the nut -> one move down
-    with a spiral search until the bottom plate rests on the table, the open iris over the
-    nut -> close -> back up. back_up False (full run): stay on the table, the next move
+    """Step 1: observation pose (the iris opens on the way) -> detect the nut -> move to just
+    above it (fine positioning) -> spiral search down until the bottom plate rests on the
+    table, the open iris over the nut -> close -> back up. back_up False (full run): stay on the table, the next move
     (to observe_stud, z leading) lifts the nut in one motion."""
     table_z = poses.table_z()
     observe = observation_pose(poses, "observe_nut", cfg)
@@ -164,18 +190,17 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: confi
     move_while(robot, observe, cfg, gripper.open)
     nut = record["nut_mm"] = locate_nut(robot, vision, cfg, table_z)
 
-    # Down to just above the nut, then without a stop a spiral down onto the table: if the
-    # target is off by up to the spiral radius, the plate slides over the nut until the open
-    # iris passes over it and the nut drops in (THEORY 5)
+    # Down to just above the nut (xy corrected there), then a spiral down onto the table: if
+    # the target is off by up to the spiral radius, the plate slides over the nut until the
+    # open iris passes over it and the nut drops in (THEORY 5)
     spiral = cfg["pick"]["spiral"]
     press = cfg["pick"]["press_depth_mm"]
-    rate = cfg["robot"]["stream_rate_hz"]
     start = frames.flange_for_tcp([nut[0], nut[1], table_z + spiral["start_height_mm"]],
                                   config.rotation_down(cfg), cfg["frames"]["flange_to_tcp_mm"])
+    start = move_to(robot, start, cfg, lead=LEAD_XY, precise=True)
     search = spiral_down(start, spiral["start_height_mm"] + press, spiral["radius_mm"],
-                         spiral["turns"], spiral["duration_s"], rate)
-    robot.follow(chain(plan_move(robot.flange_pose(), start, config.motion_limits(cfg), rate,
-                                 LEAD_XY), search))
+                         spiral["turns"], spiral["duration_s"], cfg["robot"]["stream_rate_hz"])
+    robot.follow(search)
     # If the iris misses, the plate stands on the nut instead of the table: accept that
     robot.wait_until_arrived(search[-1].t_base_flange, cfg["robot"]["arrival_tolerance_mm"]
                              + press + cfg["objects"]["nut"]["height_mm"])
@@ -224,7 +249,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     approach = frames.flange_for_tcp([*found["position_mm"][:2],
                                       tip_z + place["approach_clearance_mm"]],
                                      config.rotation_down(cfg), tcp_offset)
-    move_to(robot, approach, cfg, lead=LEAD_XY)
+    approach = move_to(robot, approach, cfg, lead=LEAD_XY, precise=True)
     if approach_only:
         reached = frames.tcp_position(robot.flange_pose(), tcp_offset)
         log.info("approach only: TCP %.1f mm above the thread tip; holding here",
@@ -250,7 +275,14 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     below = contact.copy()
     below[2, 3] -= screw["follow_depth_mm"]
     robot.follow([Waypoint(0.0, below)])
-    gripper.rotate(screw["direction"], screw["duration_ms"], screw["speed"])
+    # The last press_duration_ms with the reference press_depth_mm below contact: the soft
+    # spring then pushes the nut down onto the stud while it is tightened
+    press = screw["final_press"]
+    gripper.rotate(screw["direction"], screw["duration_ms"] - press["duration_ms"],
+                   screw["speed"])
+    below[2, 3] = contact[2, 3] - press["depth_mm"]
+    robot.follow([Waypoint(0.0, below)])
+    gripper.rotate(screw["direction"], press["duration_ms"], screw["speed"])
     gripper.open()
     # Reference back to where the arm is before the stiff mode returns, else it would jump
     # towards the reference below the thread

@@ -79,6 +79,14 @@ def rotation_z(angle_deg: float) -> np.ndarray:
     return np.array([[np.cos(a), -np.sin(a), 0.0], [np.sin(a), np.cos(a), 0.0], [0.0, 0.0, 1.0]])
 
 
+def rotation_xy(ax_deg: float, ay_deg: float) -> np.ndarray:
+    """Rotation about x by ax_deg, then about the new y by ay_deg (small tilts)."""
+    a, b = np.radians(ax_deg), np.radians(ay_deg)
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(a), -np.sin(a)], [0.0, np.sin(a), np.cos(a)]])
+    ry = np.array([[np.cos(b), 0.0, np.sin(b)], [0.0, 1.0, 0.0], [-np.sin(b), 0.0, np.cos(b)]])
+    return rx @ ry
+
+
 def flange_from_state(t_base_ee: np.ndarray, t_link8_ee: np.ndarray,
                       r_link8_flange: np.ndarray) -> tuple:
     """(T_B_F, T_F_E) from the robot state (O_T_EE, F_T_EE of libfranka, whose "F" is

@@ -49,9 +49,11 @@ def link8_to_flange(cfg: dict) -> np.ndarray:
 
 
 def camera_in_flange(cfg: dict) -> np.ndarray:
-    """T_F_C: the projection centre lies above the lowest point of the housing."""
+    """T_F_C: the projection centre lies above the lowest point of the housing; the optical
+    axis is tilted against the CAD by camera_tilt_in_flange_deg (THEORY 3.1)."""
     f = cfg["frames"]
-    return frames.pose(f["camera_rotation_in_flange"], np.subtract(
+    tilt = frames.rotation_xy(*f["camera_tilt_in_flange_deg"])
+    return frames.pose(tilt @ np.asarray(f["camera_rotation_in_flange"], float), np.subtract(
         f["flange_to_camera_housing_mm"], [0.0, 0.0, f["projection_centre_above_housing_mm"]]))
 
 
