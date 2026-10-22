@@ -1,0 +1,6 @@
+step: place_and_screw
+started: '2026-10-22T15:30:46.633585'
+place: {}
+result: 'failed: /vision_node not running (sa_vision)'
+duration_s: 10.66
+arrival_errors_mm: []

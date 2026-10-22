@@ -1,0 +1,9 @@
+step: full
+started: '2026-10-22T12:59:54.954526'
+pick: {}
+result: 'failed: no nut found within 10.0 s (last status: 0 object(s))'
+duration_s: 15.43
+arrival_errors_mm:
+- - 2.02
+  - 0.37
+  - 2.76

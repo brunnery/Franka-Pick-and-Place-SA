@@ -1,0 +1,5 @@
+step: full
+started: '2026-10-22T14:52:18.810093'
+result: 'failed: ''1 PING'': no answer within 3.0 s'
+duration_s: 3.69
+arrival_errors_mm: []

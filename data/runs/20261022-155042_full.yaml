@@ -1,0 +1,83 @@
+step: full
+started: '2026-10-22T15:49:54.037596'
+pick:
+  nut_mm:
+  - 352.21
+  - 238.49
+  - 15.96
+  landed_tcp_mm:
+  - 356.99
+  - 237.93
+  - 13.08
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 434.43
+    - -186.06
+    - 31.96
+    offset_from_axis_mm: 44.05
+    size_mm: 12.31
+    width_ratio: 0.791
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 434.9
+      - -185.02
+      - 31.96
+      offset_from_axis_mm: 0.29
+      size_mm: 11.03
+      width_ratio: 0.761
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 434.9
+    - -185.02
+    - 31.96
+    centred_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+  contact: true
+  contact_tcp_mm:
+  - 434.92
+  - -185.09
+  - 53.77
+result: ok
+duration_s: 48.16
+arrival_errors_mm:
+- - -0.04
+  - -2.1
+  - -0.69
+- - 2.04
+  - -2.69
+  - 4.07
+- - 2.19
+  - -2.77
+  - 2.21
+- - 0.9
+  - -3.08
+  - 3.09
+- - -1.04
+  - 2.35
+  - -2.42
+- - 3.15
+  - -3.23
+  - -1.37
+- - 1.39
+  - 3.32
+  - 3.38
+- - 1.07
+  - 3.59
+  - 2.88
+- - 0.93
+  - 3.52
+  - 2.81
+- - 1.05
+  - 0.79
+  - -3.91
