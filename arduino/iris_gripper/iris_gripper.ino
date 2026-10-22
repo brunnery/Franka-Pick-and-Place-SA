@@ -12,6 +12,7 @@
 //   STOP                            all motors off -> DONE (pending commands: ERR stopped)
 //   PING                            -> DONE (resets the watchdog)
 //   STATE                           -> DONE iris=<off|opening|closing|holding> rot=<on|off>
+//                                      shield_resets=<n>
 //
 // Watchdog: no line from the PC for WATCHDOG_MS -> all motors off (the iris lets go; for now it
 // then opens once, WATCHDOG_OPENS_IRIS). The PC sends PING well within that time while it holds.
@@ -34,6 +35,13 @@ const unsigned long BAUD = 115200;
 const unsigned long WATCHDOG_MS = 2000;
 const unsigned long MAX_DURATION_MS = 60000;
 const uint8_t LINE_MAX = 64;
+
+// PWM chip of the motor shield (PCA9685, default I2C address). A voltage dip (stalled motor)
+// can reset it while the Arduino keeps running: it then wakes up asleep and silently ignores
+// every motor command (22.10.: DONE, but nothing moved). Checked before each motion command.
+const uint8_t SHIELD_ADDR = 0x60;
+const uint8_t SHIELD_REG_MODE1 = 0x00;
+const uint8_t SHIELD_SLEEP_BIT = 0x10;
 
 // TEMPORARY (20.10., testing convenience): when the watchdog fires while the iris is closed
 // or holding (e.g. 2 s after the pick process ends), open it once with these values instead
@@ -58,6 +66,8 @@ bool watchdogOpening = false;  // opening started by the watchdog, not by the PC
 bool rotOn = false;
 unsigned long rotStart = 0, rotDuration = 0;
 long rotId = -1;
+
+unsigned long shieldResets = 0;
 
 unsigned long lastRx = 0;
 char line[LINE_MAX + 1];
@@ -101,6 +111,21 @@ void stopAll(const char *pendingText) {
   finishPending(rotId, pendingText);
 }
 
+// True if the shield is awake; re-initialises it if it was reset (all its outputs are off
+// then, so a holding iris is set again). False if it does not answer on I2C.
+bool shieldReady() {
+  Wire.beginTransmission(SHIELD_ADDR);
+  Wire.write(SHIELD_REG_MODE1);
+  if (Wire.endTransmission() == 0 && Wire.requestFrom(SHIELD_ADDR, (size_t)1) == 1 &&
+      !(Wire.read() & SHIELD_SLEEP_BIT)) {
+    return true;
+  }
+  if (!AFMS.begin()) return false;
+  shieldResets++;
+  if (iris == IRIS_HOLDING) irisRun(true, holdSpeed);
+  return true;
+}
+
 const char *irisName() {
   switch (iris) {
     case IRIS_OPENING: return "opening";
@@ -137,7 +162,9 @@ void handleLine(char *text) {
     Serial.print(id);
     Serial.print(" DONE iris=");
     Serial.print(irisName());
-    Serial.println(rotOn ? " rot=on" : " rot=off");
+    Serial.print(rotOn ? " rot=on" : " rot=off");
+    Serial.print(" shield_resets=");
+    Serial.println(shieldResets);
   } else if (strcmp(cmd, "STOP") == 0) {
     stopAll("ERR stopped");
     reply(id, "DONE");
@@ -146,6 +173,10 @@ void handleLine(char *text) {
     if (!parseRange(a1, 1, MAX_DURATION_MS, v1) || !parseRange(a2, 0, 255, v2) ||
         (close && !parseRange(a3, 0, 255, v3))) {
       reply(id, "ERR args");
+      return;
+    }
+    if (!shieldReady()) {
+      reply(id, "ERR shield");
       return;
     }
     finishPending(irisId, "ERR replaced");
@@ -161,6 +192,10 @@ void handleLine(char *text) {
     if (!parseRange(a1, -1, 1, v1) || v1 == 0 || !parseRange(a2, 1, MAX_DURATION_MS, v2) ||
         !parseRange(a3, 0, 255, v3)) {
       reply(id, "ERR args");
+      return;
+    }
+    if (!shieldReady()) {
+      reply(id, "ERR shield");
       return;
     }
     finishPending(rotId, "ERR replaced");
