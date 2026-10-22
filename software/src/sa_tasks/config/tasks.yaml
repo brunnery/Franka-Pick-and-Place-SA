@@ -142,4 +142,8 @@ reach_test:
   height_above_table_mm: 80.0
   hold_s: 2.0                  # second reading: does the error still change while standing?
 
+# ros2 run sa_tasks screw_test: close the iris, wait, turn M4 (place.screw), open (22.10.)
+screw_test:
+  wait_s: 5.0                  # after closing: time to hold the stud under the nut
+
 log_dir: data/runs             # one YAML record per run, relative to the repository root
