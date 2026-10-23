@@ -275,6 +275,8 @@ public:
     Eigen::Matrix<double, 6, 1> stiffness_mode_float_;    // control_mode 2
     Eigen::Matrix<double, 6, 1> stiffness_mode_lift_;     // control_mode 3
     Eigen::Matrix<double, 6, 1> stiffness_mode_contact_;  // z-contact switch in control_mode 1
+    Eigen::Matrix<double, 6, 1> stiffness_mode_screw_;    // control_mode 4 (integrator off)
+    Eigen::Matrix<double, 6, 1> stiffness_mode_tighten_;  // control_mode 5 (integrator off)
 
     // Debug topic ~/debug (std_msgs/Float64MultiArray, field names in layout.dim[0].label; docs/controller-tuning.md)
     void setup_debug_publisher();

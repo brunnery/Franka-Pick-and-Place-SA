@@ -105,6 +105,15 @@
         float_stiffness: [150.0, 150.0, 150.0, 40.0, 40.0, 20.0]        # control_mode 2
         lift_stiffness: [0.0, 0.0, 8500.0, 0.0, 0.0, 0.0]               # control_mode 3
         contact_stiffness: [2500.0, 2500.0, 100.0, 40.0, 40.0, 20.0]    # z-contact switch in control_mode 1
+        # control_mode 4, screwing (23.10.): tilt very soft and no integral action, so the thread
+        # can align the nut (it only makes ~0.05 Nm; float rx, ry 40 needed ~0.7 Nm for 2 deg).
+        # Tilts by itself if the gripper load is not entered in Desk. xy 30 -> 400 -> 2000: at
+        # 400 the flange still moved only 0.2-0.5 mm on a 4 mm circle (friction); now the arm
+        # goes where the reference is and the loose bottom part of the gripper gives way
+        screw_stiffness: [2000.0, 2000.0, 150.0, 4.0, 4.0, 20.0]
+        # control_mode 5, tightening after the catch (23.10.): as screw, but soft in xy so the
+        # nut can swing on the thread while it turns (not perfectly concentric)
+        tighten_stiffness: [400.0, 400.0, 150.0, 4.0, 4.0, 20.0]
       debug:
         publish_rate: 1000.0       # [Hz] (1000 = every cycle, no aliasing; ~1 MB/s in a bag) /cartesian_impedance_controller/debug (Float64MultiArray, names in layout); 0.0 = off
 

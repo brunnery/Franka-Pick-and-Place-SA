@@ -97,7 +97,19 @@ void CartesianImpedanceController::control_mode_callback(const std_msgs::msg::In
 {
   RCLCPP_INFO(get_node()->get_logger(), "Received Control Mode Callback.");
     // Handle the incoming control mode message
-    if (msg->data == 3){
+    if (msg->data == 5){
+        control_mode = 5; // tightening: like screw, softer in xy so the nut can swing while it turns
+        I_error.setZero();
+        K.diagonal() = stiffness_mode_tighten_; // parameter modes.tighten_stiffness
+        RCLCPP_INFO(get_node()->get_logger(), "Control mode set to tighten.");
+    }
+    else if (msg->data == 4){
+        control_mode = 4; // screwing: very soft, no integral action (the thread aligns the nut)
+        I_error.setZero();
+        K.diagonal() = stiffness_mode_screw_; // parameter modes.screw_stiffness
+        RCLCPP_INFO(get_node()->get_logger(), "Control mode set to screw.");
+    }
+    else if (msg->data == 3){
       //lift -> high extraction stiffness
         K.diagonal() = stiffness_mode_lift_; // parameter modes.lift_stiffness
         control_mode = 3;
@@ -240,6 +252,8 @@ void CartesianImpedanceController::declare_tuning_parameters() {
   auto_declare<std::vector<double>>("modes.float_stiffness", {150.0, 150.0, 150.0, 40.0, 40.0, 20.0});
   auto_declare<std::vector<double>>("modes.lift_stiffness", {0.0, 0.0, 8500.0, 0.0, 0.0, 0.0});
   auto_declare<std::vector<double>>("modes.contact_stiffness", {2500.0, 2500.0, 100.0, 40.0, 40.0, 20.0});
+  auto_declare<std::vector<double>>("modes.screw_stiffness", {30.0, 30.0, 150.0, 4.0, 4.0, 20.0});
+  auto_declare<std::vector<double>>("modes.tighten_stiffness", {400.0, 400.0, 150.0, 4.0, 4.0, 20.0});
   auto_declare<double>("debug.publish_rate", 100.0);
 }
 
@@ -299,6 +313,8 @@ bool CartesianImpedanceController::read_tuning_parameters() {
             read_vec6("modes.float_stiffness", stiffness_mode_float_) &&
             read_vec6("modes.lift_stiffness", stiffness_mode_lift_) &&
             read_vec6("modes.contact_stiffness", stiffness_mode_contact_) &&
+            read_vec6("modes.screw_stiffness", stiffness_mode_screw_) &&
+            read_vec6("modes.tighten_stiffness", stiffness_mode_tighten_) &&
             read_scalar("debug.publish_rate", debug_publish_rate_, 0.0);
   if (!ok) {
     return false;
@@ -634,7 +650,11 @@ controller_interface::return_type CartesianImpedanceController::update(const rcl
     I_error.setZero(); //new target (e.g. set_pose service): reset integral error
   }
   last_position_d_target_ = position_d_target_;
-  I_error = I_error + integrator_weights.cwiseProduct(error) * 0.001; //weighted integral action
+  if (control_mode == 4 || control_mode == 5) {
+    I_error.setZero(); //screw/tighten mode: no integral action, it would hold the nut against the thread
+  } else {
+    I_error = I_error + integrator_weights.cwiseProduct(error) * 0.001; //weighted integral action
+  }
   //I_error.tail(4).setZero(); //only integrate position error in x and y, not rotation error
   I_error.head(3) = I_error.head(3).cwiseMin(integrator_limit_force_).cwiseMax(-integrator_limit_force_); //anti-windup
   I_error.tail(3) = I_error.tail(3).cwiseMin(integrator_limit_torque_).cwiseMax(-integrator_limit_torque_); //anti-windup
