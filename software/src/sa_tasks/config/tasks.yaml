@@ -19,7 +19,8 @@ frames:
   # USB camera need not be square to its housing; intrinsics do not show it. 22.10.: camera
   # centred over the stud (d = 393 mm), iris centred by hand (only y checked): the stud was
   # 8.6 mm further in +y_B than computed -> atan(8.6 / 393) = 1.25 deg about x_F. y_F not
-  # measured yet (x_B: -2.4 mm, unchecked) -> 0
+  # measured yet (x_B: -2.4 mm, unchecked) -> 0. (23.10. tried 1.33 and target correction
+  # -1 in y, back to the values of 22.10.)
   camera_tilt_in_flange_deg: [1.25, 0.0]
   # Projection centre above the lowest point of the housing (bench 16.10.: about 9 mm)
   projection_centre_above_housing_mm: 9.0
@@ -60,7 +61,8 @@ robot:
   state_topic: /franka_robot_state_broadcaster/robot_state
   modes:                       # control_mode values of cartesian_impedance_controller
     normal: 0
-    float: 2                   # compliant in all axes
+    screw: 4                   # catch: stiff xy (wobble), soft tilt, no integral action (23.10.)
+    tighten: 5                 # tightening: as screw, soft xy (23.10.)
   stream_rate_hz: 100.0        # reference poses per second while moving
   motion:
     max_speed_mm_s: 250.0      # peak speed of every axis group (controller limit 300; 150 until 21.10.)
@@ -70,7 +72,7 @@ robot:
   # Arrived = standing still within the tolerance (the controller keeps a few mm of
   # steady-state error, z about 3.5 mm: no z integrator)
   arrival_tolerance_mm: 8.0
-  # Before the pick spiral and the stud approach: shift the reference by the remaining xy
+  # At the stud approach (until 23.10. also before the pick spiral): shift the reference by the remaining xy
   # error until within tolerance_mm (22.10.: the arm stopped 3.5-4 mm short in y, always
   # towards y = 0, so the sign flipped with the side of the table; THEORY 5)
   # Reach test 22.10.: the error points against the last direction of travel (stiction; the
@@ -89,7 +91,8 @@ robot:
 
 pick:
   press_depth_mm: 2.0          # TCP below the table: plate flat with ~3 N preload
-  # One move to start_height_mm over the nut, fine positioning there, then an outward spiral down to
+  # One move to start_height_mm over the nut and on without stopping (23.10.: no wait, no fine
+  # positioning there) into an outward spiral down to
   # table - press_depth_mm: covers a target error up to about radius_mm (THEORY 5)
   spiral:
     start_height_mm: 10.0
@@ -113,16 +116,34 @@ place:
   # thread without reaching contact_force_n), false = back up and abort
   screw_without_contact: true
   contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
+  # Before the iris lets go at the end: reference this far above the measured pose, stiff
+  # mode, then the iris opens (else the soft arm fell onto the reference below the thread;
+  # ~3.5 mm sag at 1500 N/m)
+  release_lift_mm: 3.0
+  release_settle_s: 2.5        # reference low-pass (tau ~0.5 s) settles from 15 mm below
   screw:
     direction: 1               # M4 FORWARD tightens (19.10., test_m4)
-    duration_ms: 4000          # time-based, no sensor (CLAUDE.md); M4 timing still open (22.10.: 5000 at 170, then 4000 at full speed)
-    speed: 255                 # motor shield speed 0-255, full (22.10.)
-    follow_depth_mm: 10.0      # reference this far below contact while screwing (float mode)
-    # Last part of the rotation: reference depth_mm below contact, i.e. about
-    # 0.15 N/mm * depth_mm down (float stiffness z 150 N/m), to press the nut onto the stud (22.10.)
-    final_press:
-      duration_ms: 1500        # part of duration_ms, not added
-      depth_mm: 50.0           # ~7.5 N
+    # Catch in control mode screw (stiff xy, soft tilt), tighten in mode tighten (soft xy). The
+    # reference is depth_mm below contact, i.e. about 0.15 N/mm * depth_mm down (z stiffness
+    # 150 N/m) plus the uncompensated weight (no z integrator); the record has the measured
+    # force (force_*_n). 23.10.: slow in short steps until the TCP has sunk by caught_drop_mm
+    # (thread caught; M8 pitch 1.25 mm), then centred, faster and pressing (until 22.10.:
+    # 4000 ms at 255 in float mode, the last 1500 ms at 50 mm)
+    catch:
+      step_ms: 250
+      speed: 100
+      max_steps: 12            # 3 s; not caught by then: tighten anyway (record: caught false)
+      depth_mm: 3.0            # ~0.5 N + weight (23.10.: 10 pressed too hard)
+      settle_s: 0.3            # after setting the reference, before the start height is taken
+      caught_drop_mm: 0.6      # half a turn of M8
+      # Each step the reference moves one point further on a circle around the contact (in
+      # xy, through the controller's reference low-pass): the nut wobbles over the tip to find
+      # the start of the thread. Lateral pull about screw stiffness xy * radius (23.10.)
+      wobble:
+        radius_mm: 2.0           # screw xy 2000 N/m (at 400 N/m 2-4 mm moved only 0.2-0.5 mm)
+        points_per_circle: 4
+    # ~2.3 N + weight (50 mm pressed too hard); 23.10.: speed 200 too weak, 3000 -> 5000 ms
+    tighten: {duration_ms: 5000, speed: 255, depth_mm: 15.0}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
   # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)

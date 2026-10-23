@@ -101,8 +101,39 @@ def test_place_finds_contact_on_the_thread_and_screws():
     robot, gripper, record = run_place(contact_tcp_z=tip - 1.0)
     assert record["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
     assert tip - 5.0 <= record["contact_tcp_mm"][2] <= tip
-    assert gripper.commands == ["ROT", "ROT", "OPEN"]  # last ROT pressing down
+    catch = CFG["place"]["screw"]["catch"]
+    # the mock never sinks: all catch steps, then the tightening turn
+    assert gripper.commands == ["ROT"] * (catch["max_steps"] + 1) + ["OPEN"]  # + tighten
+    assert record["screw"]["caught"] is False
     assert robot.pose == pytest.approx(OBSERVE_STUD)
+
+
+class ThreadGripper(MockGripper):
+    """Every turn lets the arm sink by drop_mm more, as if the nut ran down the thread (the
+    mock robot jumps back to the reference at every follow)."""
+
+    def __init__(self, robot, drop_mm):
+        super().__init__()
+        self.robot, self.drop_mm, self.turns = robot, drop_mm, 0
+
+    def rotate(self, direction, duration_ms, speed):
+        super().rotate(direction, duration_ms, speed)
+        self.turns += 1
+        self.robot.pose[2, 3] -= self.drop_mm * self.turns
+
+
+def test_screw_on_tightens_once_the_thread_has_caught(monkeypatch):
+    monkeypatch.setattr(sequences.time, "sleep", lambda s: None)
+    catch = CFG["place"]["screw"]["catch"]
+    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
+    gripper = ThreadGripper(robot, 0.4 * catch["caught_drop_mm"])
+    record = {}
+    sequences.screw_on(robot, gripper, CFG, OBSERVE_STUD.copy(), 0.0, record)
+    assert record["caught"] is True and len(record["catch_drops_mm"]) == 3
+    assert gripper.commands == ["ROT"] * 4  # 3 catch steps, tighten
+    wobble = CFG["place"]["screw"]["catch"]["wobble"]
+    offsets = [np.linalg.norm(t[:2, 3] - OBSERVE_STUD[:2, 3]) for t in robot.history[1:4]]
+    assert offsets == pytest.approx([wobble["radius_mm"]] * 3)
 
 
 @pytest.mark.parametrize("screw_anyway", [True, False])
@@ -110,7 +141,7 @@ def test_place_without_contact_screws_or_aborts(monkeypatch, screw_anyway):
     monkeypatch.setitem(CFG["place"], "screw_without_contact", screw_anyway)
     if screw_anyway:
         _, gripper, record = run_place()
-        assert record["contact"] is False and gripper.commands == ["ROT", "ROT", "OPEN"]  # last ROT pressing down
+        assert record["contact"] is False and gripper.commands[-2:] == ["ROT", "OPEN"]
     else:
         with pytest.raises(sequences.SequenceError, match="no contact"):
             run_place()

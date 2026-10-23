@@ -29,6 +29,7 @@ setup(
             "gripper_test = sa_tasks.gripper_test:main",
             "reach_test = sa_tasks.reach_test:main",
             "screw_test = sa_tasks.screw_test:main",
+            "goto_poses = sa_tasks.goto_poses:main",
         ],
     },
 )

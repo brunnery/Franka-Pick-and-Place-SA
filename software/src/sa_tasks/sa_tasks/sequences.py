@@ -5,6 +5,7 @@ Vision interfaces are used, so the sequences run against mocks.
 """
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 import numpy as np
@@ -180,7 +181,7 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: config.Poses,
          record: dict, back_up: bool = True) -> None:
     """Step 1: observation pose (the iris opens on the way) -> detect the nut -> move to just
-    above it (fine positioning) -> spiral search down until the bottom plate rests on the
+    above it and on without stopping -> spiral search down until the bottom plate rests on the
     table, the open iris over the nut -> close -> back up. back_up False (full run): stay on the table, the next move
     (to observe_stud, z leading) lifts the nut in one motion."""
     table_z = poses.table_z()
@@ -190,14 +191,15 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: confi
     move_while(robot, observe, cfg, gripper.open)
     nut = record["nut_mm"] = locate_nut(robot, vision, cfg, table_z)
 
-    # Down to just above the nut (xy corrected there), then a spiral down onto the table: if
-    # the target is off by up to the spiral radius, the plate slides over the nut until the
-    # open iris passes over it and the nut drops in (THEORY 5)
+    # Down to just above the nut and straight on (no stop, no fine positioning there; 23.10.)
+    # into a spiral down onto the table: if the target is off by up to the spiral radius, the
+    # plate slides over the nut until the open iris passes over it and the nut drops in (THEORY 5)
     spiral = cfg["pick"]["spiral"]
     press = cfg["pick"]["press_depth_mm"]
     start = frames.flange_for_tcp([nut[0], nut[1], table_z + spiral["start_height_mm"]],
                                   config.rotation_down(cfg), cfg["frames"]["flange_to_tcp_mm"])
-    start = move_to(robot, start, cfg, lead=LEAD_XY, precise=True)
+    robot.follow(plan_move(robot.flange_pose(), start, config.motion_limits(cfg),
+                           cfg["robot"]["stream_rate_hz"], LEAD_XY))
     search = spiral_down(start, spiral["start_height_mm"] + press, spiral["radius_mm"],
                          spiral["turns"], spiral["duration_s"], cfg["robot"]["stream_rate_hz"])
     robot.follow(search)
@@ -228,10 +230,85 @@ def position_check(found: dict, reached_tcp: np.ndarray) -> dict:
             "tcp_minus_centred_mm": rounded(tcp - centred)}
 
 
+def stiffen_where_it_is(robot: Robot, cfg: dict) -> np.ndarray:
+    """From the soft screw mode to the stiff mode without a drop or jump, before the iris lets
+    go: reference to the measured pose plus release_lift_mm (the weight the stiff mode does not
+    compensate, no z integrator), wait in the soft mode until the controller's low-passed
+    reference (tau ~0.5 s) has come up from below the thread, then stiff. Returns the
+    reference. Opening first let the soft arm fall onto the reference below the thread."""
+    place = cfg["place"]
+    hold = robot.flange_pose()
+    hold[2, 3] += place["release_lift_mm"]
+    robot.follow([Waypoint(0.0, hold)])
+    time.sleep(place["release_settle_s"])
+    robot.set_mode(cfg["robot"]["modes"]["normal"])
+    return hold
+
+
+def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
+             free_fz: float, record: dict) -> None:
+    """Screw the nut on from the contact pose in the screw mode (soft tilt, no integral
+    action: the thread can align the nut). Turn slowly in short steps, the reference moving one
+    point further on a small circle around the contact each step (wobble, to find the start of
+    the thread), until the TCP has sunk by caught_drop_mm (the thread has caught); then centred
+    again, faster and with more preload.
+    The reference is depth_mm below contact, i.e. a preload of about k_z * depth_mm plus what
+    the controller does not compensate; the record holds the measured Fz - free_fz."""
+    screw = cfg["place"]["screw"]
+    catch, tighten = screw["catch"], screw["tighten"]
+    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
+
+    contact_tcp = frames.tcp_position(contact, tcp_offset)
+
+    def state() -> tuple:  # TCP z, tilt of the flange, contact force estimate (plain floats)
+        flange = robot.flange_pose()
+        return (float(frames.tcp_position(flange, tcp_offset)[2]),
+                frames.tilt_deg(flange[:3, :3]), round(float(robot.force_z() - free_fz), 2))
+
+    def tcp_xy_from_contact() -> list:  # did the wobble move the arm?
+        return rounded(frames.tcp_position(robot.flange_pose(), tcp_offset)[:2] - contact_tcp[:2])
+
+    robot.set_mode(cfg["robot"]["modes"]["screw"])
+    below = contact.copy()
+    below[2, 3] = contact[2, 3] - catch["depth_mm"]
+    robot.follow([Waypoint(0.0, below)])
+    time.sleep(catch["settle_s"])
+    start_z, tilt, force = state()
+    record.update(tilt_start_deg=round(tilt, 2), force_start_n=force, catch_drops_mm=[],
+                  catch_tcp_xy_from_contact_mm=[], caught=False)
+    wobble = catch["wobble"]
+    for step in range(catch["max_steps"]):
+        angle = 2.0 * np.pi * step / wobble["points_per_circle"]
+        below[:2, 3] = contact[:2, 3] + wobble["radius_mm"] * np.array([np.cos(angle),
+                                                                         np.sin(angle)])
+        robot.follow([Waypoint(0.0, below)])
+        gripper.rotate(screw["direction"], catch["step_ms"], catch["speed"])
+        z, tilt, force = state()
+        record["catch_drops_mm"].append(round(start_z - z, 2))
+        record["catch_tcp_xy_from_contact_mm"].append(tcp_xy_from_contact())
+        if start_z - z >= catch["caught_drop_mm"]:
+            record["caught"] = True
+            break
+    record.update(tilt_after_catch_deg=round(tilt, 2), force_after_catch_n=force)
+    if record["caught"]:
+        log.info("thread caught after %d steps (%.2f mm down)", len(record["catch_drops_mm"]),
+                 start_z - z)
+    else:
+        log.warning("thread not caught after %d steps (%.2f mm down, tilt %.1f deg): "
+                    "tightening anyway", catch["max_steps"], start_z - z, tilt)
+    below[:3, 3] = contact[:3, 3] - [0.0, 0.0, tighten["depth_mm"]]  # centred again
+    robot.follow([Waypoint(0.0, below)])
+    robot.set_mode(cfg["robot"]["modes"]["tighten"])  # soft xy: the nut may swing while turning
+    gripper.rotate(screw["direction"], tighten["duration_ms"], tighten["speed"])
+    z, tilt, force = state()
+    record.update(drop_end_mm=round(start_z - z, 2), tilt_end_deg=round(tilt, 2),
+                  force_end_n=force)
+
+
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                     poses: config.Poses, record: dict, approach_only: bool = False) -> None:
     """Step 2: observation pose over the stud -> stud search -> one move to just above the
-    thread -> descend until contact -> screw (compliant) -> release -> back up.
+    thread -> descend until contact -> screw (screw_on) -> release -> back up.
     approach_only: stop above the thread tip and hold (centring check, no gripper)."""
     table_z = poses.table_z()
     stud = cfg["objects"]["stud"]
@@ -258,6 +335,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
         record["check"] = position_check(found, reached)
         return
 
+    free_fz = robot.force_z()  # in the air: the estimate's bias, so Fz - free_fz = contact force
     descent = straight_down(approach, place["max_descend_mm"], place["descend_speed_mm_s"],
                             cfg["robot"]["stream_rate_hz"])
     record["contact"] = robot.follow(descent, stop_on_contact_n=place["contact_force_n"])
@@ -270,22 +348,8 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                     place["max_descend_mm"])
     contact = robot.flange_pose()
     record["contact_tcp_mm"] = rounded(frames.tcp_position(contact, tcp_offset))
-    screw = place["screw"]
-    robot.set_mode(modes["float"])
-    below = contact.copy()
-    below[2, 3] -= screw["follow_depth_mm"]
-    robot.follow([Waypoint(0.0, below)])
-    # The last press_duration_ms with the reference press_depth_mm below contact: the soft
-    # spring then pushes the nut down onto the stud while it is tightened
-    press = screw["final_press"]
-    gripper.rotate(screw["direction"], screw["duration_ms"] - press["duration_ms"],
-                   screw["speed"])
-    below[2, 3] = contact[2, 3] - press["depth_mm"]
-    robot.follow([Waypoint(0.0, below)])
-    gripper.rotate(screw["direction"], press["duration_ms"], screw["speed"])
+    record["screw"] = {}
+    screw_on(robot, gripper, cfg, contact, free_fz, record["screw"])
+    stiffen_where_it_is(robot, cfg)
     gripper.open()
-    # Reference back to where the arm is before the stiff mode returns, else it would jump
-    # towards the reference below the thread
-    robot.follow([Waypoint(0.0, robot.flange_pose())])
-    robot.set_mode(modes["normal"])
     move_to(robot, observe, cfg, lead=LEAD_Z)

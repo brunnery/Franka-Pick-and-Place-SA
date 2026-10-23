@@ -3,7 +3,7 @@
   ros2 run sa_tasks screw_test
 
 Put the nut into the open iris and hold the stud under it, then:
-  Enter            one run with place.screw of tasks.yaml (duration, speed)
+  Enter            one run as place.screw in tasks.yaml: catch (all steps at once), tighten
   <ms> [speed]     one run with this duration (and speed)
   q                quit (the board's watchdog switches off after 2 s)
 Wait before turning: screw_test.wait_s in tasks.yaml.
@@ -29,12 +29,20 @@ def main():
                 break
             try:
                 args = [int(a) for a in parts]
-                duration_ms = args[0] if args else screw["duration_ms"]
-                speed = args[1] if len(args) > 1 else screw["speed"]
+                if args:
+                    speed = args[1] if len(args) > 1 else screw["tighten"]["speed"]
+                    phases = [{"duration_ms": args[0], "speed": speed}]
+                else:  # no height feedback here: the catch steps as one turn
+                    catch = screw["catch"]
+                    phases = [{"duration_ms": catch["step_ms"] * catch["max_steps"],
+                               "speed": catch["speed"]}, screw["tighten"]]
                 gripper.close()
-                print(f"closed, turning in {wait_s:.0f} s ({duration_ms} ms at speed {speed})")
+                print(f"closed, turning in {wait_s:.0f} s: "
+                      + ", then ".join(f"{p['duration_ms']} ms at speed {p['speed']}"
+                                       for p in phases))
                 time.sleep(wait_s)
-                gripper.rotate(screw["direction"], duration_ms, speed)
+                for phase in phases:
+                    gripper.rotate(screw["direction"], phase["duration_ms"], phase["speed"])
                 gripper.open()
                 print("done, iris open")
             except (ValueError, serial_gripper.GripperError) as error:

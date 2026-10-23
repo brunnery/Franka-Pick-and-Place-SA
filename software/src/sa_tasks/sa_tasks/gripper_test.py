@@ -2,11 +2,11 @@
 
   ros2 run sa_tasks gripper_test
 
-Values from tasks.yaml (gripper: port, open, close; place.screw: direction, duration, speed).
+Values from tasks.yaml (gripper: port, open, close; place.screw: direction, tighten).
 Commands:
   o                open the iris
   c                close the iris, then hold
-  r [ms] [speed]   M4 tightening direction (defaults: place.screw)
+  r [ms] [speed]   M4 tightening direction (defaults: place.screw.tighten)
   l [ms] [speed]   M4 loosening direction
   s                all motors off
   q                quit (the board's watchdog switches off after 2 s)
@@ -20,6 +20,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     cfg = config.load_tasks()
     screw = cfg["place"]["screw"]
+    fastest = screw["tighten"]  # r/l without arguments
     gripper = serial_gripper.connect(cfg["gripper"])
     print(__doc__.split("Commands:")[1].rstrip())
     try:
@@ -36,8 +37,8 @@ def main():
                     gripper.close()
                 elif cmd in ("r", "l"):
                     direction = screw["direction"] * (1 if cmd == "r" else -1)
-                    duration_ms = args[0] if args else screw["duration_ms"]
-                    speed = args[1] if len(args) > 1 else screw["speed"]
+                    duration_ms = args[0] if args else fastest["duration_ms"]
+                    speed = args[1] if len(args) > 1 else fastest["speed"]
                     gripper.rotate(direction, duration_ms, speed)
                 elif cmd == "s":
                     gripper.stop()
