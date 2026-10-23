@@ -2,65 +2,69 @@
 
 > Wird von der Abend-Sequenz (`/abend`) jeden Abend überschrieben. Details und Begründungen: Entscheidungslog in `docs/PLAN.md`.
 
-## Stand vom 22.10.2026
+## Stand vom 23.10.2026
 
-Die Positionierung ist gelöst: Mutter greifen und die Schraube treffen klappt jetzt ohne Ziel-Offset und auf beiden Tischseiten, beim Anfahren der Schraube auf **(−0.2, +0.3) mm**. Die letzten 6 `full`-Läufe kamen alle bis zum Kontakt auf der Schraube. **Geschraubt wird aber noch nicht:** Am Ende liegt die Mutter jedes Mal nur oben auf der Schraube. **Am Moment liegt es nicht:** Im Schraubtest ohne Roboter (Schraube von Hand unter die Mutter gehalten) dreht sie sich leicht auf, sogar mit dem N20 1:100. Das Problem ist, wie die Mutter am Roboter auf das Gewinde trifft.
+Positionieren, Greifen und Aufsetzen auf die Schraube laufen zuverlässig: 20 von 20 `full`-Läufen kamen heute bis zum Kontakt auf der Schraube. Die Präzision ist praktisch perfekt, die Mutter greift ins Gewinde, die Schraube kippt nicht, und die Teile sind kaum unkonzentrisch. **Eingeschraubt wird trotzdem nicht:** Nach höchstens ≈ 1.5 Umdrehungen bleibt die Mutter stehen (z-Weg am Ende 0–1.9 mm). Fazit: Es liegt am **Antrieb**. Die Übersetzung 44 → 17 (Zahnrad am Motor → Ritzel am Drehkörper) gibt nur 0.39× Motormoment. **Nächster Schritt: CAD neu mit 1:1-Übersetzung.** Die Software bleibt, wie sie ist.
 
 ## Heute erledigt
 
-- **Feinpositionierung** (`robot.fine_positioning`, THEORY 5): Der Arm blieb **1.5–4.5 mm vor dem Ziel stehen, immer entgegen der letzten Fahrtrichtung**. Ursache ist Haftreibung gegen die Steifigkeit von 2.5 N/mm; der Integrator ist auf 2.5 N begrenzt. Jetzt wird vor der Pick-Spirale und beim Anfahren der Schraube die Referenz um den **TCP**-Fehler verschoben (Verstärkung 0.8, max. 3 Schritte, < 0.5 mm). Korrigiert wird der TCP aus der gemessenen Flanschpose inkl. Neigung: Der Flansch stand auf 0.1 mm genau, der TCP war trotzdem 2.7 mm daneben.
-- **Reach-Test** (`ros2 run sa_tasks reach_test`, 10 Punkte): kein Reichweitenproblem, alle Gelenke ≥ 14° von den Grenzen. Fehler 1.5–4.5 mm gegen die Fahrtrichtung, nach der Feinpositionierung 8/10 Punkte ≤ 0.5 mm.
-- **Kamera-Neigung im Modell** (`frames.camera_tilt_in_flange_deg: [1.25, 0]`, THEORY 3.1): Iris von Hand über die Schraube geführt und die Pose ausgelesen. Die Schraube lag 8.6 mm weiter in +y als berechnet (d = 393 mm) → 1.25° um x_F. **`target_correction_mm` = [0, 0].**
-- **Beobachtungsposen getauscht:** Mutter links, Schraube rechts; Höhe unverändert 473.4 mm.
-- **Firmware:** Vor jedem Bewegungsbefehl wird geprüft, ob der PWM-Chip des Shields schläft, und er wird dann neu initialisiert (`shield_resets` in `STATE`, sonst `ERR shield`). Ursache: Ein blockierender M4 brachte die Spannung zum Einbrechen → `DONE`, aber kein Motor drehte. **Hochgeladen und am Board getestet? → prüfen** (siehe unten).
-- **Schrauben:** 4000 ms bei Speed 255; die letzten 1500 ms mit Referenz 50 mm unter Kontakt (≈ 7.5 N Anpressen, `place.screw.final_press`).
-- **Schraubtest ohne Roboter** (`ros2 run sa_tasks screw_test`): Iris zu → 5 s → M4 → Iris auf. Von Hand gehaltene Schraube: schraubt leicht auf, auch mit 1:100.
-- **Analyse M4-Antrieb:** gear3 (44 Zähne, an M4) → Ritzel (17 Zähne, am Körper) ergibt 2.6× schneller und 0.39× Moment. Motor laut CAD ein N20-Getriebemotor, Übersetzung unbekannt. Von Hand dreht der Antrieb nach links, nach rechts sperrt er (Mechanik, nicht Elektronik). Im CAD ist nichts richtungsabhängig (gerade Stirnräder, rotationssymmetrisch).
+- **Schraub-Ablauf neu** (`sequences.screw_on`, THEORY „Screwing“):
+  1. **Fangen:** Controller-Modus `screw` (4): xy 2000 N/m, z 150 N/m, Kippen 4 Nm/rad, Integrator aus. Langsam drehen in 12 × 250 ms bei Speed 100, Referenz 3 mm unter Kontakt. Pro Schritt springt die Referenz einen Punkt weiter auf einem Wackelkreis mit 2 mm Radius. Erkennung über die Höhe: gefasst, sobald der TCP ≥ 0.6 mm gesunken ist.
+  2. **Festziehen:** zurück auf die Kontakt-xy, Modus `tighten` (5): wie `screw`, aber xy 400 N/m. Dann 5 s bei Speed 255 mit 15 mm unter Kontakt.
+  3. **Loslassen ohne Absacken** (`stiffen_where_it_is`): Referenz = gemessene Pose + 3 mm, 2.5 s warten (die Referenz-Glättung im Controller hat τ ≈ 0.5 s), dann steif, erst dann Iris auf. Vorher fiel der weiche Arm auf die Referenz unter der Schraube, und einmal stürzte dabei `ros2_control_node` ab.
+- **Controller** (`cartesian_impedance_control`): neue Modi 4 `screw` und 5 `tighten` (`modes.screw_stiffness`, `modes.tighten_stiffness` in `controllers.yaml`), ohne Integrator.
+- **Record** `place.screw`: `caught`, z-Weg pro Schritt (`catch_drops_mm`), xy des TCP pro Schritt, Neigung und Kontaktkraft (Fz minus Wert in der Luft) am Start, nach dem Fangen und am Ende.
+- **Bugfix:** numpy-Zahlen im Record liessen `yaml.safe_dump` scheitern. Folge: Prozess-Abbruch mit exit −6 und kein Record (zwei Läufe um 09:53 und 09:55).
+- **Pick ohne Halt über der Mutter:** die Fahrt geht direkt in die Spirale, ohne Feinpositionierung dort.
+- **Neues Werkzeug** `ros2 run sa_tasks goto_poses`: fährt `observe_nut`, dann `observe_stud` an (Teilebereiche auf dem Tisch markiert).
+- **Ausprobiert und verworfen:**
+  - Zurückfahren mit gegriffener Mutter, auch mit −1/−2 mm Versatz: blockiert, −0.36 statt −1 mm erreicht.
+  - Nachgreifen (Iris auf, zurück, zu): die Mutter hielt nicht.
+  - Kamera-Neigung 1.33° und `target_correction_mm` [0, −1].
+  - Positionierung ist zurück auf dem Stand vom 22.10. (1.25°, [0, 0]).
 
-## Messergebnisse 22.10.
+## Messergebnisse 23.10.
 
 | Läufe | Anzahl | Ergebnis |
 |---|---|---|
-| `full` | 20 | 13 bis zum Ende; 2× keine Mutter gefunden, 2× keine Schraube im Arbeitsbereich (Teile nach dem Posentausch noch falsch gelegt), 1× Arduino antwortete nicht (Shield/Reset), 2 abgebrochen |
-| davon nach Kamera-Neigung (15:46–15:56) | 6 | 6/6 Kontakt auf der Schraube, **Mutter jedes Mal nur aufgelegt, nicht eingeschraubt** |
-| `place_screw --approach-only` | 7 | 6 ok, 1 ohne Vision gestartet. TCP − Schraube: vorher (−0.6 … −2.0, +2.9 … +5.9) mm, nach Neigung + Feinpositionierung **(−0.2, +0.3) mm** |
-| Pick-Landungen | 20 | TCP 0.6–2.5 mm über dem Tisch (normal); 2× 5.4 mm = Platte auf der Mutter (15:09/15:11, Korrektur 0 und noch ohne Feinpositionierung) |
-| `reach_test` | 1 | siehe oben |
+| `full` gesamt | 20 (+2 ohne Record, abgestürzt) | 19 `ok`, 1 abgebrochen; **20/20 Kontakt auf der Schraube** |
+| Pick-Landungen | 20 | TCP 0.8–1.9 mm über dem Tisch (normal) |
+| mit neuem Schraub-Ablauf | 16 | Gewindefangen nie über die Höhe erkannt (max. 0.35 mm in den langsamen Schritten); z-Weg am Ende 0–1.9 mm, Median ≈ 0.5 mm |
+| Neigung des Flanschs beim Schrauben | 16 | 1.1–1.7°, steigt beim Festziehen um ≈ 0.1° |
+| Kontaktkraft (Fz − Luft) nach dem Fangen | 16 | 0.5–2.2 N |
+| xy des TCP beim Wackeln (xy 400 N/m, Kreis 2–4 mm) | 5 | nur 0.2–0.5 mm Ausschlag, Reibung hält |
 
-Ein `full`-Lauf dauert ≈ 45–50 s.
+Ein `full`-Lauf dauert ≈ 50 s.
 
 ## Vorläufige Werte (zurückstellen!)
 
 | Wo | Jetzt | Ziel | Warum |
 |---|---|---|---|
-| `software/src/sa_vision/config/vision.yaml:59` `targets.stud.size_tolerance` | 0.8 | 0.4 | war für die provisorische Halterung; die richtige ist da (zentriert 10.6–11.2 mm) |
-| `arduino/iris_gripper/iris_gripper.ino:46` `WATCHDOG_OPENS_IRIS` | true | false | Bequemlichkeit beim Testen |
-| `software/src/sa_tasks/config/tasks.yaml` `frames.camera_tilt_in_flange_deg` | [1.25, 0.0] | y_F-Anteil messen | nur y von Hand geprüft; in x waren es −2.4 mm (ungeprüft) |
-| `tasks.yaml` `place.screw` (`duration_ms`, `speed`, `final_press`) | 4000 / 255 / 1500 ms, 50 mm | messen | M4-Drehzahl und Moment nie gemessen |
+| `software/src/sa_vision/config/vision.yaml:61` `targets.stud.size_tolerance` | 0.8 | 0.4 | war für die provisorische Halterung; die richtige ist da |
+| `arduino/iris_gripper/iris_gripper.ino:49` `WATCHDOG_OPENS_IRIS` | true | false | Bequemlichkeit beim Testen |
+| `software/src/sa_tasks/config/tasks.yaml:24` `frames.camera_tilt_in_flange_deg` | [1.25, 0.0] | y_F-Anteil messen | nur y von Hand geprüft |
+| `tasks.yaml:132–146` `place.screw` (`catch`, `tighten`) | Fangen 12 × 250 ms bei 100, Kreis 2 mm; Festziehen 5000 ms bei 255, 15 mm | nach dem neuen Antrieb neu einstellen | mit dem 44→17-Antrieb getuned, mit 1:1 dreht der Körper 2.6× langsamer |
 
 ## Offene Probleme
 
-1. **Mutter wird am Roboter nicht eingeschraubt, liegt nur auf** (von Hand geht es, siehe oben). Vermutungen:
-   - Sie dreht von Anfang an schnell (Speed 255) und springt über den Gewindeanfang, statt einzufädeln.
-   - Sie wird zu früh angedrückt und dadurch flach auf die Gewindespitze gepresst. Am Roboter steht die Schraube fest, und der Arm muss sich zentrieren; von Hand zentriert sich die Schraube selbst.
-   - Der Arm stoppt etwas neben der Achse oder schief.
-2. **Board resettet sich, wenn M4 blockiert** (heute ≈ 16 USB-Neuanmeldungen). VIN-Jumper entfernen und den Motorstrom direkt an die Klemme des Shields legen.
-3. **`gripper_test` merkt einen Board-Reset nicht** (Port wechselt ACM0 ↔ ACM1) → dann neu starten.
+1. **Mutter wird nicht ganz eingeschraubt:** stoppt nach ≈ 1.5 Umdrehungen. Ursache laut Fazit: zu wenig Moment am Drehkörper wegen der Übersetzung ins Schnelle (0.39×). → **1:1-Übersetzung im CAD.** Der Handtest vom 22.10. hat das verdeckt, weil sich eine von Hand gehaltene Schraube selbst ausrichtet.
+2. **Flansch steht beim Schrauben 1.1–1.7° schief** (Rest-Fehler des steifen Modus, das Werkzeug-Moment ist grösser als Integrator-Grenze plus Feder). Mit dem beweglichen Unterteil vermutlich unkritisch. Falls es nach dem neuen Antrieb noch verkantet: Orientierungs-Feinkorrektur beim Anfahren (bewusste Ausnahme von „nur (1, 0, 0, 0)“).
+3. **Board resettet sich, wenn M4 blockiert** (VIN-Jumper teilt die Versorgung). Mit mehr Moment wird das wichtiger: VIN-Jumper weg, Motorstrom direkt an die Klemme des Shields.
+4. **Firmware mit Shield-Neuinitialisierung hochgeladen?** Nicht bestätigt. → im Zweifel `arduino/iris_gripper/iris_gripper.ino` in der IDE öffnen → Upload → IDE schliessen.
 
 ## Morgen als Erstes
 
-1. **Firmware hochladen**, falls noch nicht geschehen: `arduino/iris_gripper/iris_gripper.ino` in der IDE öffnen → Upload → IDE schliessen.
-2. **Schrauben in Phasen bauen** (Claude): erst langsam drehen ohne Zusatzdruck (Gewinde fangen), dann schneller und dabei nach −z drücken. Werte vorher mit `screw_test` von Hand ausprobieren (`<ms> <speed>`: welcher langsame Speed fängt das Gewinde sicher?).
-3. Dann `sa_full_all` und beobachten, ob die Mutter einfädelt.
-4. Welcher N20 ist drin? Speed-Test je Motor (`gripper_test`, `r 10000 255`, Wellenumdrehungen × 6 = U/min; der langsamste hat die grösste Übersetzung). Übersetzung umdrehen nur noch, wenn das Schrauben am Roboter weiter am Moment scheitert.
-5. `size_tolerance` der Schraube auf 0.4 zurück, dann `sa_place_approach`. Bei der Gelegenheit x prüfen → zweite Kamera-Neigung.
+1. **CAD: M4-Antrieb mit 1:1-Übersetzung** neu konstruieren und drucken. Vorher klären, welcher N20 drin ist: `sa_env && ros2 run sa_tasks gripper_test`, dann `r 10000 255`, Wellenumdrehungen zählen, × 6 = U/min.
+2. **Neuen Antrieb ohne Roboter testen:** `sa_env && ros2 run sa_tasks screw_test`, Schraube fest einspannen statt von Hand halten (wie am Roboter). Dann Enter für die YAML-Werte, oder `<ms> <speed>`.
+3. **`place.screw` neu einstellen** (Fangen, Festziehen: Zeit und Speed, weil der Körper jetzt 2.6× langsamer dreht), dann `sa_full_all` und den Record anschauen: `drop_end_mm` sollte ≈ Umdrehungen × 1.25 mm sein.
+4. Nebenbei: VIN-Jumper (Problem 3), Firmware prüfen (Problem 4), `size_tolerance` auf 0.4 zurück.
+5. **Geplant:** Kamera-Prüfung, ob der Unterteil dreht. Beim Schrauben füllt die Bodenplatte das ganze Kamerabild, Bilddifferenz zeigt Drehung oder Stillstand.
 
 ## Nützliche Befehle
 
-- `sa_full_all`: Roboter + Vision + ganzer Ablauf
-- `sa_place_approach`: Schraube suchen, über der Spitze halten (ohne Gripper)
-- `sa_env && ros2 run sa_tasks gripper_test`: Iris/M4 von Hand (`o`, `c`, `r [ms] [speed]`, `l …`, `s`, `q`). Der Alias `sa_arduino_test` steht **noch nicht** in `~/.bashrc`
-- `sa_env && ros2 run sa_tasks screw_test`: Iris zu → 5 s → M4 → Iris auf (Enter = Werte aus `tasks.yaml`, `<ms> [speed]` = eigene Werte, `q`)
-- `sa_env && ros2 run sa_tasks reach_test`: Positioniergenauigkeit (braucht `sa_robot`)
-- Pose von Hand auslesen: Prog-Modus führen → Exec → `sa_env && ros2 launch software/launch/robot_state.launch.py` + `ros2 run sa_tasks teach_poses` → Enter (zeigt jetzt den ganzen TCP)
+- `sa_full_all`: Roboter + Vision + ganzer Ablauf. Erst Ctrl+C, wenn `record: …` im Terminal steht.
+- `sa_env && ros2 run sa_tasks screw_test`: Iris zu → 5 s → Fangen am Stück → Festziehen → Iris auf
+- `sa_env && ros2 run sa_tasks gripper_test`: `o`, `c`, `r [ms] [speed]`, `l …`, `s`, `q`
+- `sa_env && ros2 run sa_tasks goto_poses`: Beobachtungsposen anfahren (braucht `sa_robot`)
+- Record des letzten Laufs: `sed -n '/  screw:/,/^result/p' $(ls -t data/runs/*_full.yaml | head -1)`
 - Unit-Tests: `cd software/src/<pkg> && PYTHONNOUSERSITE=1 python3 -m pytest test`
