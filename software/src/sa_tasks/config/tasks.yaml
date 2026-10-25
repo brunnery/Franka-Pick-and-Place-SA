@@ -118,10 +118,11 @@ place:
   # 21.10. approach_only tests at -5/-10 (plate over the bare thread): xy right every time
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
   # The approach first goes to this xy offset (base frame) from the approach pose, then the last
-  # short move always runs the same way (here -y): the play of the gripper's turning disk then
+  # short move always runs the same way (here +y): the play of the gripper's turning disk then
   # always ends up on the same side, so one constant target_correction_mm fits (25.10.: with the
-  # direction depending on the side of the stud the plate was off one way or the other)
-  approach_from_mm: [0.0, 10.0]
+  # direction depending on the side of the stud the plate was off one way or the other). From -y
+  # (Yannick): the plate hangs lower on its -y side, the move in +y lifts that side
+  approach_from_mm: [0.0, -10.0]
   descend_speed_mm_s: 5.0      # contact search
   max_descend_mm: 17.0         # below the approach pose (12 until 21.10.)
   # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the
