@@ -1,0 +1,134 @@
+step: full
+started: '2026-10-25T13:24:34.005323'
+pick:
+  nut_mm:
+  - 388.26
+  - 235.36
+  - 15.96
+  landed_tcp_mm:
+  - 393.04
+  - 233.44
+  - 13.82
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 501.54
+    - -162.03
+    - 31.96
+    offset_from_axis_mm: 75.67
+    size_mm: 13.78
+    width_ratio: 0.821
+    shape_ok: false
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 501.46
+      - -162.68
+      - 31.96
+      offset_from_axis_mm: 3.88
+      size_mm: 11.47
+      width_ratio: 0.726
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 501.46
+    - -164.06
+    - 31.96
+    centred_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+  approach_tilt_shift_mm:
+  - -1.82
+  - -0.82
+  - 0.02
+  contact: true
+  contact_tcp_mm:
+  - 501.22
+  - -164.01
+  - 54.7
+  screw:
+    tilt_start_deg: 1.03
+    force_start_n: -1.79
+    catch_drops_mm:
+    - -0.08
+    - -0.1
+    - -0.06
+    - -0.06
+    - -0.09
+    - -0.1
+    - -0.08
+    - -0.08
+    - -0.1
+    - -0.09
+    - -0.08
+    - -0.09
+    catch_tcp_xy_from_contact_mm:
+    - - -0.03
+      - -0.02
+    - - 0.14
+      - 0.31
+    - - 0.04
+      - 0.36
+    - - -0.09
+      - 0.06
+    - - -0.05
+      - -0.04
+    - - 0.09
+      - 0.23
+    - - 0.04
+      - 0.3
+    - - -0.09
+      - -0.07
+    - - -0.07
+      - -0.11
+    - - 0.04
+      - 0.2
+    - - 0.02
+      - 0.23
+    - - -0.08
+      - -0.07
+    caught: false
+    tilt_after_catch_deg: 1.05
+    force_after_catch_n: -0.51
+    drop_end_mm: 1.81
+    tilt_end_deg: 1.18
+    force_end_n: -6.69
+result: ok
+duration_s: 60.07
+arrival_errors_mm:
+- - 0.04
+  - -1.68
+  - -0.63
+- - 0.29
+  - -3.89
+  - 3.83
+- - -0.98
+  - 2.07
+  - -2.24
+- - -2.74
+  - -0.19
+  - -2.04
+- - 1.28
+  - 2.51
+  - 4.06
+- - 2.43
+  - -0.22
+  - 2.17
+- - 3.02
+  - 0.14
+  - 1.66
+- - 3.26
+  - 0.59
+  - 1.37
+- - 3.31
+  - 0.88
+  - 1.25
+- - 4.45
+  - -0.7
+  - -1.43

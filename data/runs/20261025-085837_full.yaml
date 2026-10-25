@@ -1,0 +1,27 @@
+step: full
+started: '2026-10-25T08:58:23.045062'
+pick:
+  time_s:
+    at_observe_nut: 3.95
+    nut_located: 4.72
+    landed: 9.3
+    closed: 10.81
+  nut_mm:
+  - 398.08
+  - 268.31
+  - 15.96
+  landed_tcp_mm:
+  - 399.86
+  - 266.37
+  - 16.27
+place:
+  time_s: {}
+result: aborted by user
+duration_s: 14.08
+arrival_errors_mm:
+- - 1.59
+  - -1.66
+  - -1.97
+- - 3.67
+  - -3.26
+  - 6.3

@@ -1,0 +1,124 @@
+step: full
+started: '2026-10-25T11:21:01.570330'
+pick:
+  nut_mm:
+  - 378.08
+  - 253.86
+  - 15.96
+  landed_tcp_mm:
+  - 382.65
+  - 251.75
+  - 13.84
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 433.02
+    - -145.37
+    - 31.96
+    offset_from_axis_mm: 81.12
+    size_mm: 13.85
+    width_ratio: 0.718
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 434.07
+      - -149.39
+      - 31.96
+      offset_from_axis_mm: 2.62
+      size_mm: 11.29
+      width_ratio: 0.748
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 434.07
+    - -151.89
+    - 31.96
+    centred_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+  contact: true
+  contact_tcp_mm:
+  - 434.27
+  - -152.09
+  - 53.08
+  screw:
+    tilt_start_deg: 1.61
+    force_start_n: 0.02
+    catch_drops_mm:
+    - -0.06
+    - -0.07
+    - -0.0
+    - -0.0
+    - -0.05
+    - -0.05
+    - -0.01
+    - -0.0
+    - -0.04
+    - -0.05
+    - -0.0
+    - -0.0
+    catch_tcp_xy_from_contact_mm:
+    - - 0.13
+      - -0.19
+    - - 0.21
+      - 0.02
+    - - 0.01
+      - 0.12
+    - - -0.13
+      - -0.2
+    - - -0.05
+      - -0.26
+    - - 0.07
+      - -0.01
+    - - -0.02
+      - 0.07
+    - - -0.16
+      - -0.21
+    - - -0.08
+      - -0.28
+    - - 0.05
+      - 0.02
+    - - -0.03
+      - 0.09
+    - - -0.16
+      - -0.22
+    caught: false
+    tilt_after_catch_deg: 1.64
+    force_after_catch_n: -0.29
+    drop_end_mm: 1.57
+    tilt_end_deg: 1.73
+    force_end_n: -2.07
+result: ok
+duration_s: 60.94
+arrival_errors_mm:
+- - 0.2
+  - -2.02
+  - -0.58
+- - 0.23
+  - -3.9
+  - 3.86
+- - -1.13
+  - 2.41
+  - -2.13
+- - 2.7
+  - -2.74
+  - -1.28
+- - 1.37
+  - 3.38
+  - 3.79
+- - 1.02
+  - 3.54
+  - 3.12
+- - 0.84
+  - 3.44
+  - 3.11
+- - -0.22
+  - 0.44
+  - -2.17
