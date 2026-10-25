@@ -30,6 +30,7 @@ setup(
             "reach_test = sa_tasks.reach_test:main",
             "screw_test = sa_tasks.screw_test:main",
             "goto_poses = sa_tasks.goto_poses:main",
+            "motion_test = sa_tasks.motion_test:main",
         ],
     },
 )
