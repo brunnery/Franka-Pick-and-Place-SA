@@ -91,6 +91,7 @@ def main():
     directory.mkdir(parents=True, exist_ok=True)
     record = {"board": he["board"], "t_flange_camera_mm": sequences.rounded(t_fc[:3, 3]),
               "camera_tilt_in_flange_deg_now": cfg["frames"]["camera_tilt_in_flange_deg"],
+              "camera_rotation_about_z_deg_now": cfg["frames"]["camera_rotation_about_z_deg"],
               "views": []}
     try:
         robot = FrankaRobot(node, cfg)
@@ -142,9 +143,10 @@ def main():
                                                "max": round(float(np.max(normals)), 3)},
             "views_used": len(used)}
         result = record["result"]
-        log.info("camera_tilt_in_flange_deg: [%.2f, %.2f] (now %s), rotation about z %.2f deg",
-                 *result["camera_tilt_in_flange_deg"], cfg["frames"]["camera_tilt_in_flange_deg"],
-                 result["rotation_about_z_deg"])
+        log.info("camera_tilt_in_flange_deg: [%.2f, %.2f] (now %s), camera_rotation_about_z_deg "
+                 "%.2f (now %s)", *result["camera_tilt_in_flange_deg"],
+                 cfg["frames"]["camera_tilt_in_flange_deg"], result["rotation_about_z_deg"],
+                 cfg["frames"]["camera_rotation_about_z_deg"])
         log.info("fit: residual RMS %.2f mm (max %.2f) over %d views; board normal %.2f deg from "
                  "vertical (max %.2f)", result["residual_mm"]["rms"], result["residual_mm"]["max"],
                  len(used), result["board_normal_from_vertical_deg"]["mean"],
