@@ -31,8 +31,9 @@ frames:
   # y), never valid on both sides of the table: the robot stopped short against its direction
   # of travel and the camera axis is tilted. Both are modelled since 22.10. (fine_positioning,
   # camera_tilt_in_flange_deg), so this stays 0 unless a residual is measured
-  # 25.10. (new gripper, same geometry): bottom plate constantly ~1.5 mm off in +y on the stud
-  target_correction_mm: [0.0, -1.5]
+  # 25.10. (new gripper, same geometry): bottom plate constantly off in +y on the stud;
+  # -1.5 was not enough, another -1 by eye
+  target_correction_mm: [0.0, -2.5]
 
 objects:
   nut:
