@@ -344,8 +344,8 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     beside[:2, 3] += place["approach_from_mm"]
     move_to(robot, beside, cfg, lead=LEAD_XY)
     approach = move_to(robot, approach, cfg, precise=True)
-    # Check of 25.10.: the plate hangs on a turning disk with play and may not tilt with the
-    # flange; if so, its real offset changes by this shift (record, compare across the table)
+    # Record only: how far the flange tilt moves a rigid TCP here (25.10.: 0-2 mm, varied from
+    # run to run at the same place; a swinging-plate model built on it was dropped)
     record["approach_tilt_shift_mm"] = rounded(frames.tilt_shift_mm(
         robot.flange_pose(), config.rotation_down(cfg), tcp_offset))
     if approach_only:
