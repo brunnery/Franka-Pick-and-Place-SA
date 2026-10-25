@@ -164,8 +164,9 @@ place:
         radius_mm: 2.0           # screw xy 2000 N/m (at 400 N/m 2-4 mm moved only 0.2-0.5 mm)
         points_per_circle: 4
     # ~2.3 N + weight (50 mm pressed too hard); 23.10.: speed 200 too weak, 3000 -> 5000 ms
-    # 25.10. depth 15 -> 30 (~4.5 N + weight): at 15 the force at the end was -0.7 N, no pressure
-    tighten: {duration_ms: 5000, speed: 255, depth_mm: 30.0}
+    # 25.10. depth 15 -> 30 -> 60: at 30 (~4.5 N on paper) only ~1 N measured (force_*_n: pressing
+    # onto the stud reads NEGATIVE, checked by hand); 60 tests whether the force scales with depth
+    tighten: {duration_ms: 5000, speed: 255, depth_mm: 60.0}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
   # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)
