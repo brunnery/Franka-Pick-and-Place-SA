@@ -1,6 +1,6 @@
 """ChArUco board for the camera-in-flange calibration (hand_eye), as PNG and A4 PDF. No ROS.
 
-  ros2 run sa_tasks charuco_board  # -> calibration/charuco_<x>x<y>_<square>mm.{png,pdf}
+  ros2 run sa_tasks charuco_board  # -> data/grid/charuco_<x>x<y>_<square>mm.{png,pdf}
 
 Board from hand_eye.board in tasks.yaml. Print the PDF at 100 % (no "fit to page"), measure one
 square with a caliper and enter it as hand_eye.board.square_mm; glue the sheet flat on something
@@ -45,7 +45,7 @@ def main():
     cv2.putText(page, label, (left, top - px_per_square // 6), cv2.FONT_HERSHEY_SIMPLEX,
                 LABEL_SCALE * dpi / 300.0, 0, max(1, int(dpi / 150)))
 
-    directory = config.PACKAGE_DIR.parents[2] / "calibration"
+    directory = config.PACKAGE_DIR.parents[2] / "data" / "grid"
     name = f"charuco_{b['squares_x']}x{b['squares_y']}_{b['square_mm']:g}mm"
     cv2.imwrite(str(directory / f"{name}.png"), page)
     Image.fromarray(page).save(directory / f"{name}.pdf", resolution=dpi)
