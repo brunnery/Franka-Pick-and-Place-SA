@@ -307,8 +307,8 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
 
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                     poses: config.Poses, record: dict, approach_only: bool = False) -> None:
-    """Step 2: observation pose over the stud -> stud search -> one move to just above the
-    thread -> descend until contact -> screw (screw_on) -> release -> back up.
+    """Step 2: observation pose over the stud -> stud search -> to beside the approach pose,
+    then the last bit always from the same side -> descend until contact -> screw (screw_on) -> release -> back up.
     approach_only: stop above the thread tip and hold (centring check, no gripper)."""
     table_z = poses.table_z()
     stud = cfg["objects"]["stud"]
@@ -326,7 +326,12 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     approach = frames.flange_for_tcp([*found["position_mm"][:2],
                                       tip_z + place["approach_clearance_mm"]],
                                      config.rotation_down(cfg), tcp_offset)
-    approach = move_to(robot, approach, cfg, lead=LEAD_XY, precise=True)
+    # First beside the target, then the last short move always in the same direction: the
+    # play of the gripper's turning disk then always ends up on the same side (25.10.)
+    beside = approach.copy()
+    beside[:2, 3] += place["approach_from_mm"]
+    move_to(robot, beside, cfg, lead=LEAD_XY)
+    approach = move_to(robot, approach, cfg, precise=True)
     if approach_only:
         reached = frames.tcp_position(robot.flange_pose(), tcp_offset)
         log.info("approach only: TCP %.1f mm above the thread tip; holding here",

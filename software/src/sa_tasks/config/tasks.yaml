@@ -31,9 +31,10 @@ frames:
   # y), never valid on both sides of the table: the robot stopped short against its direction
   # of travel and the camera axis is tilted. Both are modelled since 22.10. (fine_positioning,
   # camera_tilt_in_flange_deg), so this stays 0 unless a residual is measured
-  # 25.10. (new gripper, same geometry): bottom plate constantly off in +y on the stud;
-  # -1.5 was not enough, another -1 by eye
-  target_correction_mm: [0.0, -2.5]
+  # 25.10.: -1.5 and -2.5 in y by eye did not fit both sides of the table (play of the turning
+  # disk, direction-dependent) -> 0 again with the fixed approach direction (place.approach_from_mm),
+  # to be set once for that direction
+  target_correction_mm: [0.0, 0.0]
 
 objects:
   nut:
@@ -116,6 +117,11 @@ place:
     lost_radius_mm: 20.0       # largest object within this radius of the axis is judged
   # 21.10. approach_only tests at -5/-10 (plate over the bare thread): xy right every time
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
+  # The approach first goes to this xy offset (base frame) from the approach pose, then the last
+  # short move always runs the same way (here -y): the play of the gripper's turning disk then
+  # always ends up on the same side, so one constant target_correction_mm fits (25.10.: with the
+  # direction depending on the side of the stud the plate was off one way or the other)
+  approach_from_mm: [0.0, 10.0]
   descend_speed_mm_s: 5.0      # contact search
   max_descend_mm: 17.0         # below the approach pose (12 until 21.10.)
   # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the
