@@ -38,7 +38,9 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
     limits, rate = config.motion_limits(cfg), cfg["robot"]["stream_rate_hz"]
     tolerance = cfg["robot"]["arrival_tolerance_mm"]
     robot.follow(plan_move(robot.flange_pose(), goal, limits, rate, lead))
-    robot.wait_until_arrived(goal, tolerance)
+    # precise: the reference is re-sent while waiting, so the controller's integral term stays
+    # zero and the error is measured and corrected as the next streamed path will see it
+    robot.wait_until_arrived(goal, tolerance, hold=goal if precise else None)
     reference = goal
     if not precise:
         return reference
@@ -55,7 +57,7 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
         corrected = reference.copy()
         corrected[:2, 3] -= fine["gain"] * error
         robot.follow(plan_move(reference, corrected, limits, rate))
-        robot.wait_until_arrived(corrected, tolerance)
+        robot.wait_until_arrived(corrected, tolerance, hold=corrected)
         reference = corrected
     log.info("fine positioning: TCP xy error x %+.1f y %+.1f mm, reference shifted by "
              "x %+.1f y %+.1f mm", *tcp_error(), *(reference[:2, 3] - goal[:2, 3]))

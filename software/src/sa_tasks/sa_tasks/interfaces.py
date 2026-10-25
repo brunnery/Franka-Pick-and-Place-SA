@@ -43,7 +43,8 @@ class Robot(Protocol):
     def force_z(self) -> float: ...                                # external force along z_B, N
     def set_mode(self, mode: int) -> None: ...
     def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None) -> bool: ...
-    def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float) -> None: ...
+    def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float,
+                           hold: Optional[np.ndarray] = None) -> None: ...
 
 
 class Gripper(Protocol):
@@ -93,7 +94,8 @@ class MockRobot:
                 return True
         return False
 
-    def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float) -> None:
+    def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float,
+                           hold: Optional[np.ndarray] = None) -> None:
         error = float(np.linalg.norm(self.pose[:3, 3] - goal[:3, 3]))
         if error > tolerance_mm:
             raise RuntimeError(f"[mock robot] not at goal ({error:.1f} mm)")

@@ -129,14 +129,23 @@ class FrankaRobot:
         return False
 
     def wait_until_arrived(self, goal: Optional[np.ndarray], tolerance_mm: float,
-                           settle_s: Optional[float] = None) -> None:
+                           settle_s: Optional[float] = None,
+                           hold: Optional[np.ndarray] = None) -> None:
         """Arrived = standing still (below arrival_speed_mm_s for settle_s) within
         tolerance_mm of the goal (goal None: anywhere). The impedance controller keeps a few
-        mm of steady-state error; the vision uses the measured pose, so that is harmless."""
+        mm of steady-state error; the vision uses the measured pose, so that is harmless.
+        hold: publish this flange reference with every poll. Every reference message resets the
+        controller's integral term, so the arm then stands on the spring alone, as it does
+        while a path is streamed (25.10.: after the fine positioning the descent wiped the
+        integral and the arm gave way by up to ~1 mm)."""
         settle = self.cfg["arrival_settle_s"] if settle_s is None else settle_s
+        hold_msg = None if hold is None else matrix_to_pose_msg(
+            hold @ self.state.flange_and_ee()[1])
         deadline = time.monotonic() + self.cfg["arrival_timeout_s"]
         still_since, last = None, None
         while True:
+            if hold_msg is not None:
+                self.reference_pub.publish(hold_msg)
             position, now = self.flange_pose()[:3, 3], time.monotonic()
             error = np.zeros(3) if goal is None else position - goal[:3, 3]
             speed = np.inf if last is None else np.linalg.norm(position - last[0]) / (now - last[1])
