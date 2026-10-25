@@ -33,7 +33,7 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
             precise: bool = False) -> np.ndarray:
     """One continuous move of the flange from where it is to goal, then wait for arrival.
     precise: then shift the reference by the remaining xy error of the TCP (from the measured
-    flange pose, so a tilt of the arm counts too) until it is within
+    flange pose, so a tilt of the arm counts too, times frames.plate_tilt_gain) until it is within
     fine_positioning.tolerance_mm (THEORY 5). Returns the last reference sent."""
     limits, rate = config.motion_limits(cfg), cfg["robot"]["stream_rate_hz"]
     tolerance = cfg["robot"]["arrival_tolerance_mm"]
@@ -47,7 +47,8 @@ def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = Non
     target = frames.tcp_position(goal, tcp_offset)[:2]
 
     def tcp_error() -> np.ndarray:
-        return frames.tcp_position(robot.flange_pose(), tcp_offset)[:2] - target
+        return frames.plate_position(robot.flange_pose(), goal[:3, :3], tcp_offset,
+                                     cfg["frames"]["plate_tilt_gain"])[:2] - target
     for _ in range(fine["max_steps"]):
         error = tcp_error()
         if np.linalg.norm(error) <= fine["tolerance_mm"]:
@@ -337,7 +338,8 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     record["approach_tilt_shift_mm"] = rounded(frames.tilt_shift_mm(
         robot.flange_pose(), config.rotation_down(cfg), tcp_offset))
     if approach_only:
-        reached = frames.tcp_position(robot.flange_pose(), tcp_offset)
+        reached = frames.plate_position(robot.flange_pose(), config.rotation_down(cfg), tcp_offset,
+                                        cfg["frames"]["plate_tilt_gain"])
         log.info("approach only: TCP %.1f mm above the thread tip; holding here",
                  reached[2] - tip_z)
         record["approach_reached_tcp_mm"] = rounded(reached)
