@@ -83,8 +83,9 @@ def main():
     executor.add_node(node)
     spinner = threading.Thread(target=executor.spin, daemon=True)
     spinner.start()
-    record = {"controller": controller_gains(), "max_speed_mm_s":
-              cfg["robot"]["motion"]["max_speed_mm_s"], "moves": []}
+    motion = cfg["robot"]["motion"]
+    record = {"controller": controller_gains(), "max_speed_mm_s": motion["max_speed_mm_s"],
+              "max_speed_z_mm_s": motion["max_speed_z_mm_s"], "moves": []}
     try:
         robot = FrankaRobot(node, cfg)
         robot.set_mode(cfg["robot"]["modes"]["normal"])

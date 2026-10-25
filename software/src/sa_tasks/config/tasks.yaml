@@ -65,7 +65,11 @@ robot:
     tighten: 5                 # tightening: as screw, soft xy (23.10.)
   stream_rate_hz: 100.0        # reference poses per second while moving
   motion:
-    max_speed_mm_s: 250.0      # peak speed of every axis group (controller limit 300; 150 until 21.10.)
+    max_speed_mm_s: 250.0      # peak speed in x, y (controller limit 300; 150 until 21.10.)
+    # z separately (25.10., motion_test): at 250 mm/s the z moves jittered (0.2-0.9 mm RMS, xy 0.01-0.07):
+    # tool weight + damping of the absolute speed above the force clamp (saturation.max_force
+    # 18 N); at 150 z was smooth (0.01 mm), while xy at 150 stuck and jumped (stick-slip)
+    max_speed_z_mm_s: 150.0
     max_angular_speed_deg_s: 20.0
     lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
     min_duration_s: 1.0

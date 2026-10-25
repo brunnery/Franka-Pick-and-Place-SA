@@ -26,7 +26,8 @@ def min_jerk(s: float) -> float:
 
 @dataclass(frozen=True)
 class MotionLimits:
-    max_speed_mm_s: float        # peak speed of every axis group
+    max_speed_mm_s: float        # peak speed in x, y
+    max_speed_z_mm_s: float      # peak speed in z
     max_angular_speed_deg_s: float
     lead_fraction: float         # lambda: the leading axes finish at lambda * T
     min_duration_s: float
@@ -52,7 +53,7 @@ def duration(start: np.ndarray, goal: np.ndarray, limits: MotionLimits, lead: st
     lead_z = limits.lead_fraction if lead == LEAD_Z else 1.0
     times = [
         MIN_JERK_PEAK_FACTOR * xy / (lead_xy * limits.max_speed_mm_s),
-        MIN_JERK_PEAK_FACTOR * z / (lead_z * limits.max_speed_mm_s),
+        MIN_JERK_PEAK_FACTOR * z / (lead_z * limits.max_speed_z_mm_s),
         MIN_JERK_PEAK_FACTOR * angle / limits.max_angular_speed_deg_s,
         limits.min_duration_s,
     ]

@@ -35,8 +35,8 @@ def load_tasks(path: Path = DEFAULT_TASKS) -> dict:
 
 def motion_limits(cfg: dict) -> MotionLimits:
     m = cfg["robot"]["motion"]
-    return MotionLimits(m["max_speed_mm_s"], m["max_angular_speed_deg_s"], m["lead_fraction"],
-                        m["min_duration_s"])
+    return MotionLimits(m["max_speed_mm_s"], m["max_speed_z_mm_s"], m["max_angular_speed_deg_s"],
+                        m["lead_fraction"], m["min_duration_s"])
 
 
 def rotation_down(cfg: dict) -> np.ndarray:
