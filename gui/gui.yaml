@@ -1,0 +1,171 @@
+# Buttons of the SA launcher (gui/sa_gui.py). Every button runs its command in a new
+# terminal window, from the repository root, with the environment below sourced.
+# Edit freely: add a button = add an entry. Placeholders {name} come from `variables`
+# (write {{ and }} for a literal brace).
+#
+# Entry keys:
+#   label    button text
+#   command  bash command line
+#   confirm  true -> ask the robot safety question first (robot_confirm_text)
+#   uses     hardware the command starts or opens itself: robot, camera, arduino. Starting a
+#            second command that uses the same one asks first (two drivers would fight).
+#   requires program that must be installed (checked before starting)
+#   tip      extra tooltip text (the command itself is always shown)
+
+environment:
+  # Sourced in this order if the file exists; relative paths start at the repository root.
+  # Jazzy: change the first line.
+  setup_files:
+    - /opt/ros/humble/setup.bash
+    - ~/franka_ros2_ws/install/setup.bash
+    - software/install/setup.bash
+  exports:
+    PYTHONNOUSERSITE: "1"      # NumPy 2 in ~/.local breaks the ROS OpenCV (CLAUDE.md)
+    PYTHONUNBUFFERED: "1"
+
+# First program found is used; {title} = button label. "--" ends the terminal's options.
+terminals:
+  - [gnome-terminal, "--title={title}", "--"]
+  - [xterm, -T, "{title}", -e]
+
+# Stud side switch: swaps the x/y of observe_nut and observe_stud in this file
+poses_file: software/src/sa_tasks/config/poses.yaml
+
+robot_confirm_text: >-
+  The robot will move. Check first: camera faces away from the robot base (+x),
+  work area clear, hand on the emergency stop.
+
+viewers:                       # embedded image panes (need a sourced ROS 2)
+  - {title: Camera, topic: /image_raw}
+  - {title: Vision debug, topic: /vision/debug}
+viewer_rate_hz: 10.0           # redraw rate of the panes
+viewer_stale_s: 2.0            # no image for this long -> "no image"
+
+variables:
+  # Same board as gripper.port in sa_tasks/config/tasks.yaml
+  arduino_port: /dev/serial/by-id/usb-Arduino_UNO_R4_Minima_380B321437323335E07233324B572D3A-if00
+  arduino_fqbn: arduino:renesas_uno:minima
+
+groups:
+  - name: Runs (start robot + vision + gripper themselves)
+    entries:
+      - label: Full run (sa_full_all)
+        command: ros2 launch software/launch/task.launch.py step:=full view:=false
+        confirm: true
+        uses: [robot, camera, arduino]
+        tip: "Ctrl-C / stop only once 'record: ...' is printed"
+      - label: Pick only (sa_pick_all)
+        command: ros2 launch software/launch/pick.launch.py view:=false
+        confirm: true
+        uses: [robot, camera, arduino]
+      - label: Place + screw
+        command: ros2 launch software/launch/task.launch.py step:=place_screw view:=false
+        confirm: true
+        uses: [robot, camera, arduino]
+      - label: Bolt approach only (sa_place_approach)
+        command: >-
+          ros2 launch software/launch/task.launch.py step:=place_screw approach_only:=true
+          view:=false
+        confirm: true
+        uses: [robot, camera, arduino]
+        tip: stud search, then hold 5 mm above the thread tip (check the centring)
+
+  - name: Robot
+    entries:
+      - label: Robot / controller (sa_robot)
+        command: >-
+          ros2 launch cartesian_impedance_control cartesian_impedance_controller.launch.py
+          record:=false
+        confirm: true
+        uses: [robot]
+        tip: needed by the tests below; moves to the controller start pose
+      - label: Robot state only (teaching)
+        command: ros2 launch software/launch/robot_state.launch.py
+        uses: [robot]
+        tip: no controller, guide the arm by hand
+      - label: Teach poses
+        command: ros2 run sa_tasks teach_poses
+        tip: "needs 'Robot state only'. save observe_nut / save observe_stud, table, list"
+
+  - name: Robot tests (need sa_robot running)
+    entries:
+      - label: Go to observation poses
+        command: ros2 run sa_tasks goto_poses
+        confirm: true
+        tip: observe_nut, then observe_stud, each after Enter in its terminal
+      - label: Jitter test (motion_test)
+        command: ros2 run sa_tasks motion_test
+        confirm: true
+        tip: moves of a run without gripper/vision, down to low_tcp_height_mm; starts after Enter
+      - label: Reach test
+        command: ros2 run sa_tasks reach_test
+        confirm: true
+      - label: Hand-eye calibration
+        command: ros2 run sa_tasks hand_eye
+        confirm: true
+        tip: also needs the camera (Camera only); prints values, writes nothing to tasks.yaml
+
+  - name: Vision
+    entries:
+      - label: Vision nut
+        command: ros2 launch software/launch/vision.launch.py view:=false
+        uses: [camera]
+      - label: Vision bolt (sa_vision_bolt)
+        command: ros2 launch software/launch/vision.launch.py target:=stud distance_mm:=425 view:=false
+        uses: [camera]
+      - label: Camera only
+        command: ros2 launch software/launch/camera.launch.py view:=false
+        uses: [camera]
+
+  - name: Gripper / Arduino
+    entries:
+      - label: Arduino test (sa_arduino_test)
+        command: ros2 run sa_tasks gripper_test
+        uses: [arduino]
+        tip: "o open, c close, r/l [ms] [speed] M4, s stop, q quit"
+      - label: Screw test (gripper only)
+        command: ros2 run sa_tasks screw_test
+        uses: [arduino]
+        tip: "Enter = one run as place.screw, <ms> [speed], q quit"
+      - label: Upload iris_gripper firmware
+        command: arduino-cli compile --upload -b {arduino_fqbn} -p {arduino_port} arduino/iris_gripper
+        uses: [arduino]
+        requires: arduino-cli
+      - label: Upload motor test M2/M3
+        command: arduino-cli compile --upload -b {arduino_fqbn} -p {arduino_port} arduino/test_m2_m3
+        uses: [arduino]
+        requires: arduino-cli
+        tip: replaces the iris firmware until you upload it again
+      - label: Upload motor test M4
+        command: arduino-cli compile --upload -b {arduino_fqbn} -p {arduino_port} arduino/test_m4
+        uses: [arduino]
+        requires: arduino-cli
+        tip: replaces the iris firmware until you upload it again
+
+  - name: Last run / checks
+    entries:
+      - label: Screwing of the last run
+        command: >-
+          sed -n '/  contact:/,/^result/p' $(ls -t data/runs/*_full.yaml | head -1)
+          | grep -v "^    - - \|^      - "
+      - label: Pick landing of the last run
+        command: grep -A3 landed_tcp $(ls -t data/runs/*_full.yaml | head -1)
+      - label: Lost control cycles (live)
+        command: >-
+          ros2 topic echo /franka_robot_state_broadcaster/robot_state
+          --field control_command_success_rate | grep -v -e '^---' -e '^1.0$'
+      - label: Unit tests
+        command: >-
+          for p in sa_tasks sa_vision; do
+          (cd software/src/$p && echo "== $p" && python3 -m pytest test -q); done
+      - label: Build sa packages
+        command: >-
+          cd software && colcon build --symlink-install
+          --packages-select sa_interfaces sa_tasks sa_vision
+
+  - name: External viewers
+    entries:
+      - label: rqt_image_view camera
+        command: ros2 run rqt_image_view rqt_image_view /image_raw
+      - label: rqt_image_view debug
+        command: ros2 run rqt_image_view rqt_image_view /vision/debug

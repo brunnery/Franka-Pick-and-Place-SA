@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Start the SA launcher window (gui/sa_gui.py). Run from a normal terminal, not the
+# VS Code snap terminal (its snap libraries crash Qt programs).
+# Install once:  ln -s <repo>/gui/sa_gui ~/.local/bin/sa_gui
+# Temporary add-on, see gui/README.md.
+
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+DISTRO="${ROS_DISTRO:-$(ls /opt/ros | head -n 1)}"
+
+export PYTHONNOUSERSITE=1  # NumPy 2 in ~/.local breaks the ROS OpenCV
+# ROS only for the image panes; the buttons source their own environment
+if [ -f "/opt/ros/$DISTRO/setup.bash" ]; then
+    source "/opt/ros/$DISTRO/setup.bash"
+else
+    echo "ROS 2 not found in /opt/ros: image panes off" >&2
+fi
+exec python3 "$HERE/sa_gui.py" "$@"
