@@ -29,16 +29,6 @@ def rounded(values) -> list:
     return [round(float(v), 2) for v in values]
 
 
-def stopwatch(record: dict) -> Callable[[str], None]:
-    """mark(label): record["time_s"][label] = seconds since this call (where a run spends
-    its time)."""
-    started, times = time.monotonic(), record.setdefault("time_s", {})
-
-    def mark(label: str) -> None:
-        times[label] = round(time.monotonic() - started, 2)
-    return mark
-
-
 def move_to(robot: Robot, goal: np.ndarray, cfg: dict, lead: Optional[str] = None,
             precise: bool = False) -> np.ndarray:
     """One continuous move of the flange from where it is to goal, then wait for arrival.
@@ -194,15 +184,12 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: confi
     above it and on without stopping -> spiral search down until the bottom plate rests on the
     table, the open iris over the nut -> close -> back up. back_up False (full run): stay on the table, the next move
     (to observe_stud, z leading) lifts the nut in one motion."""
-    mark = stopwatch(record)
     table_z = poses.table_z()
     observe = observation_pose(poses, "observe_nut", cfg)
     robot.set_mode(cfg["robot"]["modes"]["normal"])
     vision.prepare(TARGET_NUT)
     move_while(robot, observe, cfg, gripper.open)
-    mark("at_observe_nut")
     nut = record["nut_mm"] = locate_nut(robot, vision, cfg, table_z)
-    mark("nut_located")
 
     # Down to just above the nut and straight on (no stop, no fine positioning there; 23.10.)
     # into a spiral down onto the table: if the target is off by up to the spiral radius, the
@@ -222,12 +209,9 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: confi
     landed = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])
     record["landed_tcp_mm"] = rounded(landed)
     log.info("landed: TCP %.1f mm above the table", landed[2] - table_z)
-    mark("landed")
     gripper.close()
-    mark("closed")
     if back_up:
         move_to(robot, observe, cfg, lead=LEAD_Z)
-        mark("back")
 
 
 def position_check(found: dict, reached_tcp: np.ndarray) -> dict:
@@ -326,7 +310,6 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     """Step 2: observation pose over the stud -> stud search -> one move to just above the
     thread -> descend until contact -> screw (screw_on) -> release -> back up.
     approach_only: stop above the thread tip and hold (centring check, no gripper)."""
-    mark = stopwatch(record)
     table_z = poses.table_z()
     stud = cfg["objects"]["stud"]
     place = cfg["place"]
@@ -336,9 +319,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     robot.set_mode(modes["normal"])
     vision.prepare(TARGET_STUD)
     move_to(robot, observe, cfg)
-    mark("at_observe_stud")
     found = record["stud"] = find_stud(robot, vision, cfg, table_z, observe, record)
-    mark("stud_found")
 
     # The nut sits in the iris with its bottom face at the TCP plane
     tip_z = table_z + stud["top_height_mm"]
@@ -346,7 +327,6 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                                       tip_z + place["approach_clearance_mm"]],
                                      config.rotation_down(cfg), tcp_offset)
     approach = move_to(robot, approach, cfg, lead=LEAD_XY, precise=True)
-    mark("approached")
     if approach_only:
         reached = frames.tcp_position(robot.flange_pose(), tcp_offset)
         log.info("approach only: TCP %.1f mm above the thread tip; holding here",
@@ -367,13 +347,9 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
         log.warning("no contact within %.0f mm: screwing at the lowest point anyway",
                     place["max_descend_mm"])
     contact = robot.flange_pose()
-    mark("contact")
     record["contact_tcp_mm"] = rounded(frames.tcp_position(contact, tcp_offset))
     record["screw"] = {}
     screw_on(robot, gripper, cfg, contact, free_fz, record["screw"])
-    mark("screwed")
     stiffen_where_it_is(robot, cfg)
     gripper.open()
-    mark("released")
     move_to(robot, observe, cfg, lead=LEAD_Z)
-    mark("back")

@@ -96,11 +96,9 @@ pick:
   # table - press_depth_mm: covers a target error up to about radius_mm (THEORY 5)
   spiral:
     start_height_mm: 10.0
-    # 25.10. TEST: radius 0 = straight down, no search (positioning is exact now). With the
-    # spiral: radius 6.0, duration 2.5 (4.0 until 21.10.)
-    radius_mm: 0.0
+    radius_mm: 6.0
     turns: 2.0
-    duration_s: 1.0            # 12 mm down, min-jerk: peak 22 mm/s
+    duration_s: 2.5            # 4.0 until 21.10.
 
 place:
   # Stud search (THEORY 2.0): candidates locked at observe_stud, the camera centred over

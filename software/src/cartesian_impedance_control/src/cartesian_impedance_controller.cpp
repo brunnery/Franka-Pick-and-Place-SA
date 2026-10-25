@@ -83,7 +83,8 @@ void CartesianImpedanceController::calculate_tau_friction(){
 
 void CartesianImpedanceController::reference_pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
 {
-    // Handle the incoming pose message (no print: sa_tasks streams at 100 Hz, it flooded the log)
+    // Handle the incoming pose message
+    std::cout << "received reference posistion as " <<  msg->position.x << ", " << msg->position.y << ", " << msg->position.z << std::endl;
     position_d_target_ << msg->position.x, msg->position.y, msg->position.z;
     orientation_d_target_.coeffs() << msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w;
     I_error.setZero(); //reset integral error when a new target is received 
