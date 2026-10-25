@@ -115,6 +115,6 @@
         # nut can swing on the thread while it turns (not perfectly concentric)
         tighten_stiffness: [400.0, 400.0, 150.0, 4.0, 4.0, 20.0]
       debug:
-        publish_rate: 1000.0       # [Hz] (1000 = every cycle, no aliasing; ~1 MB/s in a bag) /cartesian_impedance_controller/debug (Float64MultiArray, names in layout); 0.0 = off
+        publish_rate: 0.0          # [Hz] 25.10.: 1000 -> 0, load in the control loop; 1000 = every cycle for bags (~1 MB/s) /cartesian_impedance_controller/debug (Float64MultiArray, names in layout); 0.0 = off
 
       # Tuning log (sets 1-3 made it worse, all changed at once): docs/controller-tuning.md. Change ONE value per test.
