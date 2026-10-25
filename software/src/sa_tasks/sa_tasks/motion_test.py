@@ -31,7 +31,8 @@ CONTROLLER_KEYS = ("damping", "modes", "filter_params", "delta_tau_max", "satura
 
 
 class Sampler:
-    """Polls the latest robot state in a thread: (t, x, y, z of the EE in mm, success rate)."""
+    """Polls the latest robot state in a thread: (robot time, x, y, z of the EE in mm,
+    success rate)."""
 
     def __init__(self, robot: FrankaRobot, period_s: float):
         self.robot, self.period = robot, period_s
@@ -52,8 +53,8 @@ class Sampler:
         while self.running:
             msg = self.robot.state.msg
             if msg is not None and msg is not last:
-                p = msg.o_t_ee.pose.position
-                self.samples.append((time.monotonic(), p.x * M_TO_MM, p.y * M_TO_MM,
+                p = msg.o_t_ee.pose.position  # time: robot clock, not when it was polled
+                self.samples.append((msg.time, p.x * M_TO_MM, p.y * M_TO_MM,
                                      p.z * M_TO_MM, msg.control_command_success_rate))
                 last = msg
             time.sleep(self.period)
@@ -71,6 +72,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
     cfg = config.load_tasks()
     test = cfg["motion_test"]
+    if test["max_speed_mm_s"]:  # only for this test, the runs keep robot.motion
+        cfg["robot"]["motion"]["max_speed_mm_s"] = test["max_speed_mm_s"]
     poses = config.Poses()
     table_z = poses.table_z()
     tcp_offset = cfg["frames"]["flange_to_tcp_mm"]

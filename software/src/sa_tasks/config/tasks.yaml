@@ -169,6 +169,7 @@ motion_test:
   cycles: 2
   poses: [observe_nut, observe_stud]
   low_tcp_height_mm: 60.0       # bottom of the vertical moves; safely above the stud tip (39 mm)
+  max_speed_mm_s: 0.0           # > 0: overrides robot.motion.max_speed_mm_s for this test only
   sample_period_s: 0.002        # polling of the robot state (published at 1 kHz)
   vibration_window_s: 0.05      # moving average: what changes faster counts as jitter (> ~20 Hz)
 

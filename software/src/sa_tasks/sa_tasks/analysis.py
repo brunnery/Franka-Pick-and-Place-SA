@@ -7,9 +7,18 @@ def vibration_rms_mm(t_s: np.ndarray, positions_mm: np.ndarray, window_s: float)
     fast part of the motion (jitter), not the smooth move itself. positions_mm: (n, 3).
     Fewer samples than one window: [0, 0, 0]."""
     t_s, positions_mm = np.asarray(t_s, float), np.asarray(positions_mm, float)
+    later = np.concatenate([[True], np.diff(t_s) > 0])  # the same state polled twice
+    t_s, positions_mm = t_s[later], positions_mm[later]
     if len(t_s) < 3:
         return [0.0, 0.0, 0.0]
-    n = int(round(window_s / float(np.median(np.diff(t_s))))) | 1  # odd
+    # Polled samples are unevenly spaced: resample onto an even grid first, else the uneven
+    # spacing at speed shows up as jitter
+    step = float(np.median(np.diff(t_s)))
+    grid = np.arange(t_s[0], t_s[-1], step)
+    positions_mm = np.stack([np.interp(grid, t_s, positions_mm[:, axis])
+                             for axis in range(positions_mm.shape[1])], axis=1)
+    t_s = grid
+    n = int(round(window_s / step)) | 1  # odd
     if n < 3 or len(t_s) < n:
         return [0.0, 0.0, 0.0]
     kernel = np.ones(n) / n

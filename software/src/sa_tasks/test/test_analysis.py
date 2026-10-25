@@ -20,3 +20,10 @@ def test_fast_oscillation_is_measured():
 
 def test_too_few_samples():
     assert vibration_rms_mm([0.0, 0.001], np.zeros((2, 3)), 0.05) == [0.0, 0.0, 0.0]
+
+
+def test_uneven_sampling_is_not_jitter():
+    rng = np.random.default_rng(0)
+    t = np.sort(rng.uniform(0.0, 2.0, 1000))
+    path = np.stack([250.0 * t, 0.0 * t, 0.0 * t], axis=1)  # 250 mm/s, unevenly sampled
+    assert max(vibration_rms_mm(t, path, 0.05)) < 1e-3
