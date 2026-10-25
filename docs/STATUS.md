@@ -55,6 +55,8 @@ Ein `full`-Lauf dauert ≈ 55–65 s (am 23.10. ≈ 50 s). Mehr Zeit kosten das 
 
 ## Morgen als Erstes
 
+0. **Neu: Launcher-Fenster `gui/sa_gui`** (vom Laptop, 25.10. abends): Schraubenseite per Klick, ein Knopf pro Befehl, Kamera- und Debug-Bild. Checkliste zum Ausprobieren: `gui/NEXT_SESSION.md`. Temporär, vor der Abgabe `git rm -r gui`.
+
 1. **Wackeln aus:** `place.screw.catch.wobble.radius_mm: 0.0` und **Festziehen zurück auf 30** (`tighten.depth_mm: 30.0`). Dann 3× `sa_full_all`, Stud links (y ≈ −130, dort sitzt sie gut). Anschauen: `drop_end_mm`, `caught`.
 2. **Falls es weiter verkantet:** Kippen in den Schraub-Modi steifer, `controllers.yaml` `screw_stiffness`/`tighten_stiffness` rx, ry 4 → 40. Danach `sa_robot` neu starten.
 3. **Zweite Messung der Schraube aus der Nähe** (Idee Yannick): nach dem Zentrieren die Kamera z. B. 150 mm tiefer fahren und nochmals messen. Dann sind Kamera- und Anfahrpose ähnlicher.

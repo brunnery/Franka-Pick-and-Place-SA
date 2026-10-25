@@ -52,6 +52,8 @@ source install/setup.bash
 Camera only: `ros2 launch software/launch/camera.launch.py` (from the repository root).
 Camera + nut detection + debug viewer (`/vision/debug`): `ros2 launch software/launch/vision.launch.py [view:=false]`. Parameters: `software/src/sa_vision/config/vision.yaml`.
 
+Launcher window with the stud side switch and all commands (temporary, removed before submission): [gui/README.md](gui/README.md).
+
 Shell aliases (`~/.bashrc`): `sa` (environment), `sa_cam` (camera), `sa_vision` (build + vision launch). Start GUI tools (rqt) from a normal terminal, not from the VS Code snap terminal, whose snap libraries crash them.
 
 Unit tests (no ROS needed): `cd software/src/sa_vision && python3 -m pytest test`
