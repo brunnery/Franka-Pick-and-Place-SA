@@ -123,12 +123,6 @@ place:
   # direction depending on the side of the stud the plate was off one way or the other). From -y
   # (Yannick): the plate hangs lower on its -y side, the move in +y lifts that side
   approach_from_mm: [0.0, -10.0]
-  # Extra xy correction of the stud target (base frame), linear in the stud's y between these
-  # points, constant beyond (on top of frames.target_correction_mm). 25.10. by eye with the approach
-  # from -y: stud at y -149 (left in the image) right, at y -294 (far right) the plate 2-3 mm too far +y
-  stud_correction_by_y:
-    y_mm: [-294.0, -149.0]
-    correction_mm: [[0.0, -2.5], [0.0, 0.0]]
   descend_speed_mm_s: 5.0      # contact search
   max_descend_mm: 17.0         # below the approach pose (12 until 21.10.)
   # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the

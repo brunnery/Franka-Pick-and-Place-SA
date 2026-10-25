@@ -130,17 +130,6 @@ def stud_view(robot: Robot, vision: Vision, cfg: dict, table_z: float, lock: boo
     return axis, objects
 
 
-def stud_correction(cfg: dict, y_mm: float) -> np.ndarray:
-    """Extra xy correction of the stud target, linear in the stud's y between the points of
-    place.stud_correction_by_y, constant beyond them (25.10.: the plate was right on one side of
-    the table and 2-3 mm off on the other, not explained by the camera or the kinematics)."""
-    table = cfg["place"]["stud_correction_by_y"]
-    order = np.argsort(table["y_mm"])
-    ys = np.asarray(table["y_mm"], float)[order]
-    corrections = np.asarray(table["correction_mm"], float)[order]
-    return np.array([np.interp(y_mm, ys, corrections[:, axis]) for axis in range(2)])
-
-
 def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: np.ndarray,
               record: dict) -> dict:
     """Stud search (THEORY 2.0): the tall stud is a clean square only from directly above.
@@ -183,7 +172,6 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
                 break
             target = np.asarray(nearest["position_mm"], float)
             target[:2] += cfg["frames"]["target_correction_mm"]
-            target[:2] += stud_correction(cfg, target[1])
             log.info("stud = candidate #%d (w %.2f, %.1f mm) at x %.1f y %.1f mm after %d "
                      "move(s)", candidate["rank"], nearest["width_ratio"], nearest["size_mm"],
                      target[0], target[1], move)

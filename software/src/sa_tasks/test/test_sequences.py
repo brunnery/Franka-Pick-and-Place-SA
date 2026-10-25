@@ -1,5 +1,3 @@
-import copy
-
 import numpy as np
 import pytest
 
@@ -176,12 +174,3 @@ def test_precise_move_removes_the_steady_state_error(y):
     assert robot.pose[:3, 3] == pytest.approx(goal[:3, 3], abs=CFG["robot"]["fine_positioning"]
                                               ["tolerance_mm"])
     assert reference[1, 3] - y == pytest.approx(4.0 * np.sign(y), abs=0.5)
-
-
-def test_stud_correction_is_linear_in_y_and_constant_beyond():
-    cfg = copy.deepcopy(CFG)
-    cfg["place"]["stud_correction_by_y"] = {"y_mm": [-100.0, -300.0],
-                                            "correction_mm": [[0.0, 0.0], [1.0, -2.0]]}
-    assert sequences.stud_correction(cfg, -200.0) == pytest.approx([0.5, -1.0])
-    assert sequences.stud_correction(cfg, -400.0) == pytest.approx([1.0, -2.0])
-    assert sequences.stud_correction(cfg, 0.0) == pytest.approx([0.0, 0.0])
