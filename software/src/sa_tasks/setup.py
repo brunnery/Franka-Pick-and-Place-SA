@@ -31,6 +31,8 @@ setup(
             "screw_test = sa_tasks.screw_test:main",
             "goto_poses = sa_tasks.goto_poses:main",
             "motion_test = sa_tasks.motion_test:main",
+            "charuco_board = sa_tasks.charuco_board:main",
+            "hand_eye = sa_tasks.hand_eye:main",
         ],
     },
 )

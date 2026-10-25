@@ -191,6 +191,26 @@ motion_test:
   sample_period_s: 0.002        # polling of the robot state (published at 1 kHz)
   vibration_window_s: 0.05      # moving average: what changes faster counts as jitter (> ~20 Hz)
 
+# ros2 run sa_tasks hand_eye (25.10.): rotation of the camera in the flange from a ChArUco board
+# flat on the table, seen from a grid of flange positions around centre_pose (fixed orientation,
+# translations only; THEORY 1.5). Board: ros2 run sa_tasks charuco_board, print at 100 %.
+hand_eye:
+  board:
+    squares_x: 9
+    squares_y: 13
+    square_mm: 20.0              # MEASURE on the print (caliper) and enter
+    marker_mm: 15.0
+    dictionary: DICT_5X5_100
+    print_dpi: 300               # charuco_board only
+  centre_pose: observe_stud      # place the board centred in the image at this pose
+  offsets_x_mm: [-40.0, 0.0, 40.0]   # flange offsets from centre_pose; image half-width ~70 mm (x)
+  offsets_y_mm: [-50.0, 0.0, 50.0]   # ... ~125 mm (y)
+  offsets_z_mm: [-80.0, 0.0, 80.0]
+  settle_s: 0.5                  # after arrival, before the image is taken
+  image_timeout_s: 3.0
+  min_corners: 12                # fewer ChArUco corners in an image: pose skipped
+  solver_iterations: 50
+
 # ros2 run sa_tasks screw_test: close the iris, wait, turn M4 (place.screw), open (22.10.)
 screw_test:
   wait_s: 5.0                  # after closing: time to hold the stud under the nut
