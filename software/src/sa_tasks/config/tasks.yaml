@@ -27,16 +27,15 @@ frames:
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
   # camera in front (+x_B). Quaternion (x, y, z, w)
   flange_orientation_xyzw: [1.0, 0.0, 0.0, 0.0]
-  # Constant xy correction of every target (base frame). 20.-22.10. tuned by eye (+4 ... +8 in
-  # y), never valid on both sides of the table: the robot stopped short against its direction
-  # of travel and the camera axis is tilted. Both are modelled since 22.10. (fine_positioning,
-  # camera_tilt_in_flange_deg), so this stays 0 unless a residual is measured
-  # 25.10.: -1.5 and -2.5 in y by eye did not fit both sides of the table (play of the turning
-  # disk, direction-dependent) -> 0 again with the fixed approach direction (place.approach_from_mm),
-  # to be set once for that direction
-  # 25.10. with the fixed approach direction and the fine positioning on the spring alone: plate too
-  # far +y by 1-2 mm (stud left in the image) and 2-3 mm (right) -> mean -2 in y
-  target_correction_mm: [0.0, -2.0]
+  # The one xy correction of every target (nut and stud, base frame), linear in the target's y
+  # between the points, constant beyond them (the nut, y > 0, gets the value of the +y point).
+  # 20.-22.10. a constant tuned by eye (+4 ... +8 in y) never fitted both sides of the table; since
+  # 22.10. fine positioning and camera tilt are modelled. 25.10. (fixed approach direction, fine
+  # positioning on the spring alone): constant -2 in y was too much with the stud far left in the
+  # image (y about -130) and too little far right (about -300) -> first guess -1 / -3, tune by eye
+  target_correction:
+    y_mm: [-300.0, -130.0]
+    correction_mm: [[0.0, -3.0], [0.0, -1.0]]
 
 objects:
   nut:
@@ -121,7 +120,7 @@ place:
   approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
   # The approach first goes to this xy offset (base frame) from the approach pose, then the last
   # short move always runs the same way (here +y): the play of the gripper's turning disk then
-  # always ends up on the same side, so one constant target_correction_mm fits (25.10.: with the
+  # always ends up on the same side, so frames.target_correction fits (25.10.: with the
   # direction depending on the side of the stud the plate was off one way or the other). From -y
   # (Yannick): the plate hangs lower on its -y side, the move in +y lifts that side
   approach_from_mm: [0.0, -10.0]

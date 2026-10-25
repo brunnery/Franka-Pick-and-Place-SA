@@ -90,13 +90,23 @@ def observation_pose(poses: config.Poses, name: str, cfg: dict) -> np.ndarray:
     return frames.pose(config.rotation_down(cfg), position)
 
 
+def target_correction(cfg: dict, y_mm: float) -> np.ndarray:
+    """xy correction of a target at y_mm: linear between the points of frames.target_correction,
+    constant beyond them (25.10.: the error changed from one side of the table to the other)."""
+    table = cfg["frames"]["target_correction"]
+    order = np.argsort(table["y_mm"])
+    ys = np.asarray(table["y_mm"], float)[order]
+    corrections = np.asarray(table["correction_mm"], float)[order]
+    return np.array([np.interp(y_mm, ys, corrections[:, axis]) for axis in range(2)])
+
+
 def camera_and_distance(robot: Robot, cfg: dict, plane_z_mm: float) -> tuple:
     t_base_camera = robot.flange_pose() @ config.camera_in_flange(cfg)
     return t_base_camera, frames.distance_along_axis(t_base_camera, plane_z_mm)
 
 
 def locate_nut(robot: Robot, vision: Vision, cfg: dict, table_z: float) -> list:
-    """Nut position in the base frame (incl. target_correction_mm) from the current pose."""
+    """Nut position in the base frame (incl. target_correction) from the current pose."""
     nut = cfg["objects"]["nut"]
     camera, distance = camera_and_distance(robot, cfg, table_z + nut["height_mm"])
     seen = vision.observe(TARGET_NUT, distance)
@@ -107,7 +117,7 @@ def locate_nut(robot: Robot, vision: Vision, cfg: dict, table_z: float) -> list:
     if offset > cfg["vision"]["max_offset_from_axis_mm"]:
         raise SequenceError(f"nut found {offset:.0f} mm from the camera axis, outside the "
                             "work area")
-    point[:2] += cfg["frames"]["target_correction_mm"]
+    point[:2] += target_correction(cfg, point[1])
     log.info("nut at x %.1f y %.1f mm, %.0f mm from the camera axis", point[0], point[1], offset)
     return rounded(point)
 
@@ -171,7 +181,7 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
                          candidate["rank"], nearest["width_ratio"], nearest["size_mm"])
                 break
             target = np.asarray(nearest["position_mm"], float)
-            target[:2] += cfg["frames"]["target_correction_mm"]
+            target[:2] += target_correction(cfg, target[1])
             log.info("stud = candidate #%d (w %.2f, %.1f mm) at x %.1f y %.1f mm after %d "
                      "move(s)", candidate["rank"], nearest["width_ratio"], nearest["size_mm"],
                      target[0], target[1], move)
@@ -218,9 +228,9 @@ def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: confi
 
 def position_check(found: dict, reached_tcp: np.ndarray) -> dict:
     """Stud xy at three stages (approach_only): 1 from the observation pose (off-axis),
-    2 centred (before target_correction_mm), 3 the TCP reached. 2 - 1 large: the camera model
+    2 centred (before target_correction), 3 the TCP reached. 2 - 1 large: the camera model
     is off; 3 - 2: what the robot did not reach. TCP visibly off the real stud although
-    3 - 2 is small: constant camera -> TCP offset (target_correction_mm)."""
+    3 - 2 is small: camera -> TCP offset (target_correction)."""
     observed = np.asarray(found["observed_mm"][:2])
     centred = np.asarray(found["centred_mm"][:2])
     tcp = np.asarray(reached_tcp[:2])
