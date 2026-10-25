@@ -59,15 +59,3 @@ def test_tilt_shift_of_a_tilted_flange():
     shift = frames.tilt_shift_mm(frames.pose(tilt_about_x @ down, [0.0, 0.0, 0.0]), down, [0, 0, 100.0])
     assert abs(np.linalg.norm(shift[:2]) - 100.0 * np.sin(a)) < 1e-6
     assert np.allclose(frames.tilt_shift_mm(frames.pose(down, [1.0, 2.0, 3.0]), down, [0, 0, 100.0]), 0.0)
-
-
-def test_plate_position_rigid_and_swinging():
-    down = frames.quaternion_to_matrix([1.0, 0.0, 0.0, 0.0])
-    a = np.radians(1.0)
-    tilt_about_x = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(a), -np.sin(a)], [0.0, np.sin(a), np.cos(a)]])
-    flange = frames.pose(tilt_about_x @ down, [10.0, 20.0, 300.0])
-    offset = [0.0, 0.0, 100.0]
-    assert np.allclose(frames.plate_position(flange, down, offset, 1.0), frames.tcp_position(flange, offset))
-    shift = frames.tilt_shift_mm(flange, down, offset)
-    assert np.allclose(frames.plate_position(flange, down, offset, 2.0),
-                       frames.tcp_position(flange, offset) + shift)

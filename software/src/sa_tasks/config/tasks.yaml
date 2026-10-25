@@ -35,11 +35,6 @@ frames:
   # disk, direction-dependent) -> 0 again with the fixed approach direction (place.approach_from_mm),
   # to be set once for that direction
   target_correction_mm: [0.0, 0.0]
-  # The bottom plate hangs on a turning disk with play and swings out further than a rigid tool
-  # under the flange tilt: fine positioning takes plate = rigid position + gain * tilt shift
-  # (frames.plate_position). 1.0 = rigid. 25.10.: stud left perfect (tilt shift y -1.56 mm), far
-  # right 2-3 mm too far +y (+0.26) -> about 2.4; start at 2.0, tune: right still +y -> higher
-  plate_tilt_gain: 2.0
 
 objects:
   nut:

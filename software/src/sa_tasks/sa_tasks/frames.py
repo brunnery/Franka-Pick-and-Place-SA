@@ -112,15 +112,6 @@ def tilt_shift_mm(t_base_flange: np.ndarray, r_commanded: np.ndarray, flange_to_
     return (t_base_flange[:3, :3] - np.asarray(r_commanded, float)) @ offset
 
 
-def plate_position(t_base_flange: np.ndarray, r_commanded: np.ndarray, flange_to_tcp_mm,
-                   tilt_gain: float) -> np.ndarray:
-    """Centre of the gripper's bottom plate (TCP) when the plate swings out tilt_gain times as
-    far as a rigid tool under the flange tilt (it hangs on a turning disk with play, 25.10.).
-    tilt_gain 1: rigid tool, = tcp_position."""
-    rigid = t_base_flange[:3, 3] + np.asarray(r_commanded, float) @ np.asarray(flange_to_tcp_mm, float)
-    return rigid + tilt_gain * tilt_shift_mm(t_base_flange, r_commanded, flange_to_tcp_mm)
-
-
 def object_in_base(u: float, v: float, k: np.ndarray, t_base_camera: np.ndarray,
                    plane_z_mm: float) -> np.ndarray:
     """Intersection of the viewing ray of an undistorted pixel with the plane z_B = plane_z
