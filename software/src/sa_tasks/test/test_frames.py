@@ -50,3 +50,12 @@ def test_contradicting_cad_offsets_are_refused(tmp_path):
     path.write_text(yaml.safe_dump(cfg))
     with pytest.raises(ValueError, match="do not close"):
         config.load_tasks(path)
+
+
+def test_tilt_shift_of_a_tilted_flange():
+    down = frames.quaternion_to_matrix([1.0, 0.0, 0.0, 0.0])
+    a = np.radians(1.0)
+    tilt_about_x = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(a), -np.sin(a)], [0.0, np.sin(a), np.cos(a)]])
+    shift = frames.tilt_shift_mm(frames.pose(tilt_about_x @ down, [0.0, 0.0, 0.0]), down, [0, 0, 100.0])
+    assert abs(np.linalg.norm(shift[:2]) - 100.0 * np.sin(a)) < 1e-6
+    assert np.allclose(frames.tilt_shift_mm(frames.pose(down, [1.0, 2.0, 3.0]), down, [0, 0, 100.0]), 0.0)

@@ -105,6 +105,13 @@ def tcp_position(t_base_flange: np.ndarray, flange_to_tcp_mm) -> np.ndarray:
     return (t_base_flange @ np.append(np.asarray(flange_to_tcp_mm, float), 1.0))[:3]
 
 
+def tilt_shift_mm(t_base_flange: np.ndarray, r_commanded: np.ndarray, flange_to_tcp_mm) -> np.ndarray:
+    """How far the tilt of the flange (measured against the commanded orientation) moves the
+    TCP of a rigid tool: tcp_position(measured) - (flange position + R_commanded * offset)."""
+    offset = np.asarray(flange_to_tcp_mm, float)
+    return (t_base_flange[:3, :3] - np.asarray(r_commanded, float)) @ offset
+
+
 def object_in_base(u: float, v: float, k: np.ndarray, t_base_camera: np.ndarray,
                    plane_z_mm: float) -> np.ndarray:
     """Intersection of the viewing ray of an undistorted pixel with the plane z_B = plane_z
