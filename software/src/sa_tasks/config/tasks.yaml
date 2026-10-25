@@ -20,13 +20,8 @@ frames:
   # centred over the stud (d = 393 mm), iris centred by hand (only y checked): the stud was
   # 8.6 mm further in +y_B than computed -> atan(8.6 / 393) = 1.25 deg about x_F. y_F not
   # measured yet (x_B: -2.4 mm, unchecked) -> 0. (23.10. tried 1.33 and target correction
-  # -1 in y, back to the values of 22.10.) 25.10.: measured with hand_eye (ChArUco, translations
-  # only, THEORY 1.5), two runs [1.53, 0.76] / [1.54, 0.81], residual RMS 1.0 / 1.1 mm -> mean
-  # (before: [1.25, 0.0], set by eye)
-  camera_tilt_in_flange_deg: [1.54, 0.79]
-  # Rotation of the camera about its optical axis against the CAD, applied after the tilt
-  # (R_FC = R_x R_y R_z R_CAD). 25.10. hand_eye: 1.19 / 1.40 deg -> mean (before: not modelled)
-  camera_rotation_about_z_deg: 1.3
+  # -1 in y, back to the values of 22.10.)
+  camera_tilt_in_flange_deg: [1.25, 0.0]
   # Projection centre above the lowest point of the housing (bench 16.10.: about 9 mm)
   projection_centre_above_housing_mm: 9.0
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
@@ -38,12 +33,9 @@ frames:
   # 22.10. fine positioning and camera tilt are modelled. 25.10. (fixed approach direction, fine
   # positioning on the spring alone): constant -2 in y was too much with the stud far left in the
   # image (y about -130) and too little far right (about -300) -> first guess -1 / -3, tune by eye
-  # 25.10. afternoon: back to 0 with the hand_eye calibration (part of the hand-tuned values made
-  # up for the old camera tilt). HAND-TUNED BEFORE (old tilt [1.25, 0.0], no z rotation), to go
-  # back to: y_mm [-300.0, -130.0], correction_mm [[0.0, -3.0], [0.0, -1.0]]
   target_correction:
     y_mm: [-300.0, -130.0]
-    correction_mm: [[0.0, 0.0], [0.0, 0.0]]
+    correction_mm: [[0.0, -3.0], [0.0, -1.0]]
 
 objects:
   nut:
