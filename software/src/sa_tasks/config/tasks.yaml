@@ -68,7 +68,7 @@ robot:
     max_speed_mm_s: 250.0      # peak speed of every axis group (controller limit 300; 150 until 21.10.)
     max_angular_speed_deg_s: 20.0
     lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
-    min_duration_s: 0.5        # short moves (fine positioning, centring); 1.0 until 23.10.
+    min_duration_s: 1.0
   # Arrived = standing still within the tolerance (the controller keeps a few mm of
   # steady-state error, z about 3.5 mm: no z integrator)
   arrival_tolerance_mm: 8.0
@@ -122,9 +122,7 @@ place:
   # mode, then the iris opens (else the soft arm fell onto the reference below the thread;
   # ~3.5 mm sag at 1500 N/m)
   release_lift_mm: 3.0
-  # The controller's reference low-pass (tau 0.1 s since 25.10.) comes up from 15 mm below:
-  # 15 * exp(-6) = 0.04 mm (2.5 s with tau 0.5 s until 23.10.)
-  release_settle_s: 0.6
+  release_settle_s: 2.5        # reference low-pass (tau ~0.5 s) settles from 15 mm below
   screw:
     direction: 1               # M4 FORWARD tightens (19.10., test_m4)
     # Catch in control mode screw (stiff xy, soft tilt), tighten in mode tighten (soft xy). The
@@ -142,8 +140,7 @@ place:
       caught_drop_mm: 0.6      # half a turn of M8
       # Each step the reference moves one point further on a circle around the contact (in
       # xy, through the controller's reference low-pass): the nut wobbles over the tip to find
-      # the start of the thread. Lateral pull about screw stiffness xy * radius (23.10.; since the
-      # faster low-pass of 25.10. a 250 ms step reaches ~92 % of the jump instead of ~40 %)
+      # the start of the thread. Lateral pull about screw stiffness xy * radius (23.10.)
       wobble:
         radius_mm: 2.0           # screw xy 2000 N/m (at 400 N/m 2-4 mm moved only 0.2-0.5 mm)
         points_per_circle: 4

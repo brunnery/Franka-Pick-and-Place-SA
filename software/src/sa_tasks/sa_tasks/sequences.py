@@ -250,7 +250,7 @@ def stiffen_where_it_is(robot: Robot, cfg: dict) -> np.ndarray:
     """From the soft screw mode to the stiff mode without a drop or jump, before the iris lets
     go: reference to the measured pose plus release_lift_mm (the weight the stiff mode does not
     compensate, no z integrator), wait in the soft mode until the controller's low-passed
-    reference (tau ~0.1 s) has come up from below the thread, then stiff. Returns the
+    reference (tau ~0.5 s) has come up from below the thread, then stiff. Returns the
     reference. Opening first let the soft arm fall onto the reference below the thread."""
     place = cfg["place"]
     hold = robot.flange_pose()

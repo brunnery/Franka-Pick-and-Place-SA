@@ -78,10 +78,7 @@
         clamp_spring_only: false   # true: clamp only K*e + I; damping D*v clamped separately (below)
         max_damping_force: 36.0    # only used if clamp_spring_only [N]
         max_damping_torque: 18.0   # only used if clamp_spring_only [Nm]
-      # reference low-pass per 1 ms cycle, tau = 1 ms / filter_params; smaller = slower. 25.10.: 0.002
-      # (tau 0.5 s) -> 0.01 (tau 0.1 s): sa_tasks streams smooth min-jerk paths at 100 Hz, the slow
-      # filter only added a 1.2-1.8 s tail to every move (arrival waits for it) and shrank the pick spiral
-      filter_params: 0.01
+      filter_params: 0.002         # reference low-pass per 1 ms cycle (0.002 -> tau ~ 0.5 s); smaller = slower
       max_reference_velocity:      # speed limit of the filtered reference; 0.0 = no limit (old behaviour)
         translational: 0.3         # [m/s] (was 0.0 = no limit: 1.3 m/s steps, 57 mm detour, bag 170214)
         rotational: 1.0            # [rad/s] (was 0.0)
