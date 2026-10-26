@@ -36,8 +36,9 @@ robot_confirm_text: >-
   work area clear, hand on the emergency stop.
 
 viewers:                       # embedded image panes (need a sourced ROS 2)
-  - {title: Camera, topic: /image_raw}
-  - {title: Vision debug, topic: /vision/debug}
+  # /vision/debug is binary | result side by side; part: left / right shows one half
+  - {title: Binary, topic: /vision/debug, part: left}
+  - {title: Result, topic: /vision/debug, part: right}
 viewer_rate_hz: 10.0           # redraw rate of the panes
 viewer_stale_s: 2.0            # no image for this long -> "no image"
 
@@ -86,6 +87,9 @@ groups:
       - label: Teach poses
         command: ros2 run sa_tasks teach_poses
         tip: "needs 'Robot state only'. save observe_nut / save observe_stud, table, list"
+      - label: Camera -> iris offset (tcp_offset)
+        command: ros2 run sa_tasks tcp_offset
+        tip: "after a bolt approach: PROG, thread centred in the open iris by hand, execution, 'Robot state only', then this"
 
   - name: Robot tests (need sa_robot running)
     entries:

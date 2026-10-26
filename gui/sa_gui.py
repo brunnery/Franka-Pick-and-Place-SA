@@ -9,6 +9,7 @@ Buttons come from gui/gui.yaml. Temporary add-on, not part of the thesis code
 import argparse
 import getpass
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -40,10 +41,13 @@ class RosImages:
         import rclpy
         from rclpy.executors import SingleThreadedExecutor
         from rclpy.qos import qos_profile_sensor_data
+        from rclpy.signals import SignalHandlerOptions
         from sensor_msgs.msg import Image
 
         self._rclpy = rclpy
-        rclpy.init(args=None)
+        # No rclpy signal handlers: they would stop only ROS and leave the window hanging;
+        # main() closes the window on Ctrl-C / SIGTERM instead
+        rclpy.init(args=None, signal_handler_options=SignalHandlerOptions.NO)
         self.node = rclpy.create_node("sa_gui_viewer")
         self._lock = threading.Lock()
         self._latest = {topic: (None, 0.0) for topic in topics}
@@ -79,9 +83,10 @@ def to_qimage(msg):
 
 
 class ImagePane(QtWidgets.QGroupBox):
-    def __init__(self, title, topic):
+    def __init__(self, title, topic, part=None):
         super().__init__(f"{title}  ({topic})")
         self.topic = topic
+        self.part = part      # None = whole image, "left" / "right" = that half only
         self.label = QtWidgets.QLabel("waiting for images")
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setMinimumSize(320, 180)
@@ -107,6 +112,9 @@ class ImagePane(QtWidgets.QGroupBox):
         image = to_qimage(msg)
         if image is None:
             return self.show_text(f"unsupported encoding '{msg.encoding}'")
+        if self.part is not None:
+            half = image.width() // 2
+            image = image.copy(half if self.part == "right" else 0, 0, half, image.height())
         pixmap = QtGui.QPixmap.fromImage(image).scaled(
             self.label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         self.label.setPixmap(pixmap)
@@ -257,11 +265,12 @@ class Launcher(QtWidgets.QMainWindow):
     def _viewers(self):
         panel = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(panel)
-        self.panes = [ImagePane(v["title"], v["topic"]) for v in self.cfg["viewers"]]
+        self.panes = [ImagePane(v["title"], v["topic"], v.get("part"))
+                      for v in self.cfg["viewers"]]
         for pane in self.panes:
             layout.addWidget(pane, 1)
         try:
-            self.ros = RosImages([pane.topic for pane in self.panes])
+            self.ros = RosImages(sorted({pane.topic for pane in self.panes}))
         except Exception as error:  # noqa: BLE001 - no ROS sourced, buttons still useful
             self.ros = None
             for pane in self.panes:
@@ -399,6 +408,12 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     window = Launcher(args.config)
     window.show()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: window.close())
+    # Qt's event loop does not run Python code on its own; the timer lets the handler run
+    wake = QtCore.QTimer()
+    wake.timeout.connect(lambda: None)
+    wake.start(STATUS_POLL_MS)
     sys.exit(app.exec_())
 
 

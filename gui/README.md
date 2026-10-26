@@ -20,8 +20,9 @@ One window instead of copy-pasting commands:
   first. Starting something that opens the robot, camera or Arduino while another running
   button already has it asks first (the run launches start robot + vision + gripper
   themselves). Hover over a button to see its command.
-- **Images**: `/image_raw` and `/vision/debug` on the right (buttons use `view:=false`, so no
-  extra rqt windows).
+- **Images**: the two halves of `/vision/debug` on the right, binary mask and result with the
+  fitted polygon (buttons use `view:=false`, so no extra rqt windows). The raw camera image
+  only via the rqt button.
 
 ## Start
 
