@@ -20,8 +20,14 @@ frames:
   # centred over the stud (d = 393 mm), iris centred by hand (only y checked): the stud was
   # 8.6 mm further in +y_B than computed -> atan(8.6 / 393) = 1.25 deg about x_F. y_F not
   # measured yet (x_B: -2.4 mm, unchecked) -> 0. (23.10. tried 1.33 and target correction
-  # -1 in y, back to the values of 22.10.)
-  camera_tilt_in_flange_deg: [1.25, 0.0]
+  # -1 in y, back to the values of 22.10.) 25.10.: measured with hand_eye (ChArUco, translations
+  # only, THEORY 1.5), two runs [1.53, 0.76] / [1.54, 0.81], residual RMS 1.0 / 1.1 mm -> mean.
+  # Adopted 25.10., reverted the same day (one pick landed on the nut), 26.10. tried again with
+  # the thread search (before: [1.25, 0.0], set by eye)
+  camera_tilt_in_flange_deg: [1.54, 0.79]
+  # Rotation of the camera about its optical axis against the CAD, applied after the tilt
+  # (R_FC = R_x R_y R_z R_CAD). 25.10. hand_eye: 1.19 / 1.40 deg -> mean (before: not modelled)
+  camera_rotation_about_z_deg: 1.3
   # Projection centre above the lowest point of the housing (bench 16.10.: about 9 mm)
   projection_centre_above_housing_mm: 9.0
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
@@ -33,9 +39,14 @@ frames:
   # 22.10. fine positioning and camera tilt are modelled. 25.10. (fixed approach direction, fine
   # positioning on the spring alone): constant -2 in y was too much with the stud far left in the
   # image (y about -130) and too little far right (about -300) -> first guess -1 / -3, tune by eye
+  # 26.10.: 0 with the hand_eye calibration and the thread search. HAND-TUNED BEFORE (tilt
+  # [1.25, 0.0], no z rotation), to go back to: correction_mm [[0.0, -3.0], [0.0, -1.0]]
+  # 26.10. MEASURED with tcp_offset (thread centred in the iris by hand, data/runs/tcp_offset.yaml,
+  # hand_eye camera model): y -274 -> [-1.91, -4.19], y -237 -> [-1.71, -5.70]; mean, constant
+  # for now (only the right half of the table measured)
   target_correction:
     y_mm: [-300.0, -130.0]
-    correction_mm: [[0.0, -3.0], [0.0, -1.0]]
+    correction_mm: [[-1.8, -4.9], [-1.8, -4.9]]
 
 objects:
   nut:
@@ -58,6 +69,12 @@ vision:
   # Targets farther from the camera axis are refused (image half-width at d = 416 mm:
   # about 128 mm (y), 70 mm (x))
   max_offset_from_axis_mm: 125.0
+  # Second measurement of nut and stud (26.10.): camera axis over the first result, this far
+  # from the projection centre to the object plane (nut top face, stud base top). Every angle
+  # error (camera tilt, arm tilt) moves the result by distance * angle: 0.1 deg = 0.3 mm here,
+  # 0.8 mm from the observation poses (~450 mm). Bench 16.10.: detection fine at ~180 mm.
+  # Housing then ~160 mm above the plane, TCP ~100 mm, 44 mm beside the object
+  close_up_distance_mm: 170.0
 
 robot:
   reference_topic: /cartesian_impedance_controller/reference_pose
@@ -98,15 +115,16 @@ robot:
   state_timeout_s: 5.0
 
 pick:
-  press_depth_mm: 2.0          # TCP below the table: plate flat with ~3 N preload
-  # One move to start_height_mm over the nut and on without stopping (23.10.: no wait, no fine
-  # positioning there) into an outward spiral down to
-  # table - press_depth_mm: covers a target error up to about radius_mm (THEORY 5)
-  spiral:
-    start_height_mm: 10.0
-    radius_mm: 6.0
-    turns: 2.0
-    duration_s: 2.5            # 4.0 until 21.10.
+  press_depth_mm: 2.0          # after contact: reference this far below, ~3 N while closing
+  # One move to approach_height_mm over the nut, then straight down at constant speed until
+  # contact (as at the stud). 26.10. (Yannick): the spiral search (radius 6 mm, 2 turns, 2.5 s)
+  # dropped; a plain move to table - 2 mm then stopped ~5 mm above the table (joint friction,
+  # and standing still counted as landed)
+  approach_height_mm: 10.0
+  descent:
+    speed_mm_s: 10.0           # reference lags ~5 mm behind (low-pass tau ~0.5 s)
+    below_table_mm: 8.0        # end of the descent if there is no contact
+    contact_force_n: 4.0       # |Fz - Fz before the descent| that counts as contact
 
 place:
   # Stud search (THEORY 2.0): candidates locked at observe_stud, the camera centred over
@@ -123,7 +141,8 @@ place:
   # always ends up on the same side, so frames.target_correction fits (25.10.: with the
   # direction depending on the side of the stud the plate was off one way or the other). From -y
   # (Yannick): the plate hangs lower on its -y side, the move in +y lifts that side
-  approach_from_mm: [0.0, -10.0]
+  # 26.10.: [0, 0] as a test with the close-up measurement (was [0.0, -10.0]: from -y)
+  approach_from_mm: [0.0, 0.0]
   descend_speed_mm_s: 5.0      # contact search
   max_descend_mm: 17.0         # below the approach pose (12 until 21.10.)
   # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the
@@ -135,6 +154,26 @@ place:
   # ~3.5 mm sag at 1500 N/m)
   release_lift_mm: 3.0
   release_settle_s: 2.5        # reference low-pass (tau ~0.5 s) settles from 15 mm below
+  # After contact, before screwing (26.10., Yannick): press down in the stiff mode so the nut
+  # slides up in the iris against its top stop. The thread usually caught, the fast turn never
+  # ran on. Record place.seat: travel_mm (nut moved in the iris), force_n (negative = pressing)
+  seat:
+    depth_mm: 6.0              # reference below contact; normal z 1500 N/m: ~9 N (clamp 18 N)
+    settle_s: 1.5              # reference low-pass (tau ~0.5 s): 95 % after 3 tau
+  # After seating (26.10., Yannick: the nut lands 1-3 mm off-centre): stiff mode, pressed
+  # lightly on the tip, flat outward spiral around the contact, TCP height sampled; back to the
+  # xy where the TCP was lowest (the nut dropped onto the thread start). Record
+  # place.thread_search: drop_mm (should be clearly > 0 when found), shift_xy_mm,
+  # reached_radius_mm (what the arm really covered)
+  thread_search:
+    press_mm: 3.0              # reference below the seated contact: ~4.5 N (below the seat force)
+    # Commanded radius > the 1-3 mm error: the reference low-pass (tau ~0.5 s) shrinks a turn of
+    # 3 s to about 70 %. 1 mm between turns, the nut catches within about +-0.5 mm
+    radius_mm: 4.0
+    turns: 3.0
+    duration_s: 9.0
+    settle_s: 1.0              # after pressing, after the spiral, after going back
+    sample_period_s: 0.01
   screw:
     direction: 1               # M4 FORWARD tightens (19.10., test_m4)
     # Catch in control mode screw (stiff xy, soft tilt), tighten in mode tighten (soft xy). The
@@ -149,7 +188,9 @@ place:
       max_steps: 12            # 3 s; not caught by then: tighten anyway (record: caught false)
       # ~1.2 N + weight. 25.10. 3 -> 8: with the 1:1 drive barely any pressure (record: 0.5-1.7 N),
       # the nut could not catch the thread (23.10.: 10 pressed too hard, with the 44->17 drive)
-      depth_mm: 8.0
+      # 26.10. 8 -> 2 (Yannick): reference just below the thread start (the seated contact),
+      # ~0.3 N: the thread pulls the nut down by itself, pressing only jams it
+      depth_mm: 2.0
       settle_s: 0.3            # after setting the reference, before the start height is taken
       caught_drop_mm: 0.6      # half a turn of M8
       # Each step the reference moves one point further on a circle around the contact (in
@@ -161,7 +202,8 @@ place:
     # ~2.3 N + weight (50 mm pressed too hard); 23.10.: speed 200 too weak, 3000 -> 5000 ms
     # 25.10. depth 15 -> 30 -> 60: at 30 (~4.5 N on paper) only ~1 N measured (force_*_n: pressing
     # onto the stud reads NEGATIVE, checked by hand); 60 tests whether the force scales with depth
-    tighten: {duration_ms: 5000, speed: 255, depth_mm: 60.0}
+    # 26.10. 60 -> 2 (Yannick): as catch, barely any pressure, the thread feeds the nut
+    tighten: {duration_ms: 5000, speed: 255, depth_mm: 2.0}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
   # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)

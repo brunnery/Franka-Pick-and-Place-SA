@@ -58,16 +58,17 @@ class SceneVision:
         return View(candidates, K)
 
 
-def test_pick_spirals_onto_the_table_over_the_nut_and_closes():
+def test_pick_goes_straight_down_onto_the_table_over_the_nut_and_closes():
     robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
     gripper = MockGripper()
     record = {}
     sequences.pick(robot, gripper, SceneVision(robot), CFG, FakePoses(), record)
     assert record["nut_mm"][:2] == pytest.approx(NUT, abs=0.01)
     lowest = frames.tcp_position(min(robot.history, key=lambda t: t[2, 3]), T_FT)
-    assert lowest[2] == pytest.approx(TABLE_Z - CFG["pick"]["press_depth_mm"])
-    assert np.linalg.norm(lowest[:2] - NUT) == pytest.approx(CFG["pick"]["spiral"]["radius_mm"],
-                                                             abs=0.01)
+    # no surface in the mock: down to the end of the descent, no contact
+    assert lowest[2] == pytest.approx(TABLE_Z - CFG["pick"]["descent"]["below_table_mm"])
+    assert record["contact"] is False
+    assert lowest[:2] == pytest.approx(NUT, abs=0.01)
     assert gripper.commands == ["OPEN", "CLOSE"]
     assert robot.pose == pytest.approx(OBSERVE_NUT)
 
@@ -102,6 +103,10 @@ def test_place_finds_contact_on_the_thread_and_screws():
     robot, gripper, record = run_place(contact_tcp_z=tip - 1.0)
     assert record["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
     assert tip - 5.0 <= record["contact_tcp_mm"][2] <= tip
+    # the mock jumps to the reference: the whole seat depth is travel
+    assert record["seat"]["travel_mm"] == pytest.approx(CFG["place"]["seat"]["depth_mm"])
+    # the mock sinks nowhere deeper, so the search ends where it started (lowest = first sample)
+    assert record["thread_search"]["shift_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
     catch = CFG["place"]["screw"]["catch"]
     # the mock never sinks: all catch steps, then the tightening turn
     assert gripper.commands == ["ROT"] * (catch["max_steps"] + 1) + ["OPEN"]  # + tighten

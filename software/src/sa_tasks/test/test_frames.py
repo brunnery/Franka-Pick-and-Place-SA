@@ -29,9 +29,11 @@ def test_flange_from_the_robot_state_puts_the_camera_in_front():
     assert flange @ t_flange_ee == pytest.approx(t_base_ee)
     camera = flange @ config.camera_in_flange(CFG)
     assert camera[:3, 3] == pytest.approx([544.4, 0.0, 503.4 - 57.223 + 9.0])
-    # looks down; the measured tilt about x_F (= x_B here) moves the axis towards +y_B
-    tilt_x = np.radians(CFG["frames"]["camera_tilt_in_flange_deg"][0])
-    assert camera[:3, 2] == pytest.approx([0.0, np.sin(tilt_x), -np.cos(tilt_x)])
+    # looks down; the tilt about x_F (= x_B here) moves the axis towards +y_B, the one about
+    # y_F towards +x_B; the rotation about the optical axis leaves the axis alone
+    tilt_x, tilt_y = np.radians(CFG["frames"]["camera_tilt_in_flange_deg"])
+    assert camera[:3, 2] == pytest.approx([np.sin(tilt_y), np.sin(tilt_x) * np.cos(tilt_y),
+                                           -np.cos(tilt_x) * np.cos(tilt_y)])
 
 
 def test_object_in_base_inverts_the_projection_also_for_a_tilted_camera():

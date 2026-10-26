@@ -33,6 +33,7 @@ setup(
             "motion_test = sa_tasks.motion_test:main",
             "charuco_board = sa_tasks.charuco_board:main",
             "hand_eye = sa_tasks.hand_eye:main",
+            "tcp_offset = sa_tasks.tcp_offset:main",
         ],
     },
 )

@@ -105,6 +105,42 @@ def camera_and_distance(robot: Robot, cfg: dict, plane_z_mm: float) -> tuple:
     return t_base_camera, frames.distance_along_axis(t_base_camera, plane_z_mm)
 
 
+def close_up_pose(cfg: dict, point_xy, plane_z_mm: float) -> np.ndarray:
+    """Flange pose (fixed orientation) whose optical axis passes through point_xy on the plane
+    z = plane_z_mm at vision.close_up_distance_mm from the projection centre (26.10.: every
+    angle error of the camera model or of the arm moves the result by distance * angle, so
+    the second measurement is taken from close by; THEORY 3.1)."""
+    rotation = config.rotation_down(cfg)
+    t_flange_camera = config.camera_in_flange(cfg)
+    axis = rotation @ t_flange_camera[:3, 2]  # z_C in the base frame (points down)
+    point = np.array([point_xy[0], point_xy[1], plane_z_mm])
+    centre = point - cfg["vision"]["close_up_distance_mm"] * axis
+    return frames.pose(rotation, centre - rotation @ t_flange_camera[:3, 3])
+
+
+def stud_close_up(robot: Robot, vision: Vision, cfg: dict, table_z: float,
+                  found: dict) -> dict:
+    """Second stud measurement from close by (26.10.): camera axis over the centred position at
+    close_up_distance_mm, the largest object within lost_radius_mm of the axis is the stud.
+    Returns found with position_mm from this view (incl. target_correction) and close_mm."""
+    stud = cfg["objects"]["stud"]
+    move_to(robot, close_up_pose(cfg, found["centred_mm"][:2], table_z + stud["base_height_mm"]),
+            cfg)
+    _, seen = stud_view(robot, vision, cfg, table_z, lock=False)
+    near = [c for c in seen if c["offset_from_axis_mm"]
+            <= cfg["place"]["stud_search"]["lost_radius_mm"]]
+    if not near:
+        raise SequenceError(f"stud lost at the close-up pose ({len(seen)} object(s) in view)")
+    nearest = max(near, key=lambda c: c["size_mm"])
+    target = np.asarray(nearest["position_mm"], float)
+    target[:2] += target_correction(cfg, target[1])
+    close = np.asarray(nearest["position_mm"][:2])
+    log.info("stud close up: x %.1f y %.1f mm, %+.2f %+.2f mm from the centred measurement",
+             *close, *(close - np.asarray(found["centred_mm"][:2])))
+    return {**found, "position_mm": rounded(target), "close_mm": nearest["position_mm"],
+            "close_minus_centred_mm": rounded(close - np.asarray(found["centred_mm"][:2]))}
+
+
 def locate_nut(robot: Robot, vision: Vision, cfg: dict, table_z: float) -> list:
     """Nut position in the base frame (incl. target_correction) from the current pose."""
     nut = cfg["objects"]["nut"]
@@ -192,35 +228,49 @@ def find_stud(robot: Robot, vision: Vision, cfg: dict, table_z: float, observe: 
 
 def pick(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict, poses: config.Poses,
          record: dict, back_up: bool = True) -> None:
-    """Step 1: observation pose (the iris opens on the way) -> detect the nut -> move to just
-    above it and on without stopping -> spiral search down until the bottom plate rests on the
-    table, the open iris over the nut -> close -> back up. back_up False (full run): stay on the table, the next move
-    (to observe_stud, z leading) lifts the nut in one motion."""
+    """Step 1: observation pose (the iris opens on the way) -> detect the nut -> camera over it
+    from close by, detect again -> move to just above it -> straight down until the bottom
+    plate rests on the table, the open iris over the nut -> close -> back up. back_up False
+    (full run): stay on the table, the next move (to observe_stud, z leading) lifts the nut in
+    one motion."""
     table_z = poses.table_z()
     observe = observation_pose(poses, "observe_nut", cfg)
     robot.set_mode(cfg["robot"]["modes"]["normal"])
     vision.prepare(TARGET_NUT)
     move_while(robot, observe, cfg, gripper.open)
+    coarse = record["nut_coarse_mm"] = locate_nut(robot, vision, cfg, table_z)
+    move_to(robot, close_up_pose(cfg, coarse[:2], table_z + cfg["objects"]["nut"]["height_mm"]),
+            cfg)
     nut = record["nut_mm"] = locate_nut(robot, vision, cfg, table_z)
+    log.info("nut close up: %+.2f %+.2f mm from the first measurement",
+             nut[0] - coarse[0], nut[1] - coarse[1])
 
-    # Down to just above the nut and straight on (no stop, no fine positioning there; 23.10.)
-    # into a spiral down onto the table: if the target is off by up to the spiral radius, the
-    # plate slides over the nut until the open iris passes over it and the nut drops in (THEORY 5)
-    spiral = cfg["pick"]["spiral"]
-    press = cfg["pick"]["press_depth_mm"]
-    start = frames.flange_for_tcp([nut[0], nut[1], table_z + spiral["start_height_mm"]],
-                                  config.rotation_down(cfg), cfg["frames"]["flange_to_tcp_mm"])
+    # Just above the nut, then vertically down at constant speed until the plate pushes on the
+    # table (26.10.: spiral search dropped; a plain move to below the table stopped ~5 mm above
+    # it: joint friction holds the slowly arriving arm short of the reference, and standing
+    # still counted as landed). The iris misses: the plate stands on the nut, also contact.
+    descent = cfg["pick"]["descent"]
+    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
+    start = frames.flange_for_tcp([nut[0], nut[1], table_z + cfg["pick"]["approach_height_mm"]],
+                                  config.rotation_down(cfg), tcp_offset)
     robot.follow(plan_move(robot.flange_pose(), start, config.motion_limits(cfg),
                            cfg["robot"]["stream_rate_hz"], LEAD_XY))
-    search = spiral_down(start, spiral["start_height_mm"] + press, spiral["radius_mm"],
-                         spiral["turns"], spiral["duration_s"], cfg["robot"]["stream_rate_hz"])
-    robot.follow(search)
-    # If the iris misses, the plate stands on the nut instead of the table: accept that
-    robot.wait_until_arrived(search[-1].t_base_flange, cfg["robot"]["arrival_tolerance_mm"]
-                             + press + cfg["objects"]["nut"]["height_mm"])
-    landed = frames.tcp_position(robot.flange_pose(), cfg["frames"]["flange_to_tcp_mm"])
+    # standing still first: the contact detection takes its force baseline at the start
+    robot.wait_until_arrived(start, cfg["robot"]["arrival_tolerance_mm"])
+    path = straight_down(start, cfg["pick"]["approach_height_mm"] + descent["below_table_mm"],
+                         descent["speed_mm_s"], cfg["robot"]["stream_rate_hz"])
+    record["contact"] = robot.follow(path, stop_on_contact_n=descent["contact_force_n"])
+    landed = frames.tcp_position(robot.flange_pose(), tcp_offset)
     record["landed_tcp_mm"] = rounded(landed)
-    log.info("landed: TCP %.1f mm above the table", landed[2] - table_z)
+    if record["contact"]:  # plate flat on the table with a little preload while the iris closes
+        pressed = robot.flange_pose()
+        pressed[:3, :3] = config.rotation_down(cfg)
+        pressed[2, 3] -= cfg["pick"]["press_depth_mm"]
+        robot.follow([Waypoint(0.0, pressed)])
+        log.info("landed: TCP %.1f mm above the table", landed[2] - table_z)
+    else:
+        log.warning("no contact down to %.0f mm below the table: closing there anyway",
+                    descent["below_table_mm"])
     gripper.close()
     if back_up:
         move_to(robot, observe, cfg, lead=LEAD_Z)
@@ -255,6 +305,76 @@ def stiffen_where_it_is(robot: Robot, cfg: dict) -> np.ndarray:
     time.sleep(place["release_settle_s"])
     robot.set_mode(cfg["robot"]["modes"]["normal"])
     return hold
+
+
+def seat_nut(robot: Robot, cfg: dict, contact: np.ndarray, free_fz: float,
+             record: dict) -> np.ndarray:
+    """Before screwing: press down on the stud in the stiff mode, so the nut slides up in the
+    iris against its top stop (26.10., Yannick: the thread usually catches, the fast turn
+    never ran on). Reference depth_mm below contact, wait settle_s (reference low-pass), then
+    the measured pose is the new contact. The record holds how far the TCP went down (the nut
+    moving up in the iris, the stud being rigid) and the force."""
+    seat = cfg["place"]["seat"]
+    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
+    pressed = contact.copy()
+    pressed[2, 3] -= seat["depth_mm"]
+    robot.follow([Waypoint(0.0, pressed)])
+    time.sleep(seat["settle_s"])
+    seated = robot.flange_pose()
+    seated_tcp = frames.tcp_position(seated, tcp_offset)
+    travel = float(frames.tcp_position(contact, tcp_offset)[2] - seated_tcp[2])
+    record.update(seated_tcp_mm=rounded(seated_tcp), travel_mm=round(travel, 2),
+                  force_n=round(float(robot.force_z() - free_fz), 2))
+    log.info("seat: TCP %.2f mm down, force %.1f N", travel, record["force_n"])
+    return seated
+
+
+def find_thread(robot: Robot, cfg: dict, contact: np.ndarray, record: dict) -> np.ndarray:
+    """Spiral search on the thread tip (26.10.): the stud target is off by 1-3 mm, so the nut
+    rests on the rim of the tip. Pressed lightly onto it, the arm runs a flat outward spiral
+    around the contact while the TCP height is sampled; where the nut is over the thread it
+    drops onto the thread start (chamfers of nut and tip), so the lowest TCP marks the centre.
+    The arm then goes back to that xy, and the measured pose there is the new contact."""
+    search = cfg["place"]["thread_search"]
+    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
+    start = contact.copy()
+    start[2, 3] -= search["press_mm"]
+    robot.follow([Waypoint(0.0, start)])
+    time.sleep(search["settle_s"])
+    samples = [robot.flange_pose()]
+    done = threading.Event()
+
+    def sample():
+        while not done.is_set():
+            samples.append(robot.flange_pose())
+            time.sleep(search["sample_period_s"])
+    worker = threading.Thread(target=sample, daemon=True)
+    worker.start()
+    robot.follow(spiral_down(start, 0.0, search["radius_mm"], search["turns"],
+                             search["duration_s"], cfg["robot"]["stream_rate_hz"]))
+    time.sleep(search["settle_s"])  # the low-passed reference still runs on
+    done.set()
+    worker.join()
+    samples.append(robot.flange_pose())
+
+    tcp = np.array([frames.tcp_position(s, tcp_offset) for s in samples])
+    lowest = int(np.argmin(tcp[:, 2]))
+    best = start.copy()
+    best[:2, 3] = samples[lowest][:2, 3]
+    robot.follow([Waypoint(0.0, best)])
+    time.sleep(search["settle_s"])
+    contact_tcp = frames.tcp_position(contact, tcp_offset)
+    record.update(
+        lowest_tcp_mm=rounded(tcp[lowest]),
+        drop_mm=round(float(tcp[0, 2] - tcp[lowest, 2]), 2),  # below the pressed start
+        shift_xy_mm=rounded(samples[lowest][:2, 3] - contact[:2, 3]),
+        reached_radius_mm=round(float(np.max(np.linalg.norm(tcp[:, :2] - contact_tcp[:2],
+                                                             axis=1))), 2),
+        samples=len(samples))
+    log.info("thread search: lowest %.2f mm below the start, %+.2f %+.2f mm from it (spiral "
+             "reached %.1f mm)", record["drop_mm"], *record["shift_xy_mm"],
+             record["reached_radius_mm"])
+    return robot.flange_pose()
 
 
 def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
@@ -319,8 +439,11 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
 
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                     poses: config.Poses, record: dict, approach_only: bool = False) -> None:
-    """Step 2: observation pose over the stud -> stud search -> to beside the approach pose,
-    then the last bit always from the same side -> descend until contact -> screw (screw_on) -> release -> back up.
+    """Step 2: observation pose over the stud -> stud search -> measured again from close by
+    (stud_close_up) -> to beside the approach pose,
+    then the last bit always from the same side -> descend until contact -> press the nut up in
+    the iris (seat_nut) -> spiral search for the thread (find_thread) -> screw (screw_on) ->
+    release -> back up.
     approach_only: stop above the thread tip and hold (centring check, no gripper)."""
     table_z = poses.table_z()
     stud = cfg["objects"]["stud"]
@@ -331,7 +454,8 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     robot.set_mode(modes["normal"])
     vision.prepare(TARGET_STUD)
     move_to(robot, observe, cfg)
-    found = record["stud"] = find_stud(robot, vision, cfg, table_z, observe, record)
+    found = find_stud(robot, vision, cfg, table_z, observe, record)
+    found = record["stud"] = stud_close_up(robot, vision, cfg, table_z, found)
 
     # The nut sits in the iris with its bottom face at the TCP plane
     tip_z = table_z + stud["top_height_mm"]
@@ -340,9 +464,10 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                                      config.rotation_down(cfg), tcp_offset)
     # First beside the target, then the last short move always in the same direction: the
     # play of the gripper's turning disk then always ends up on the same side (25.10.)
-    beside = approach.copy()
-    beside[:2, 3] += place["approach_from_mm"]
-    move_to(robot, beside, cfg, lead=LEAD_XY)
+    if np.any(place["approach_from_mm"]):  # [0, 0]: straight to the approach pose
+        beside = approach.copy()
+        beside[:2, 3] += place["approach_from_mm"]
+        move_to(robot, beside, cfg, lead=LEAD_XY)
     approach = move_to(robot, approach, cfg, precise=True)
     # Record only: how far the flange tilt moves a rigid TCP here (25.10.: 0-2 mm, varied from
     # run to run at the same place; a swinging-plate model built on it was dropped)
@@ -369,6 +494,10 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
                     place["max_descend_mm"])
     contact = robot.flange_pose()
     record["contact_tcp_mm"] = rounded(frames.tcp_position(contact, tcp_offset))
+    record["seat"] = {}
+    contact = seat_nut(robot, cfg, contact, free_fz, record["seat"])
+    record["thread_search"] = {}
+    contact = find_thread(robot, cfg, contact, record["thread_search"])
     record["screw"] = {}
     screw_on(robot, gripper, cfg, contact, free_fz, record["screw"])
     stiffen_where_it_is(robot, cfg)
