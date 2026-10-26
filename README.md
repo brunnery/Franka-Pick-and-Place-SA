@@ -49,6 +49,8 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+`cartesian_impedance_control` needs the message package `messages_fr3` in `software/src/messages_fr3/`. It has no license and is therefore not in this repository: copy it there by hand on a fresh clone (the sa_* packages build without it).
+
 Camera only: `ros2 launch software/launch/camera.launch.py` (from the repository root).
 Camera + nut detection + debug viewer (`/vision/debug`): `ros2 launch software/launch/vision.launch.py [view:=false]`. Parameters: `software/src/sa_vision/config/vision.yaml`.
 
