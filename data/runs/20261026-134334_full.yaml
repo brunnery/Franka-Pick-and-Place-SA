@@ -1,0 +1,5 @@
+step: full
+started: '2026-10-26T13:43:29.483402'
+result: 'failed: no robot state (franka bringup?) within 5.0 s'
+duration_s: 5.02
+arrival_errors_mm: []

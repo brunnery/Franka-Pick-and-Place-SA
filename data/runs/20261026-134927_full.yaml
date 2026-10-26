@@ -1,0 +1,164 @@
+step: full
+started: '2026-10-26T13:48:10.538798'
+pick:
+  nut_coarse_mm:
+  - 487.6
+  - -258.63
+  - 15.96
+  nut_mm:
+  - 487.11
+  - -258.85
+  - 15.96
+  contact: true
+  landed_tcp_mm:
+  - 486.84
+  - -258.15
+  - 15.18
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 417.17
+    - 194.83
+    - 31.96
+    offset_from_axis_mm: 44.24
+    size_mm: 11.23
+    width_ratio: 0.816
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 415.74
+      - 195.6
+      - 31.96
+      offset_from_axis_mm: 3.03
+      size_mm: 11.09
+      width_ratio: 0.764
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 409.29
+    - 191.05
+    - 31.96
+    centred_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+    close_mm:
+    - 411.09
+    - 195.95
+    - 31.96
+    close_minus_centred_mm:
+    - -4.65
+    - 0.35
+  approach_tilt_shift_mm:
+  - -1.32
+  - 2.38
+  - 0.03
+  contact: true
+  contact_tcp_mm:
+  - 410.09
+  - 191.39
+  - 52.6
+  seat:
+    seated_tcp_mm:
+    - 409.88
+    - 191.29
+    - 52.21
+    travel_mm: 0.39
+    force_n: -6.24
+  thread_search:
+    lowest_tcp_mm:
+    - 408.76
+    - 191.63
+    - 51.12
+    drop_mm: 1.08
+    shift_xy_mm:
+    - -0.76
+    - 0.47
+    reached_radius_mm: 1.58
+    samples: 870
+  screw:
+    tilt_start_deg: 1.36
+    force_start_n: -0.82
+    catch_drops_mm:
+    - -0.01
+    - -0.0
+    - 0.11
+    - 0.21
+    - 0.19
+    - 0.17
+    - 0.18
+    - 0.21
+    - 0.2
+    - 0.18
+    - 0.18
+    - 0.2
+    catch_tcp_xy_from_contact_mm:
+    - - -0.05
+      - -0.04
+    - - -0.12
+      - 0.11
+    - - -0.43
+      - 0.12
+    - - -0.58
+      - -0.09
+    - - -0.51
+      - -0.19
+    - - -0.54
+      - -0.07
+    - - -0.6
+      - 0.01
+    - - -0.6
+      - -0.14
+    - - -0.55
+      - -0.21
+    - - -0.56
+      - -0.12
+    - - -0.63
+      - -0.02
+    - - -0.61
+      - -0.14
+    caught: false
+    tilt_after_catch_deg: 1.39
+    force_after_catch_n: 0.04
+    drop_end_mm: -0.05
+    tilt_end_deg: 1.38
+    force_end_n: -0.13
+result: ok
+duration_s: 77.28
+arrival_errors_mm:
+- - 2.46
+  - -1.4
+  - -0.58
+- - 1.98
+  - 0.72
+  - 3.36
+- - 0.9
+  - 1.53
+  - 2.48
+- - 0.06
+  - -2.08
+  - -1.01
+- - -2.29
+  - 0.51
+  - -1.06
+- - 1.82
+  - -1.6
+  - 4.96
+- - 0.52
+  - -2.85
+  - 4.36
+- - 0.18
+  - -3.4
+  - 2.34
+- - 0.32
+  - -3.44
+  - 2.39
+- - 4.59
+  - 1.28
+  - -1.07

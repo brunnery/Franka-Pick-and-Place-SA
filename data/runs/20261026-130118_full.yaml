@@ -1,0 +1,21 @@
+step: full
+started: '2026-10-26T13:01:02.724273'
+pick:
+  nut_mm:
+  - 372.12
+  - 316.92
+  - 15.96
+  landed_tcp_mm:
+  - 376.57
+  - 314.86
+  - 19.25
+place: {}
+result: aborted by user
+duration_s: 15.4
+arrival_errors_mm:
+- - -0.23
+  - -1.81
+  - -2.78
+- - -0.02
+  - -2.96
+  - 9.27

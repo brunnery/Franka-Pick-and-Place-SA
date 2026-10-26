@@ -1,0 +1,36 @@
+step: full
+started: '2026-10-26T13:09:33.245592'
+pick:
+  nut_mm:
+  - 372.63
+  - 316.85
+  - 15.96
+  contact: true
+  landed_tcp_mm:
+  - 372.54
+  - 315.93
+  - 19.75
+place:
+  candidates:
+  - rank: 1
+    position_mm:
+    - 460.42
+    - -276.83
+    - 31.96
+    offset_from_axis_mm: 55.24
+    size_mm: 15.63
+    width_ratio: 0.698
+    shape_ok: true
+  attempts: []
+result: aborted by user
+duration_s: 25.94
+arrival_errors_mm:
+- - -0.12
+  - -1.69
+  - -2.85
+- - 1.64
+  - -1.98
+  - 3.04
+- - -1.07
+  - 2.71
+  - -1.82

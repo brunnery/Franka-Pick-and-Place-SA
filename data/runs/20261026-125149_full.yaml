@@ -1,0 +1,25 @@
+step: full
+started: '2026-10-26T12:51:24.240846'
+pick:
+  nut_mm:
+  - 375.53
+  - 294.37
+  - 15.96
+  landed_tcp_mm:
+  - 380.87
+  - 292.61
+  - 14.11
+place:
+  candidates: []
+result: 'failed: no object in the work area at the stud observation pose (0 in view)'
+duration_s: 25.02
+arrival_errors_mm:
+- - 0.19
+  - -2.08
+  - -0.75
+- - 0.97
+  - -3.14
+  - 4.13
+- - -1.1
+  - 2.57
+  - -2.11

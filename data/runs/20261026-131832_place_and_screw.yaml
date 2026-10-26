@@ -1,0 +1,74 @@
+step: place_and_screw
+started: '2026-10-26T13:18:12.120373'
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 459.4
+    - -278.17
+    - 31.96
+    offset_from_axis_mm: 56.69
+    size_mm: 15.65
+    width_ratio: 0.695
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 458.45
+      - -275.42
+      - 31.96
+      offset_from_axis_mm: 2.46
+      size_mm: 15.51
+      width_ratio: 0.695
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 457.67
+    - -276.37
+    - 31.96
+    centred_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+    close_mm:
+    - 457.67
+    - -276.37
+    - 31.96
+    close_minus_centred_mm:
+    - -0.78
+    - -0.95
+  approach_tilt_shift_mm:
+  - -1.19
+  - -1.01
+  - 0.01
+  contact: false
+  contact_tcp_mm:
+  - 458.4
+  - -276.65
+  - 44.53
+  seat: {}
+result: aborted by user
+duration_s: 20.57
+arrival_errors_mm:
+- - 2.54
+  - -1.65
+  - -1.12
+- - -0.25
+  - 1.62
+  - -1.45
+- - 2.25
+  - 0.8
+  - 2.66
+- - 0.52
+  - 1.94
+  - 3.5
+- - 0.19
+  - 2.11
+  - 2.75
+- - 0.21
+  - 2.22
+  - 2.67

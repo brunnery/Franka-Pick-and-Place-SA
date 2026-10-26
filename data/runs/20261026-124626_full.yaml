@@ -1,0 +1,141 @@
+step: full
+started: '2026-10-26T12:45:24.701169'
+pick:
+  nut_mm:
+  - 375.72
+  - 180.77
+  - 15.96
+  landed_tcp_mm:
+  - 380.64
+  - 179.3
+  - 13.4
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 466.39
+    - -217.08
+    - 31.96
+    offset_from_axis_mm: 11.51
+    size_mm: 11.05
+    width_ratio: 0.765
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 465.41
+      - -218.17
+      - 31.96
+      offset_from_axis_mm: 2.17
+      size_mm: 11.02
+      width_ratio: 0.767
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 465.41
+    - -220.21
+    - 31.96
+    centred_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+  approach_tilt_shift_mm:
+  - -1.97
+  - -0.55
+  - 0.02
+  contact: true
+  contact_tcp_mm:
+  - 464.68
+  - -219.89
+  - 55.48
+  seat:
+    seated_tcp_mm:
+    - 464.48
+    - -219.81
+    - 55.14
+    travel_mm: 0.34
+    force_n: -7.6
+  screw:
+    tilt_start_deg: 0.97
+    force_start_n: -1.28
+    catch_drops_mm:
+    - -0.06
+    - -0.08
+    - -0.03
+    - -0.04
+    - -0.1
+    - -0.1
+    - -0.07
+    - -0.08
+    - -0.12
+    - -0.12
+    - -0.09
+    - -0.1
+    catch_tcp_xy_from_contact_mm:
+    - - 0.26
+      - -0.02
+    - - 0.5
+      - 0.44
+    - - 0.38
+      - 0.59
+    - - 0.24
+      - 0.3
+    - - 0.32
+      - 0.17
+    - - 0.44
+      - 0.39
+    - - 0.39
+      - 0.46
+    - - 0.3
+      - 0.26
+    - - 0.33
+      - 0.17
+    - - 0.42
+      - 0.33
+    - - 0.36
+      - 0.37
+    - - 0.26
+      - 0.13
+    caught: false
+    tilt_after_catch_deg: 0.99
+    force_after_catch_n: -0.54
+    drop_end_mm: -0.27
+    tilt_end_deg: 0.95
+    force_end_n: 0.46
+result: ok
+duration_s: 62.0
+arrival_errors_mm:
+- - 0.29
+  - -2.05
+  - -0.6
+- - 0.69
+  - -3.86
+  - 3.41
+- - -1.03
+  - 2.79
+  - -2.21
+- - -3.25
+  - 0.44
+  - -2.02
+- - 1.53
+  - 2.56
+  - 3.77
+- - 2.79
+  - -0.59
+  - 1.61
+- - 3.42
+  - -0.27
+  - 1.06
+- - 3.63
+  - 0.15
+  - 0.71
+- - 3.58
+  - 0.26
+  - 0.59
+- - 4.31
+  - -1.82
+  - -1.79

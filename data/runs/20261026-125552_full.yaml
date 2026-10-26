@@ -1,0 +1,13 @@
+step: full
+started: '2026-10-26T12:55:27.269701'
+pick:
+  nut_mm:
+  - 457.41
+  - -283.39
+  - 15.96
+result: aborted by user
+duration_s: 25.7
+arrival_errors_mm:
+- - 2.62
+  - -3.0
+  - -1.47

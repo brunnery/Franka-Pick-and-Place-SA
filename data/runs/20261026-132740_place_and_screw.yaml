@@ -1,0 +1,36 @@
+step: place_and_screw
+started: '2026-10-26T13:27:34.004919'
+place:
+  candidates:
+  - rank: 1
+    position_mm:
+    - 465.9
+    - -201.97
+    - 31.96
+    offset_from_axis_mm: 21.06
+    size_mm: 10.85
+    width_ratio: 0.771
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: null
+    seen:
+    - rank: 1
+      position_mm:
+      - 491.29
+      - -280.33
+      - 31.96
+      offset_from_axis_mm: 82.62
+      size_mm: 12.45
+      width_ratio: 0.804
+      shape_ok: true
+result: 'failed: none of the 1 object(s) tried is a stud'
+duration_s: 6.08
+arrival_errors_mm:
+- - 2.75
+  - -1.02
+  - -1.13
+- - 2.46
+  - -3.27
+  - -1.05
