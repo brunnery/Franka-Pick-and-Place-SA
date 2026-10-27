@@ -34,6 +34,7 @@ setup(
             "charuco_board = sa_tasks.charuco_board:main",
             "hand_eye = sa_tasks.hand_eye:main",
             "tcp_offset = sa_tasks.tcp_offset:main",
+            "tilt_level = sa_tasks.tilt_level:main",
             "run_map = sa_tasks.run_map:main",
         ],
     },

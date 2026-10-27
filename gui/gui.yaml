@@ -126,6 +126,10 @@ groups:
         command: ros2 run sa_tasks goto_poses --mark
         confirm: true
         tip: "table clear! Per area: observation pose, then the bottom plate 10 mm above the table at the centre and the 4 corners (each after Enter), mark below the plate centre"
+      - label: Level the bottom plate (tilt_level)
+        command: ros2 run sa_tasks tilt_level
+        confirm: true
+        tip: "TABLE CLEAR! Per area the plate goes 10 mm above the table; '+'/'-' turn it about the TCP (-y edge up/down), 'down'/'up' 1 mm, 'save', 'next'. Log: data/runs/tilt_level.yaml"
       - label: Jitter test (motion_test)
         command: ros2 run sa_tasks motion_test
         confirm: true

@@ -61,3 +61,37 @@ def test_tilt_shift_of_a_tilted_flange():
     shift = frames.tilt_shift_mm(frames.pose(tilt_about_x @ down, [0.0, 0.0, 0.0]), down, [0, 0, 100.0])
     assert abs(np.linalg.norm(shift[:2]) - 100.0 * np.sin(a)) < 1e-6
     assert np.allclose(frames.tilt_shift_mm(frames.pose(down, [1.0, 2.0, 3.0]), down, [0, 0, 100.0]), 0.0)
+
+
+def test_axis_tilt_is_zero_for_the_commanded_orientation():
+    assert frames.axis_tilt_deg(R_DOWN) == pytest.approx((0.0, 0.0), abs=1e-9)
+
+
+def test_axis_tilt_follows_the_tcp_shift():
+    # recorded tilt shifts (25.-27.10.): stud on the left, the TCP swings towards +y_B
+    tcp_offset = CFG["frames"]["flange_to_tcp_mm"]
+    for angle in (-1.5, 0.7, 2.0):
+        r = frames.rotation_x(angle) @ R_DOWN
+        about_x, about_y = frames.axis_tilt_deg(r)
+        assert about_x == pytest.approx(angle)
+        assert about_y == pytest.approx(0.0, abs=1e-9)
+        shift = frames.tilt_shift_mm(frames.pose(r, [400.0, 200.0, 300.0]), R_DOWN, tcp_offset)
+        assert np.sign(shift[1]) == np.sign(angle)
+
+
+def test_raise_minus_y_edge_turns_about_the_tcp_and_lifts_the_minus_y_edge():
+    tcp_offset = CFG["frames"]["flange_to_tcp_mm"]
+    tcp = [400.0, 200.0, 20.0]
+    half_width = 45.0
+    edge_in_flange = {"-y": np.add(tcp_offset, [0.0, half_width, 0.0]),   # y_F = -y_B
+                      "+y": np.add(tcp_offset, [0.0, -half_width, 0.0])}
+    for angle in (0.5, 2.0):
+        r = frames.raise_minus_y_edge(R_DOWN, angle)
+        flange = frames.flange_for_tcp(tcp, r, tcp_offset)
+        assert frames.tcp_position(flange, tcp_offset) == pytest.approx(tcp)
+        edge = {k: (flange @ np.append(v, 1.0))[:3] for k, v in edge_in_flange.items()}
+        assert edge["-y"][1] < tcp[1] < edge["+y"][1]
+        assert edge["-y"][2] - edge["+y"][2] == pytest.approx(
+            2 * half_width * np.sin(np.radians(angle)))
+        # measured as -y edge up = -tilt about x_B
+        assert -frames.axis_tilt_deg(r)[0] == pytest.approx(angle)

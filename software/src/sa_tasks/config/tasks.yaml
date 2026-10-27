@@ -343,6 +343,17 @@ screw_test:
 goto_poses:
   mark_height_mm: 10.0
 
+# ros2 run sa_tasks tilt_level (28.10.): turn the bottom plate about the TCP just above the table
+# until it looks level, per area (THEORY 5, tilt about the TCP). The table must be clear
+tilt_level:
+  points: [observe_stud, observe_nut]  # area centres: camera axis of these poses on the table
+  safe_height_mm: 80.0         # TCP above the table for the moves to and from an area
+  start_gap_mm: 10.0           # first stop of the TCP above the table (no z integrator: sags ~3.5)
+  z_step_mm: 1.0               # 'down' / 'up'
+  min_gap_mm: 1.5              # 'down' refused below this measured TCP height
+  step_deg: 0.5                # '+' / '-' (change with 'step 0.25')
+  max_correction_deg: 4.0
+
 # ros2 run sa_tasks tcp_offset: camera -> iris offset at the stud (26.10.)
 tcp_offset:
   # warn if the thread is less deep in the iris (27.10.: centred by eye 3-10 mm above the tip,

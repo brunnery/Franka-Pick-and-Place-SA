@@ -87,6 +87,27 @@ def rotation_xy(ax_deg: float, ay_deg: float) -> np.ndarray:
     return rx @ ry
 
 
+def rotation_x(angle_deg: float) -> np.ndarray:
+    a = np.radians(angle_deg)
+    return np.array([[1.0, 0.0, 0.0], [0.0, np.cos(a), -np.sin(a)], [0.0, np.sin(a), np.cos(a)]])
+
+
+def axis_tilt_deg(r_base_flange: np.ndarray) -> tuple:
+    """Tilt of the tool axis z_F against the downward vertical, split into the rotation about
+    x_B and about y_B (THEORY 5, tilt about the TCP). About x_B > 0: the TCP swings towards +y_B
+    (and the plate's -y_B edge goes down); about y_B > 0: the TCP swings towards -x_B."""
+    d = np.asarray(r_base_flange, float)[:, 2]
+    return (float(np.degrees(np.arctan2(d[1], -d[2]))),
+            float(np.degrees(np.arctan2(-d[0], -d[2]))))
+
+
+def raise_minus_y_edge(r_base_flange: np.ndarray, angle_deg: float) -> np.ndarray:
+    """Orientation turned about x_B so that the -y_B edge of the bottom plate goes up by
+    angle_deg (the TCP swings towards -y_B): R_x(-angle) R. Pair with flange_for_tcp to turn
+    about the TCP instead of the flange."""
+    return rotation_x(-angle_deg) @ np.asarray(r_base_flange, float)
+
+
 def flange_from_state(t_base_ee: np.ndarray, t_link8_ee: np.ndarray,
                       r_link8_flange: np.ndarray) -> tuple:
     """(T_B_F, T_F_E) from the robot state (O_T_EE, F_T_EE of libfranka, whose "F" is
