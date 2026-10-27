@@ -58,3 +58,108 @@
   correction_in_run_mm:
   - -1.8
   - -4.9
+- time: '2026-10-27T10:28:05'
+  invalid: sa_robot started instead of robot_state (the arm moves to its start pose),
+    ignore
+  run: 20261027-102616_place_and_screw.yaml
+  stud_close_mm:
+  - 379.8
+  - 289.68
+  tcp_mm:
+  - 383.23
+  - 282.12
+  - 61.79
+  tilt_deg: 0.63
+  correction_mm:
+  - 3.43
+  - -7.56
+  camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  camera_rotation_about_z_deg: 1.3
+  correction_in_run_mm:
+  - -1.8
+  - -4.9
+- time: '2026-10-27T10:29:58'
+  run: 20261027-102921_place_and_screw.yaml
+  stud_close_mm:
+  - 380.37
+  - 290.21
+  tcp_mm:
+  - 376.01
+  - 286.48
+  - 56.56
+  tilt_deg: 1.13
+  correction_mm:
+  - -4.36
+  - -3.73
+  camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  camera_rotation_about_z_deg: 1.3
+  correction_in_run_mm:
+  - -1.8
+  - -4.9
+- time: '2026-10-27T10:35:08'
+  run: 20261027-103355_place_and_screw.yaml
+  stud_close_mm:
+  - 403.3
+  - 160.8
+  tcp_mm:
+  - 400.15
+  - 155.6
+  - 51.89
+  tilt_deg: 1.18
+  correction_mm:
+  - -3.15
+  - -5.2
+  thread_in_iris_mm: -0.9
+  camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  camera_rotation_about_z_deg: 1.3
+  correction_in_run_mm:
+  - -1.8
+  - -4.9
+- time: '2026-10-27T10:38:42'
+  run: 20261027-103748_place_and_screw.yaml
+  stud_close_mm:
+  - 349.94
+  - 152.24
+  tcp_mm:
+  - 346.88
+  - 149.37
+  - 50.01
+  tilt_deg: 1.72
+  correction_mm:
+  - -3.06
+  - -2.87
+  thread_in_iris_mm: 1.0
+  camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  camera_rotation_about_z_deg: 1.3
+  correction_in_run_mm:
+  - -1.8
+  - -4.9
+- time: '2026-10-27T10:40:27'
+  run: 20261027-103934_place_and_screw.yaml
+  stud_close_mm:
+  - 442.1
+  - 322.34
+  tcp_mm:
+  - 437.83
+  - 318.69
+  - 53.63
+  tilt_deg: 0.42
+  correction_mm:
+  - -4.27
+  - -3.65
+  thread_in_iris_mm: -2.7
+  camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  camera_rotation_about_z_deg: 1.3
+  correction_in_run_mm:
+  - -1.8
+  - -4.9

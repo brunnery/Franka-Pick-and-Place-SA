@@ -1,0 +1,498 @@
+step: full
+started: '2026-10-27T10:53:50.353566'
+round: round 2
+config:
+  commit: 24e5c04
+  changed_files:
+  - ata/runs/tcp_offset.yaml
+  - docs/PLAN.md
+  - docs/THEORY.md
+  - gui/README.md
+  - gui/gui.yaml
+  - gui/launcher.py
+  - gui/sa_gui.py
+  - gui/test_launcher.py
+  - software/src/cartesian_impedance_control/launch/controllers.yaml
+  - software/src/sa_tasks/config/poses.yaml
+  - software/src/sa_tasks/config/tasks.yaml
+  - software/src/sa_tasks/package.xml
+  - software/src/sa_tasks/sa_tasks/interfaces.py
+  - software/src/sa_tasks/sa_tasks/motion_test.py
+  - software/src/sa_tasks/sa_tasks/ros_interfaces.py
+  - software/src/sa_tasks/sa_tasks/sequences.py
+  - software/src/sa_tasks/sa_tasks/task_node.py
+  - software/src/sa_tasks/sa_tasks/tcp_offset.py
+  - software/src/sa_tasks/setup.py
+  - software/src/sa_tasks/test/test_sequences.py
+  - software/src/sa_vision/config/vision.yaml
+  observe_mm:
+    observe_nut:
+    - 410.45
+    - -233.16
+    - 463.55
+    observe_stud:
+    - 340.25
+    - 222.25
+    - 473.38
+  frames.target_correction:
+    x:
+    - -1.42
+    - -0.0032
+    - -0.00455
+    y:
+    - -4.33
+    - 0.0
+    - 0.0
+  frames.camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  frames.camera_rotation_about_z_deg: 1.3
+  vision.close_up_distance_mm: 170.0
+  vision.settle_s: 0.2
+  pick:
+    press_depth_mm: 2.0
+    flush_settle_s: 0.5
+    descent:
+      below_table_mm: 8.0
+      contact_force_n: 4.0
+      contact_height_mm: 10.0
+  place.stud_search:
+    max_candidates: 3
+    max_centring_moves: 2
+    centred_tolerance_mm: 7.0
+    lost_radius_mm: 20.0
+  place.approach_from_mm:
+  - 0.0
+  - 0.0
+  place.seat:
+    depth_mm: 6.0
+    settle_s: 1.0
+  place.thread_search:
+    press_mm: 3.0
+    radius_mm: 3.0
+    turns: 2.0
+    duration_s: 4.0
+    found_drop_mm: 0.4
+    settle_s: 0.5
+    sample_period_s: 0.01
+    trace_every: 5
+  place.screw:
+    direction: 1
+    catch:
+      step_ms: 250
+      speed: 100
+      max_steps: 0
+      depth_mm: 2.0
+      settle_s: 0.3
+      caught_drop_mm: 0.6
+      wobble:
+        radius_mm: 2.0
+        points_per_circle: 4
+    tighten:
+      duration_ms: 7000
+      speed: 255
+      depth_mm: 2.0
+      down_mm: 5.0
+      down_speed_mm_s: 1.0
+  place.release_settle_s: 1.5
+  place.open_while_settling: true
+  gripper.open:
+    duration_ms: 1500
+    speed: 100
+  gripper.close:
+    duration_ms: 1500
+    speed: 100
+    hold_speed: 60
+setup_s: 0.61
+pick:
+  nut_coarse_mm:
+  - 455.89
+  - -247.85
+  - 15.96
+  nut_mm:
+  - 456.28
+  - -254.64
+  - 15.96
+  nut_close_minus_coarse_mm:
+  - 0.39
+  - -6.79
+  contact: false
+  landed_tcp_mm:
+  - 451.49
+  - -253.71
+  - 25.63
+  landed_minus_target_xy_mm:
+  - -4.79
+  - 0.93
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 364.69
+    - 180.5
+    - 31.96
+    offset_from_axis_mm: 50.66
+    size_mm: 11.28
+    width_ratio: 0.812
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 361.57
+      - 175.0
+      - 31.96
+      offset_from_axis_mm: 6.93
+      size_mm: 10.36
+      width_ratio: 0.757
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 358.2
+    - 170.67
+    - 31.96
+    close_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+    moves: 1
+    close_minus_observed_mm:
+    - -3.12
+    - -5.5
+  approach_reached_tcp_mm:
+  - 357.38
+  - 170.19
+  - 58.61
+  approach_minus_target_xy_mm:
+  - -0.82
+  - -0.48
+  approach_tilt_shift_mm:
+  - -2.07
+  - 2.66
+  - 0.05
+  contact: true
+  contact_tcp_mm:
+  - 357.89
+  - 170.42
+  - 49.4
+  contact_minus_target_xy_mm:
+  - -0.31
+  - -0.25
+  seat:
+    seated_tcp_mm:
+    - 357.98
+    - 170.43
+    - 49.25
+    travel_mm: 0.15
+    force_n: -7.07
+  thread_search:
+    trace:
+      t_s:
+      - 0.0
+      - 0.05
+      - 0.11
+      - 0.16
+      - 0.22
+      - 0.29
+      - 0.35
+      - 0.4
+      - 0.46
+      - 0.51
+      - 0.57
+      - 0.63
+      - 0.69
+      - 0.75
+      - 0.81
+      - 0.88
+      - 0.94
+      - 1.0
+      - 1.06
+      - 1.12
+      - 1.19
+      - 1.27
+      - 1.34
+      - 1.4
+      - 1.46
+      - 1.52
+      - 1.59
+      - 1.65
+      - 1.72
+      - 1.78
+      - 1.84
+      - 1.89
+      - 1.95
+      - 2.01
+      - 2.08
+      - 2.14
+      - 2.21
+      - 2.27
+      - 2.33
+      - 2.39
+      - 2.47
+      - 2.53
+      - 2.59
+      - 2.65
+      - 2.71
+      - 2.77
+      - 2.83
+      - 2.88
+      - 2.96
+      - 3.02
+      - 3.08
+      - 3.14
+      - 3.21
+      - 3.26
+      - 3.32
+      - 3.37
+      - 3.44
+      - 3.5
+      - 3.57
+      - 3.63
+      - 3.68
+      - 3.74
+      - 3.8
+      - 3.86
+      - 3.92
+      - 3.99
+      - 4.04
+      - 4.1
+      - 4.15
+      - 4.21
+      - 4.27
+      - 4.32
+      - 4.38
+      - 4.44
+      - 4.49
+      drop_mm:
+      - 0.0
+      - 0.001
+      - 0.001
+      - 0.004
+      - 0.004
+      - 0.005
+      - 0.004
+      - 0.005
+      - 0.008
+      - 0.007
+      - 0.007
+      - 0.009
+      - 0.009
+      - 0.006
+      - 0.007
+      - 0.009
+      - 0.006
+      - 0.006
+      - 0.007
+      - 0.005
+      - 0.006
+      - 0.006
+      - 0.007
+      - 0.008
+      - 0.011
+      - 0.012
+      - 0.015
+      - 0.02
+      - 0.025
+      - 0.026
+      - 0.026
+      - 0.027
+      - 0.027
+      - 0.025
+      - 0.016
+      - 0.005
+      - -0.0
+      - 0.016
+      - 0.015
+      - 0.022
+      - 0.029
+      - 0.036
+      - 0.048
+      - 0.064
+      - 0.082
+      - 0.098
+      - 0.119
+      - 0.128
+      - 0.142
+      - 0.178
+      - 0.178
+      - 0.181
+      - 0.178
+      - 0.167
+      - 0.157
+      - 0.146
+      - 0.133
+      - 0.123
+      - 0.128
+      - 0.117
+      - 0.116
+      - 0.119
+      - 0.12
+      - 0.112
+      - 0.119
+      - 0.122
+      - 0.12
+      - 0.119
+      - 0.121
+      - 0.118
+      - 0.123
+      - 0.123
+      - 0.121
+      - 0.118
+      - 0.117
+      fz_n:
+      - 0.0
+      - 0.06
+      - 0.05
+      - 0.07
+      - 0.07
+      - 0.08
+      - 0.12
+      - 0.1
+      - 0.07
+      - 0.16
+      - 0.08
+      - 0.14
+      - 0.08
+      - 0.08
+      - 0.16
+      - 0.12
+      - 0.15
+      - 0.19
+      - 0.19
+      - 0.16
+      - 0.19
+      - 0.25
+      - 0.22
+      - 0.16
+      - 0.11
+      - 0.09
+      - 0.01
+      - -0.02
+      - -0.06
+      - -0.08
+      - -0.09
+      - -0.1
+      - -0.19
+      - -0.16
+      - -0.06
+      - 0.28
+      - 0.75
+      - 0.24
+      - 0.1
+      - 0.12
+      - 0.08
+      - 0.02
+      - -0.09
+      - -0.3
+      - -0.42
+      - -0.45
+      - -0.41
+      - -0.45
+      - -0.49
+      - -0.35
+      - -0.51
+      - -0.54
+      - -0.55
+      - -0.4
+      - -0.31
+      - 0.05
+      - 0.43
+      - 0.74
+      - 0.5
+      - 0.88
+      - 1.01
+      - 0.84
+      - 0.83
+      - 0.99
+      - 0.86
+      - 0.87
+      - 0.8
+      - 0.81
+      - 0.7
+      - 0.68
+      - 0.65
+      - 0.63
+      - 0.68
+      - 0.76
+      - 0.86
+    found: false
+    lowest_tcp_mm:
+    - 357.93
+    - 170.21
+    - 49.03
+    drop_mm: 0.18
+    shift_xy_mm:
+    - 0.06
+    - -0.18
+    reached_radius_mm: 1.31
+    samples: 373
+  thread_minus_target_xy_mm:
+  - -0.27
+  - -0.46
+  screw:
+    tilt_start_deg: 1.64
+    force_start_n: -7.02
+    catch_drops_mm: []
+    catch_tcp_xy_from_contact_mm: []
+    caught: false
+    tilt_after_catch_deg: 1.64
+    force_after_catch_n: -7.02
+    drop_end_mm: 0.13
+    tilt_end_deg: 1.65
+    force_end_n: -2.81
+    end_tcp_mm:
+    - 358.54
+    - 170.58
+    - 48.87
+  end_minus_target_xy_mm:
+  - 0.34
+  - -0.09
+  released_tcp_mm:
+  - 357.38
+  - 169.81
+  - 47.01
+result: ok
+duration_s: 46.73
+arrival_errors_mm:
+- - -3.7
+  - 24.04
+  - -3.86
+- - 1.78
+  - 2.26
+  - 4.13
+- - 3.36
+  - -20.93
+  - -9.32
+- - 1.12
+  - 0.98
+  - 5.08
+- - 1.25
+  - -3.13
+  - 4.6
+- - 3.32
+  - 0.97
+  - -6.68
+timeline_s:
+  start: 0.0
+  observe_nut: 4.15
+  nut_observed: 4.89
+  nut_close_arrived: 9.24
+  nut_located: 10.19
+  landed: 11.94
+  iris_closed: 13.45
+  observe_stud: 17.43
+  stud_observed: 18.51
+  stud_close_arrived: 22.01
+  stud_located: 23.34
+  approached: 26.18
+  contact: 28.01
+  seated: 29.02
+  thread_found: 34.56
+  catch_done: 34.56
+  m4_stopped: 41.6
+  iris_opening: 41.61
+  iris_opened: 43.12
+  back_up: 45.91

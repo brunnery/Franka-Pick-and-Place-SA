@@ -1,0 +1,202 @@
+step: place_and_screw
+started: '2026-10-27T10:37:33.250712'
+round: round 2
+config:
+  commit: 24e5c04
+  changed_files:
+  - ata/runs/tcp_offset.yaml
+  - docs/PLAN.md
+  - docs/THEORY.md
+  - gui/README.md
+  - gui/gui.yaml
+  - gui/launcher.py
+  - gui/sa_gui.py
+  - gui/test_launcher.py
+  - software/src/cartesian_impedance_control/launch/controllers.yaml
+  - software/src/sa_tasks/config/poses.yaml
+  - software/src/sa_tasks/config/tasks.yaml
+  - software/src/sa_tasks/package.xml
+  - software/src/sa_tasks/sa_tasks/interfaces.py
+  - software/src/sa_tasks/sa_tasks/motion_test.py
+  - software/src/sa_tasks/sa_tasks/ros_interfaces.py
+  - software/src/sa_tasks/sa_tasks/sequences.py
+  - software/src/sa_tasks/sa_tasks/task_node.py
+  - software/src/sa_tasks/sa_tasks/tcp_offset.py
+  - software/src/sa_tasks/setup.py
+  - software/src/sa_tasks/test/test_sequences.py
+  - software/src/sa_vision/config/vision.yaml
+  observe_mm:
+    observe_nut:
+    - 410.45
+    - -233.16
+    - 463.55
+    observe_stud:
+    - 340.25
+    - 222.25
+    - 473.38
+  frames.target_correction:
+    y_mm:
+    - -300.0
+    - -130.0
+    correction_mm:
+    - - -1.8
+      - -4.9
+    - - -1.8
+      - -4.9
+  frames.camera_tilt_in_flange_deg:
+  - 1.54
+  - 0.79
+  frames.camera_rotation_about_z_deg: 1.3
+  vision.close_up_distance_mm: 170.0
+  vision.settle_s: 0.2
+  pick:
+    press_depth_mm: 2.0
+    flush_settle_s: 0.5
+    descent:
+      below_table_mm: 8.0
+      contact_force_n: 4.0
+      contact_height_mm: 10.0
+  place.stud_search:
+    max_candidates: 3
+    max_centring_moves: 2
+    centred_tolerance_mm: 7.0
+    lost_radius_mm: 20.0
+  place.approach_from_mm:
+  - 0.0
+  - 0.0
+  place.seat:
+    depth_mm: 6.0
+    settle_s: 1.0
+  place.thread_search:
+    press_mm: 3.0
+    radius_mm: 3.0
+    turns: 2.0
+    duration_s: 4.0
+    found_drop_mm: 0.4
+    settle_s: 0.5
+    sample_period_s: 0.01
+    trace_every: 5
+  place.screw:
+    direction: 1
+    catch:
+      step_ms: 250
+      speed: 100
+      max_steps: 0
+      depth_mm: 2.0
+      settle_s: 0.3
+      caught_drop_mm: 0.6
+      wobble:
+        radius_mm: 2.0
+        points_per_circle: 4
+    tighten:
+      duration_ms: 7000
+      speed: 255
+      depth_mm: 2.0
+      down_mm: 7.0
+      down_speed_mm_s: 1.0
+  place.release_settle_s: 1.5
+  place.open_while_settling: true
+  gripper.open:
+    duration_ms: 1500
+    speed: 100
+  gripper.close:
+    duration_ms: 1500
+    speed: 100
+    hold_speed: 60
+setup_s: 0.6
+place:
+  candidates:
+  - rank: 1
+    position_mm: &id004
+    - 347.04
+    - 144.16
+    - 31.96
+    offset_from_axis_mm: 97.17
+    size_mm: 14.15
+    width_ratio: 0.69
+    shape_ok: true
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm:
+      - 350.57
+      - 152.64
+      - 31.96
+      offset_from_axis_mm: 8.85
+      size_mm: 10.5
+      width_ratio: 0.756
+      shape_ok: true
+    seen:
+    - *id001
+  - candidate: 1
+    move: 2
+    nearest: &id002
+      rank: 1
+      position_mm: &id003
+      - 349.94
+      - 152.24
+      - 31.96
+      offset_from_axis_mm: 1.35
+      size_mm: 10.18
+      width_ratio: 0.75
+      shape_ok: true
+    seen:
+    - *id002
+  stud:
+    position_mm:
+    - 348.14
+    - 147.34
+    - 31.96
+    close_mm: *id003
+    observed_mm: *id004
+    candidate: 1
+    moves: 2
+    close_minus_observed_mm:
+    - 2.9
+    - 8.08
+  approach_reached_tcp_mm:
+  - 348.01
+  - 147.27
+  - 57.12
+  approach_minus_target_xy_mm:
+  - -0.13
+  - -0.07
+  approach_tilt_shift_mm:
+  - -1.45
+  - 2.47
+  - 0.03
+  check:
+    close_minus_observed_mm:
+    - 2.9
+    - 8.08
+    tcp_minus_close_mm:
+    - -1.93
+    - -4.97
+result: ok
+duration_s: 15.41
+arrival_errors_mm:
+- - 6.59
+  - -6.52
+  - -18.28
+- - 0.84
+  - 1.44
+  - 5.06
+- - -0.4
+  - -1.75
+  - 2.24
+- - -0.28
+  - -2.86
+  - 4.47
+- - 0.03
+  - -2.89
+  - 3.13
+timeline_s:
+  start: 0.0
+  observe_stud: 3.13
+  stud_observed: 3.7
+  stud_close_arrived: 7.24
+  stud_close_arrived_2: 9.97
+  stud_located: 11.29
+  approached: 14.81

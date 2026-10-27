@@ -1,0 +1,215 @@
+controller:
+  damping:
+    ratio_translational: 0.4
+    ratio_rotational: 0.5
+    rot_z_min_factor: 0.0
+  modes:
+    normal_stiffness:
+    - 2500.0
+    - 2500.0
+    - 1500.0
+    - 300.0
+    - 300.0
+    - 45.0
+    float_stiffness:
+    - 150.0
+    - 150.0
+    - 150.0
+    - 40.0
+    - 40.0
+    - 20.0
+    lift_stiffness:
+    - 0.0
+    - 0.0
+    - 8500.0
+    - 0.0
+    - 0.0
+    - 0.0
+    contact_stiffness:
+    - 2500.0
+    - 2500.0
+    - 100.0
+    - 40.0
+    - 40.0
+    - 20.0
+    screw_stiffness:
+    - 2000.0
+    - 2000.0
+    - 150.0
+    - 4.0
+    - 4.0
+    - 20.0
+    tighten_stiffness:
+    - 400.0
+    - 400.0
+    - 600.0
+    - 4.0
+    - 4.0
+    - 20.0
+  filter_params: 0.002
+  delta_tau_max: 1.0
+  saturation:
+    max_force: 18.0
+    max_torque: 9.0
+    max_torque_z: 2.0
+    clamp_spring_only: false
+    max_damping_force: 36.0
+    max_damping_torque: 18.0
+max_speed_mm_s: 250.0
+max_speed_z_mm_s: 220.0
+moves:
+- cycle: 1
+  move: to observe_nut
+  duration_s: 3.47
+  vibration_rms_mm:
+  - 0.0136
+  - 0.0144
+  - 0.0175
+  peak_speed_xy_z_mm_s:
+  - 201.1
+  - 77.3
+  min_success_rate: 1.0
+- cycle: 1
+  move: down to nut close-up
+  duration_s: 3.89
+  vibration_rms_mm:
+  - 0.0144
+  - 0.009
+  - 0.0172
+  peak_speed_xy_z_mm_s:
+  - 44.2
+  - 173.8
+  min_success_rate: 1.0
+- cycle: 1
+  move: down to nut
+  duration_s: 2.79
+  vibration_rms_mm:
+  - 0.011
+  - 0.0046
+  - 0.011
+  peak_speed_xy_z_mm_s:
+  - 69.1
+  - 70.6
+  min_success_rate: 1.0
+- cycle: 1
+  move: lift to observe_stud
+  duration_s: 3.4
+  vibration_rms_mm:
+  - 0.0213
+  - 0.0191
+  - 0.02
+  peak_speed_xy_z_mm_s:
+  - 224.4
+  - 180.7
+  min_success_rate: 1.0
+- cycle: 1
+  move: down to stud close-up
+  duration_s: 3.49
+  vibration_rms_mm:
+  - 0.0125
+  - 0.0134
+  - 0.0161
+  peak_speed_xy_z_mm_s:
+  - 43.3
+  - 167.8
+  min_success_rate: 1.0
+- cycle: 1
+  move: down to stud approach
+  duration_s: 3.38
+  vibration_rms_mm:
+  - 0.0106
+  - 0.007
+  - 0.011
+  peak_speed_xy_z_mm_s:
+  - 71.2
+  - 81.1
+  min_success_rate: 1.0
+- cycle: 1
+  move: up to stud close-up
+  duration_s: 2.97
+  vibration_rms_mm:
+  - 0.0093
+  - 0.0038
+  - 0.0125
+  peak_speed_xy_z_mm_s:
+  - 58.9
+  - 85.2
+  min_success_rate: 1.0
+- cycle: 2
+  move: to observe_nut
+  duration_s: 3.72
+  vibration_rms_mm:
+  - 0.0186
+  - 0.0195
+  - 0.0185
+  peak_speed_xy_z_mm_s:
+  - 231.2
+  - 172.9
+  min_success_rate: 1.0
+- cycle: 2
+  move: down to nut close-up
+  duration_s: 3.77
+  vibration_rms_mm:
+  - 0.0152
+  - 0.0118
+  - 0.0163
+  peak_speed_xy_z_mm_s:
+  - 38.2
+  - 168.6
+  min_success_rate: 1.0
+- cycle: 2
+  move: down to nut
+  duration_s: 2.79
+  vibration_rms_mm:
+  - 0.0109
+  - 0.0046
+  - 0.0111
+  peak_speed_xy_z_mm_s:
+  - 69.1
+  - 71.2
+  min_success_rate: 1.0
+- cycle: 2
+  move: lift to observe_stud
+  duration_s: 3.48
+  vibration_rms_mm:
+  - 0.0208
+  - 0.0192
+  - 0.0198
+  peak_speed_xy_z_mm_s:
+  - 224.2
+  - 182.8
+  min_success_rate: 1.0
+- cycle: 2
+  move: down to stud close-up
+  duration_s: 3.48
+  vibration_rms_mm:
+  - 0.0123
+  - 0.0128
+  - 0.0161
+  peak_speed_xy_z_mm_s:
+  - 38.9
+  - 168.1
+  min_success_rate: 1.0
+- cycle: 2
+  move: down to stud approach
+  duration_s: 3.4
+  vibration_rms_mm:
+  - 0.0105
+  - 0.007
+  - 0.0111
+  peak_speed_xy_z_mm_s:
+  - 70.7
+  - 80.4
+  min_success_rate: 1.0
+- cycle: 2
+  move: up to stud close-up
+  duration_s: 2.37
+  vibration_rms_mm:
+  - 0.0104
+  - 0.0043
+  - 0.0139
+  peak_speed_xy_z_mm_s:
+  - 60.3
+  - 85.1
+  min_success_rate: 1.0
+from_record: 20261027-093938_full.yaml

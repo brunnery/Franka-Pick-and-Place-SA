@@ -1,0 +1,144 @@
+controller:
+  damping:
+    ratio_translational: 0.5
+    ratio_rotational: 0.5
+    rot_z_min_factor: 0.0
+  modes:
+    normal_stiffness:
+    - 2500.0
+    - 2500.0
+    - 1500.0
+    - 300.0
+    - 300.0
+    - 45.0
+    float_stiffness:
+    - 150.0
+    - 150.0
+    - 150.0
+    - 40.0
+    - 40.0
+    - 20.0
+    lift_stiffness:
+    - 0.0
+    - 0.0
+    - 8500.0
+    - 0.0
+    - 0.0
+    - 0.0
+    contact_stiffness:
+    - 2500.0
+    - 2500.0
+    - 100.0
+    - 40.0
+    - 40.0
+    - 20.0
+    screw_stiffness:
+    - 2000.0
+    - 2000.0
+    - 150.0
+    - 4.0
+    - 4.0
+    - 20.0
+    tighten_stiffness:
+    - 400.0
+    - 400.0
+    - 600.0
+    - 4.0
+    - 4.0
+    - 20.0
+  filter_params: 0.002
+  delta_tau_max: 1.0
+  saturation:
+    max_force: 18.0
+    max_torque: 9.0
+    max_torque_z: 2.0
+    clamp_spring_only: false
+    max_damping_force: 36.0
+    max_damping_torque: 18.0
+max_speed_mm_s: 250.0
+max_speed_z_mm_s: 220.0
+moves:
+- move: 1 to observe_nut
+  duration_s: 4.75
+  vibration_rms_mm:
+  - 0.0121
+  - 0.0123
+  - 0.0156
+  min_success_rate: 1.0
+- move: 1 down at observe_nut
+  duration_s: 4.44
+  vibration_rms_mm:
+  - 0.0151
+  - 0.0094
+  - 0.0161
+  min_success_rate: 1.0
+- move: 1 up at observe_nut
+  duration_s: 4.43
+  vibration_rms_mm:
+  - 0.0211
+  - 0.0129
+  - 0.0199
+  min_success_rate: 1.0
+- move: 1 to observe_stud
+  duration_s: 5.35
+  vibration_rms_mm:
+  - 0.0065
+  - 0.014
+  - 0.0073
+  min_success_rate: 1.0
+- move: 1 down at observe_stud
+  duration_s: 4.23
+  vibration_rms_mm:
+  - 0.0136
+  - 0.011
+  - 0.0162
+  min_success_rate: 1.0
+- move: 1 up at observe_stud
+  duration_s: 4.4
+  vibration_rms_mm:
+  - 0.0148
+  - 0.0123
+  - 0.0182
+  min_success_rate: 1.0
+- move: 2 to observe_nut
+  duration_s: 5.37
+  vibration_rms_mm:
+  - 0.0067
+  - 0.0142
+  - 0.0076
+  min_success_rate: 1.0
+- move: 2 down at observe_nut
+  duration_s: 4.46
+  vibration_rms_mm:
+  - 0.0117
+  - 0.0081
+  - 0.0147
+  min_success_rate: 1.0
+- move: 2 up at observe_nut
+  duration_s: 4.29
+  vibration_rms_mm:
+  - 0.0236
+  - 0.0137
+  - 0.0214
+  min_success_rate: 1.0
+- move: 2 to observe_stud
+  duration_s: 5.35
+  vibration_rms_mm:
+  - 0.0071
+  - 0.0138
+  - 0.008
+  min_success_rate: 1.0
+- move: 2 down at observe_stud
+  duration_s: 4.18
+  vibration_rms_mm:
+  - 0.0138
+  - 0.011
+  - 0.0165
+  min_success_rate: 1.0
+- move: 2 up at observe_stud
+  duration_s: 4.39
+  vibration_rms_mm:
+  - 0.0145
+  - 0.0126
+  - 0.0182
+  min_success_rate: 1.0
