@@ -5,7 +5,7 @@ The node is spun in a background thread; the sequences call these methods and bl
 """
 import logging
 import time
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import cv2
 import numpy as np
@@ -107,10 +107,15 @@ class FrankaRobot:
     def set_mode(self, mode: int) -> None:
         self.mode_pub.publish(Int16(data=int(mode)))
 
-    def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None) -> bool:
+    def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None,
+               contact_from_s: float = 0.0,
+               stop_when: Optional[Callable[[], bool]] = None) -> bool:
         """Publish the path in real time. With stop_on_contact_n, stop at the first pose
-        where |Fz - Fz before the path| exceeds it: the reference is then set to the
-        measured pose and True is returned."""
+        from time contact_from_s on where |Fz - Fz before the path| exceeds it: the reference
+        is then set to the measured pose and True is returned. (Earlier in a fast move the
+        force estimate also sees the arm's own acceleration.) With stop_when, stop as soon as
+        it returns True (checked after every pose); the last reference stays, True is
+        returned."""
         t_flange_ee = self.state.flange_and_ee()[1]
         baseline = None
         if stop_on_contact_n is not None:
@@ -123,22 +128,27 @@ class FrankaRobot:
         for waypoint in path:
             time.sleep(max(start + waypoint.time_s - time.monotonic(), 0.0))
             self.reference_pub.publish(matrix_to_pose_msg(waypoint.t_base_flange @ t_flange_ee))
-            if baseline is not None and abs(self.force_z() - baseline) > stop_on_contact_n:
+            if (baseline is not None and waypoint.time_s >= contact_from_s
+                    and abs(self.force_z() - baseline) > stop_on_contact_n):
                 self.reference_pub.publish(matrix_to_pose_msg(self.flange_pose() @ t_flange_ee))
+                return True
+            if stop_when is not None and stop_when():
                 return True
         return False
 
     def wait_until_arrived(self, goal: Optional[np.ndarray], tolerance_mm: float,
                            settle_s: Optional[float] = None,
-                           hold: Optional[np.ndarray] = None) -> None:
-        """Arrived = standing still (below arrival_speed_mm_s for settle_s) within
-        tolerance_mm of the goal (goal None: anywhere). The impedance controller keeps a few
+                           hold: Optional[np.ndarray] = None,
+                           speed_mm_s: Optional[float] = None) -> None:
+        """Arrived = standing still (below arrival_speed_mm_s, or speed_mm_s, for settle_s)
+        within tolerance_mm of the goal (goal None: anywhere). The impedance controller keeps a few
         mm of steady-state error; the vision uses the measured pose, so that is harmless.
         hold: publish this flange reference with every poll. Every reference message resets the
         controller's integral term, so the arm then stands on the spring alone, as it does
         while a path is streamed (25.10.: after the fine positioning the descent wiped the
         integral and the arm gave way by up to ~1 mm)."""
         settle = self.cfg["arrival_settle_s"] if settle_s is None else settle_s
+        still = self.cfg["arrival_speed_mm_s"] if speed_mm_s is None else speed_mm_s
         hold_msg = None if hold is None else matrix_to_pose_msg(
             hold @ self.state.flange_and_ee()[1])
         deadline = time.monotonic() + self.cfg["arrival_timeout_s"]
@@ -150,7 +160,7 @@ class FrankaRobot:
             error = np.zeros(3) if goal is None else position - goal[:3, 3]
             speed = np.inf if last is None else np.linalg.norm(position - last[0]) / (now - last[1])
             last = (position, now)
-            if np.linalg.norm(error) <= tolerance_mm and speed <= self.cfg["arrival_speed_mm_s"]:
+            if np.linalg.norm(error) <= tolerance_mm and speed <= still:
                 still_since = still_since or now
                 if now - still_since >= settle:
                     if goal is not None:
@@ -198,23 +208,31 @@ class RosVision:
         """Select the target early, so the overlay shows the right polygon."""
         self._set({"target": target})
 
-    def observe(self, target: str, plane_distance_mm: float) -> Observation:
+    def observe(self, target: str, plane_distance_mm: float, rough: bool = False) -> Observation:
         msg, k = self._settled(target, plane_distance_mm, False,
-                               lambda m: m.valid and m.frames_since_reset >= m.frames_window)
+                               lambda m: m.valid and m.frames_since_reset >= m.frames_window,
+                               rough)
         self._snapshot(target)
         return Observation(msg.u_undistorted, msg.v_undistorted, k)
 
-    def view(self, target: str, plane_distance_mm: float, lock: bool) -> View:
+    def view(self, target: str, plane_distance_mm: float, lock: bool,
+             rough: bool = False) -> View:
         """lock: the objects vision_node has locked on (none once empty_view_frames images
         showed nothing); else the medians once a full window of images has been taken."""
         def accept(m):
             if lock:
                 return m.locked or m.frames_since_reset >= self.cfg["empty_view_frames"]
             return m.frames_since_reset >= m.frames_window
-        msg, k = self._settled(target, plane_distance_mm, lock, accept)
+        msg, k = self._settled(target, plane_distance_mm, lock, accept, rough)
         self._snapshot(f"{target}_{'observe' if lock else 'centred'}")
         return View([Candidate(c.u_undistorted, c.v_undistorted, c.size_mm, c.width_ratio,
                                c.shape_ok) for c in msg.candidates], k)
+
+    def snapshot(self, label: str) -> None:
+        """Keep the current camera and debug image for the record, no detection (e.g. the
+        result at the end of a run). Waits settle_s first, as a detection does."""
+        time.sleep(self.cfg["settle_s"])
+        self._snapshot(label)
 
     def _snapshot(self, label: str) -> None:
         self.snapshots.append((label, dict(self.images)))
@@ -241,11 +259,12 @@ class RosVision:
         if failed:
             raise RuntimeError(f"vision_node refused parameters: {failed}")
 
-    def _settled(self, target: str, plane_distance_mm: float, lock: bool, accept) -> tuple:
+    def _settled(self, target: str, plane_distance_mm: float, lock: bool, accept,
+                 rough: bool = False) -> tuple:
         """First detection after the request for which accept(msg). The request is sent only
-        after settle_s (robot rung down); it starts the tracks of vision_node over, so no
-        image of the motion is in the median."""
-        time.sleep(self.cfg["settle_s"])
+        after settle_s (robot rung down; rough: rough_settle_s); it starts the tracks of
+        vision_node over, so no image of the motion is in the median."""
+        time.sleep(self.cfg["rough_settle_s" if rough else "settle_s"])
         self._set({"target": target, "lock": lock,
                    "object_plane_distance_mm": float(plane_distance_mm)})
         earliest = self.node.get_clock().now().nanoseconds

@@ -1,6 +1,6 @@
 """Logic of the SA launcher (no Qt, no ROS): buttons from gui.yaml, the script each button
-runs in its terminal, run status via pid files, and the stud side (which taught observation
-pose of poses.yaml is the stud's).
+runs in its terminal, run status via pid files, the stud side (which taught observation
+pose of poses.yaml is the stud's), the run timer and the rating of the last run record.
 
 Temporary add-on for the lab sessions, not part of the thesis code (gui/README.md).
 """
@@ -15,6 +15,7 @@ from typing import Callable, List, Optional, Tuple
 
 import yaml
 
+OUTCOME_KEY = "outcome"
 SIDES = ("left", "right")    # seen from the robot base: left = +y_B
 NUT_POSE, STUD_POSE = "observe_nut", "observe_stud"
 
@@ -156,3 +157,87 @@ def swap_areas(text: str) -> str:
     nut[:2], stud[:2] = stud[:2], nut[:2]
     header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
     return header + yaml.safe_dump(data, sort_keys=False)
+
+
+class RunTimer:
+    """Run timer from the time marks sa_tasks publishes (tasks.yaml run_record): dicts with
+    event, t_s (since the run started moving) and run (start time, identifies the run)."""
+
+    def __init__(self, end_event: str, stop_event: Optional[str] = None):
+        self.end_event = end_event
+        self.stop_event = stop_event  # the clock stops here (cycle time), else at end_event
+        self.run = None
+        self.step = None
+        self.marks = {}
+        self.started_at = None      # local clock at t_s = 0
+        self.finished = None        # the end event, once the run is over
+
+    def feed(self, event: dict, now: float) -> None:
+        if event.get("run") != self.run:  # a new run: start over
+            self.run, self.step, self.marks, self.finished = event.get("run"), None, {}, None
+            self.started_at = now - float(event["t_s"])
+        self.step = event.get("step", self.step)
+        self.marks[event["event"]] = float(event["t_s"])
+        if event["event"] == self.end_event:
+            self.finished = event
+
+    def elapsed(self, now: float) -> Optional[float]:
+        if self.started_at is None:
+            return None
+        if self.stop_event in self.marks:
+            return self.marks[self.stop_event]
+        return float(self.finished["t_s"]) if self.finished else now - self.started_at
+
+
+def latest_record(repo: Path, pattern: str) -> Optional[Path]:
+    """Newest run record matching pattern (file names start with the time stamp)."""
+    paths = sorted(Path(repo).glob(pattern), key=lambda p: p.name)
+    return paths[-1] if paths else None
+
+
+STATUSES = ("yes", "partly", "no", "aborted", "unrated")
+
+
+def run_status(record: dict) -> str:
+    """yes / partly / no from the rating, else aborted (result not ok) or unrated."""
+    screwed = (record.get(OUTCOME_KEY) or {}).get("screwed")
+    if screwed in ("yes", "partly", "no"):
+        return screwed
+    return "unrated" if record.get("result") == "ok" else "aborted"
+
+
+class RoundCounter:
+    """Runs of one test round (record.round of sa_tasks) per status. A record is parsed again
+    only when its file changed."""
+
+    def __init__(self):
+        self.cache = {}  # path -> (mtime, round, status)
+
+    def count(self, paths, round_) -> dict:
+        counts = dict.fromkeys(STATUSES, 0)
+        for path in paths:
+            try:
+                mtime = path.stat().st_mtime
+                if self.cache.get(path, (None,))[0] != mtime:
+                    record = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                    self.cache[path] = (mtime, record.get("round"), run_status(record))
+            except (OSError, yaml.YAMLError, AttributeError):
+                continue
+            _, record_round, status = self.cache[path]
+            if record_round == round_:
+                counts[status] += 1
+        return counts
+
+
+def set_outcome(text: str, outcome: dict) -> str:
+    """Run record text with outcome as its last entry; a previous rating (always last, only
+    this writes it) is replaced. Everything before stays byte for byte."""
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.startswith(OUTCOME_KEY + ":"):
+            lines = lines[:i]
+            break
+    body = "".join(lines)
+    if body and not body.endswith("\n"):
+        body += "\n"
+    return body + yaml.safe_dump({OUTCOME_KEY: outcome}, sort_keys=False, allow_unicode=True)

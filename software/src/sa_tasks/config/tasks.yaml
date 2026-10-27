@@ -44,9 +44,15 @@ frames:
   # 26.10. MEASURED with tcp_offset (thread centred in the iris by hand, data/runs/tcp_offset.yaml,
   # hand_eye camera model): y -274 -> [-1.91, -4.19], y -237 -> [-1.71, -5.70]; mean, constant
   # for now (only the right half of the table measured)
+  # 27.10. MEASURED in the four corners (tcp_offset, data/runs/tcp_offset.yaml, 7 valid points,
+  # x 350-494, y -274..+322): the x component changes with the table side (right ~ -1.8, far
+  # left ~ -4.3): plane fit, residual rms 0.23 mm (as a constant: 1.05). The y component
+  # scatters (-2.9..-5.7, hand centring): its plane was barely better (rms 0.72 vs 0.92), so the
+  # mean. Before: constant [-1.8, -4.9] (2 points on the right, 26.10.)
+  # correction = c0 + cx * x + cy * y per component [c0 mm, cx, cy]; x, y of the target in mm
   target_correction:
-    y_mm: [-300.0, -130.0]
-    correction_mm: [[-1.8, -4.9], [-1.8, -4.9]]
+    x: [-1.420, -0.00320, -0.00455]
+    y: [-4.33, 0.0, 0.0]
 
 objects:
   nut:
@@ -63,7 +69,12 @@ vision:
   camera_info_topic: /camera_info
   raw_image_topic: /image_raw       # saved with the run record (each detection)
   debug_image_topic: /vision/debug
-  settle_s: 0.4                # after arrival, before the request (robot rings down; 0.6 until 21.10.)
+  # first look from the observation poses (rough, 27.10.): request at once, the arm may still
+  # creep; the camera pose is taken halfway between before the request and after the answer
+  rough_settle_s: 0.0
+  # after arrival, before the request (robot rings down). 0.6 until 21.10., 0.4 until 27.10.
+  # (arrival already means 0.15 s below 3 mm/s, and the median runs over several images)
+  settle_s: 0.2
   timeout_s: 10.0              # no detection within this time -> abort
   empty_view_frames: 30        # lock: nothing locked after this many images -> view empty
   # Targets farther from the camera axis are refused (image half-width at d = 416 mm:
@@ -90,7 +101,9 @@ robot:
     # z separately (25.10., motion_test): at 250 mm/s the z moves jittered (0.2-0.9 mm RMS, xy 0.01-0.07):
     # tool weight + damping of the absolute speed above the force clamp (saturation.max_force
     # 18 N); at 150 z was smooth (0.01 mm), while xy at 150 stuck and jumped (stick-slip)
-    max_speed_z_mm_s: 150.0
+    # 27.10. test 150 -> 200 (full run fine, cycle 43.3 -> 40.3 s) -> 250 (jitter visible, a
+    # little too strong) -> 220: all vertical moves are capped here
+    max_speed_z_mm_s: 220.0
     max_angular_speed_deg_s: 20.0
     lead_fraction: 0.6         # xy (down) or z (up) finishes at 60 % of the move
     min_duration_s: 1.0
@@ -104,10 +117,23 @@ robot:
   # controller's integral, limit 2.5 N, lets it creep on slowly), 1.5-4.5 mm; gain 1.0 left
   # 0.9-1.3 mm overshoot at 2 of 10 points because of that creep -> 0.8
   fine_positioning:
-    tolerance_mm: 0.5
+    # 0.5 until 27.10.: the thread search covers +-1 mm, each extra step costs ~1 s
+    tolerance_mm: 1.0
     max_steps: 3
     gain: 0.8                  # fraction of the measured error removed per step
+    # shortest correction move (27.10.: was robot.motion.min_duration_s 1.0 s for 2-4 mm; a
+    # 4 mm minimum-jerk step in 0.4 s peaks at ~19 mm/s)
+    min_duration_s: 0.4
   arrival_speed_mm_s: 3.0
+  # Arrival for the first look from the observation poses (27.10., Yannick: only a +- position,
+  # the close-up measurement does the rest): already while creeping at the end of the move
+  # 27.10. 20 mm/s / 15 mm -> 50 / 30: with 20 the stud's first estimate was 0.7-3.2 mm from the
+  # close-up (limit centred_tolerance_mm 7), never a 2nd close-up move. At 50 mm/s: 1.5 mm blur
+  # per image (30 ms exposure), ~8 mm of motion over 5 images (pose averaged over them)
+  rough_arrival:
+    tolerance_mm: 30.0
+    speed_mm_s: 50.0
+    settle_s: 0.0
   arrival_timeout_s: 15.0
   arrival_settle_s: 0.15       # 0.3 until 21.10.
   start_settle_s: 0.5          # before the first move: arm still this long (1.0 until 21.10.)
@@ -116,26 +142,34 @@ robot:
 
 pick:
   press_depth_mm: 2.0          # after contact: reference this far below, ~3 N while closing
-  # One move to approach_height_mm over the nut, then straight down at constant speed until
-  # contact (as at the stud). 26.10. (Yannick): the spiral search (radius 6 mm, 2 turns, 2.5 s)
-  # dropped; a plain move to table - 2 mm then stopped ~5 mm above the table (joint friction,
-  # and standing still counted as landed)
-  approach_height_mm: 10.0
+  # wait after landing, before the iris closes: the bottom plate lies down flat (27.10.,
+  # Yannick; reference low-pass tau ~0.5 s)
+  flush_settle_s: 0.5
+  # One move from the close-up pose straight down to below_table_mm under the table, stopped at
+  # contact. 26.10.: spiral search (6 mm, 2 turns, 2.5 s) dropped; a plain move to table - 2 mm
+  # stopped ~5 mm above the table (joint friction, standing still counted as landed). 26.10.
+  # -27.10.: stop 10 mm above the nut, then down at 10 mm/s; 27.10. (Yannick) that stop dropped
   descent:
-    speed_mm_s: 10.0           # reference lags ~5 mm behind (low-pass tau ~0.5 s)
-    below_table_mm: 8.0        # end of the descent if there is no contact
-    contact_force_n: 4.0       # |Fz - Fz before the descent| that counts as contact
+    below_table_mm: 8.0        # end of the move if there is no contact (~12 N on the table)
+    contact_force_n: 4.0       # |Fz - Fz at the close-up pose| that counts as contact
+    # contact only counts once the reference TCP is this far above the table or lower: higher
+    # up the force estimate also sees the arm's own acceleration
+    contact_height_mm: 10.0
 
 place:
-  # Stud search (THEORY 2.0): candidates locked at observe_stud, the camera centred over
-  # each in turn, the shape judged there
+  # Stud search (THEORY 2.0): candidates locked at observe_stud, the camera put over each in
+  # turn from close by (vision.close_up_distance_mm), the shape judged there. 27.10.: no more
+  # centring at the observation height first
   stud_search:
     max_candidates: 3
-    max_centring_moves: 2
-    centred_tolerance_mm: 10.0 # parallax of the thread tip at 10 mm: about 0.5 mm
+    max_centring_moves: 2      # close-up moves per candidate (the 2nd if it was off by more)
+    # Close up (d = 170 mm) the thread tip (19 mm above the base top) shifts by 0.13 * offset:
+    # 0.9 mm at 7 mm, the Ø8 thread still inside the 10 mm square. The first estimate from the
+    # observation pose was 1.2-6.2 mm off (26.10.). 10 until 27.10. (centred at ~400 mm: 0.5 mm)
+    centred_tolerance_mm: 7.0
     lost_radius_mm: 20.0       # largest object within this radius of the axis is judged
   # 21.10. approach_only tests at -5/-10 (plate over the bare thread): xy right every time
-  approach_clearance_mm: 5.0   # nut bottom (= TCP) above the tip of the thread
+  approach_clearance_mm: 3.0   # nut bottom (= TCP) above the tip of the thread (5 until 27.10.)
   # The approach first goes to this xy offset (base frame) from the approach pose, then the last
   # short move always runs the same way (here +y): the play of the gripper's turning disk then
   # always ends up on the same side, so frames.target_correction fits (25.10.: with the
@@ -143,7 +177,7 @@ place:
   # (Yannick): the plate hangs lower on its -y side, the move in +y lifts that side
   # 26.10.: [0, 0] as a test with the close-up measurement (was [0.0, -10.0]: from -y)
   approach_from_mm: [0.0, 0.0]
-  descend_speed_mm_s: 5.0      # contact search
+  descend_speed_mm_s: 10.0     # contact search (5 until 27.10.; the pick runs at 10 too)
   max_descend_mm: 17.0         # below the approach pose (12 until 21.10.)
   # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the
   # thread without reaching contact_force_n), false = back up and abort
@@ -153,13 +187,31 @@ place:
   # mode, then the iris opens (else the soft arm fell onto the reference below the thread;
   # ~3.5 mm sag at 1500 N/m)
   release_lift_mm: 3.0
-  release_settle_s: 2.5        # reference low-pass (tau ~0.5 s) settles from 15 mm below
+  # reference low-pass (tau ~0.5 s) settles; 2.5 until 27.10., when the reference was up to
+  # 15 mm below (tighten depth 60), now 2 + 3 mm: 95 % after 3 tau
+  release_settle_s: 1.5
+  # Full run: the move from the table (nut gripped) up to observe_stud. z finishes at this
+  # fraction of the move (robot.motion.lead_fraction 0.6 for all other moves): 0.6 -> 0.85
+  # takes ~2 s off (Delta z ~340 mm at 150 mm/s); the nut leaves the table at ~50 deg instead of
+  # ~75 deg, harmless with nothing around it (27.10.)
+  lift_lead_fraction: 0.85
+  # z speed of that move only (robot.motion.max_speed_z_mm_s for all others). 27.10.: the
+  # strongest jitter of a run was on this move at 220 (long, upwards, diagonal); 150 changed
+  # nothing (jitter in the second half, braking) -> back to 220
+  lift_max_speed_z_mm_s: 220.0
+  # true: the iris opens during release_settle_s instead of after it (27.10., test, ~1.5 s);
+  # false: wait, stiff mode, then open (since 23.10.)
+  open_while_settling: true
+  # From the seat until the release the reference never goes up again (27.10., Yannick: the arm
+  # rose at the start of the thread search and at the switch to screwing). The depths below
+  # (seat, thread_search.press_mm, catch, tighten) are therefore "at least this deep":
+  # the search then presses with the seat reference, the screwing with the search reference
   # After contact, before screwing (26.10., Yannick): press down in the stiff mode so the nut
   # slides up in the iris against its top stop. The thread usually caught, the fast turn never
   # ran on. Record place.seat: travel_mm (nut moved in the iris), force_n (negative = pressing)
   seat:
     depth_mm: 6.0              # reference below contact; normal z 1500 N/m: ~9 N (clamp 18 N)
-    settle_s: 1.5              # reference low-pass (tau ~0.5 s): 95 % after 3 tau
+    settle_s: 1.0              # reference low-pass (tau ~0.5 s): 86 % after 2 tau (1.5 until 27.10.)
   # After seating (26.10., Yannick: the nut lands 1-3 mm off-centre): stiff mode, pressed
   # lightly on the tip, flat outward spiral around the contact, TCP height sampled; back to the
   # xy where the TCP was lowest (the nut dropped onto the thread start). Record
@@ -169,11 +221,22 @@ place:
     press_mm: 3.0              # reference below the seated contact: ~4.5 N (below the seat force)
     # Commanded radius > the 1-3 mm error: the reference low-pass (tau ~0.5 s) shrinks a turn of
     # 3 s to about 70 %. 1 mm between turns, the nut catches within about +-0.5 mm
-    radius_mm: 4.0
-    turns: 3.0
-    duration_s: 9.0
-    settle_s: 1.0              # after pressing, after the spiral, after going back
+    # 27.10.: 4 mm, 3 turns, 9 s -> 3 mm, 2 turns, 4 s. 9 runs of 26./27.10.: the arm covered
+    # only 1.2-1.7 mm (seat force, low-pass), the thread start lay 0.4-0.8 mm from the contact.
+    # 2 s per turn: low-pass factor ~0.55 -> ~1.6 mm covered, as before
+    # 27.10. later tried 1 turn in 2 s (the nut mostly sat on the thread start already); back
+    # to 2 turns in 4 s: with the stud on the left the 1 turn did not find the thread (Yannick:
+    # better always working than 2 s faster)
+    radius_mm: 3.0
+    turns: 2.0
+    duration_s: 4.0
+    # Stop the spiral once the TCP sank this far below the pressed start: the nut dropped onto
+    # the thread start (27.10.: drops of found threads 0.5-1.2 mm, not found 0.06-0.13 mm). The
+    # force changes only by ~1.5 N at 1500 N/m, within the noise of the estimate
+    found_drop_mm: 0.4
+    settle_s: 0.5              # after pressing, after the spiral, after going back (1.0 until 27.10.)
     sample_period_s: 0.01
+    trace_every: 5             # record.thread_search.trace: every 5th sample (~20 Hz), 27.10.
   screw:
     direction: 1               # M4 FORWARD tightens (19.10., test_m4)
     # Catch in control mode screw (stiff xy, soft tilt), tighten in mode tighten (soft xy). The
@@ -185,7 +248,11 @@ place:
     catch:
       step_ms: 250
       speed: 100
-      max_steps: 12            # 3 s; not caught by then: tighten anyway (record: caught false)
+      # not caught by then: tighten anyway (record: caught false). 12 until 27.10., then 6: the
+      # catch never triggered in any run, the tightening (7 s, arm following down) screws it on.
+      # 27.10. (Yannick) 0 = no catch phase: the thread search stops once the nut sits on the
+      # thread start, then straight to tightening
+      max_steps: 0
       # ~1.2 N + weight. 25.10. 3 -> 8: with the 1:1 drive barely any pressure (record: 0.5-1.7 N),
       # the nut could not catch the thread (23.10.: 10 pressed too hard, with the 44->17 drive)
       # 26.10. 8 -> 2 (Yannick): reference just below the thread start (the seated contact),
@@ -203,7 +270,18 @@ place:
     # 25.10. depth 15 -> 30 -> 60: at 30 (~4.5 N on paper) only ~1 N measured (force_*_n: pressing
     # onto the stud reads NEGATIVE, checked by hand); 60 tests whether the force scales with depth
     # 26.10. 60 -> 2 (Yannick): as catch, barely any pressure, the thread feeds the nut
-    tighten: {duration_ms: 5000, speed: 255, depth_mm: 2.0}
+    # 27.10. (Yannick) 5000 -> 7000 ms: more turns at the end. 27.10. (Yannick): while turning,
+    # the reference goes down_mm further at down_speed_mm_s, so the gripper moves down with the
+    # nut (5 mm at 1 mm/s first, then 10 mm at 1.5 mm/s: the arm followed only 0.7-2.8 mm, the
+    # nut ran ~5 mm (4-4.5 turns of 1.25 mm, ~0.7 mm/s). Since then tighten z stiffness 600 N/m
+    # (controllers.yaml): 7 mm at 1 mm/s, just ahead of the nut; ~1.2 N at the end if the nut
+    # runs 5 mm, 4.2 N if it stands still). 27.10. round 2: 6-7 N at the start (the reference
+    # stayed at the search depth), the nut jammed on the left -> start depth_mm below the measured
+    # pose (~1.2 N) and down 7 -> 5 mm (stalled nut: at most ~4.2 N instead of ~7.8 N); still
+    # stuck on the left (Yannick: finds the thread, too weak to turn), 1.5-2.8 N at the end.
+    # Since then the reference follows the measured pose: depth_mm below it every
+    # follow_period_s, a constant ~0.6 N (k_z 600 N/m), never more, also when the nut stalls
+    tighten: {duration_ms: 7000, speed: 255, depth_mm: 1.0, follow_period_s: 0.05}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
   # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)
@@ -226,6 +304,9 @@ reach_test:
 # ros2 run sa_tasks motion_test (25.10.): the moves of a run without gripper and vision, jitter
 # measured, to compare controller settings (restart sa_robot after editing controllers.yaml)
 motion_test:
+  # "run": the moves of a full run (nut and stud from the newest full run record, 27.10.);
+  # "poses": to each of poses, down to low_tcp_height_mm and up (25.10.)
+  mode: run
   cycles: 2
   poses: [observe_nut, observe_stud]
   low_tcp_height_mm: 60.0       # bottom of the vertical moves; safely above the stud tip (39 mm)
@@ -257,4 +338,55 @@ hand_eye:
 screw_test:
   wait_s: 5.0                  # after closing: time to hold the stud under the nut
 
+# ros2 run sa_tasks goto_poses --mark: TCP this far above the table at the centre and corners
+# of each area (27.10.), to mark them on the table
+goto_poses:
+  mark_height_mm: 10.0
+
+# ros2 run sa_tasks tcp_offset: camera -> iris offset at the stud (26.10.)
+tcp_offset:
+  # warn if the thread is less deep in the iris (27.10.: centred by eye 3-10 mm above the tip,
+  # two measurements at the same place differed by 8 mm; 26.10. 0-11 mm deep, consistent)
+  min_depth_mm: 3.0
+
 log_dir: data/runs             # one YAML record per run, relative to the repository root
+
+# Extra content of the run records (27.10., for the evaluation; task_node, run_record.py)
+run_record:
+  # Every time mark of a run as JSON {"event", "t_s", ...} (std_msgs/String, reliable,
+  # transient local): the GUI timer (gui/gui.yaml timer) listens
+  events_topic: /sa_tasks/events
+  events_history: 50
+  # Label written into every record (record.round); run_map counts only one round. Set it
+  # before a test round, e.g. "round 2" (the GUI's run counter counts this round too)
+  round: round 3
+  # Copied into record.config with the git commit: which settings a run used
+  config_keys:
+    - frames.target_correction
+    - frames.camera_tilt_in_flange_deg
+    - frames.camera_rotation_about_z_deg
+    - vision.close_up_distance_mm
+    - vision.settle_s
+    - pick
+    - place.stud_search
+    - place.approach_from_mm
+    - place.seat
+    - place.thread_search
+    - place.screw
+    - place.release_settle_s
+    - place.open_while_settling
+    - gripper.open
+    - gripper.close
+
+# ros2 run sa_tasks run_map: all run records -> one CSV row each and a map of the nut and stud
+# positions (outcome per marker) plus the computed target vs. where the TCP ended up
+run_map:
+  since: "20261027"            # first record (file name prefix) included; "" = all
+  round: round 3               # only records with this run_record.round; "" = all
+  steps: [full]                # record kinds included (full, pick, place_and_screw)
+  csv: run_summary.csv         # written to log_dir
+  png: run_map.png
+  colours: {nut: "#1f5fbf", stud: "#d62728"}
+  # Box per observation pose: what the camera sees on the table around the optical axis
+  # (x_B, y_B; image half-width at d ~ 416 mm, see vision.max_offset_from_axis_mm)
+  area_half_size_mm: [70.0, 125.0]

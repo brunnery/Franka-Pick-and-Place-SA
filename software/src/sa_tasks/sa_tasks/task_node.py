@@ -8,9 +8,12 @@
   --robot mock: dry run without the robot, vision still real.
 
 Writes one YAML record per run to log_dir of tasks.yaml, with the camera and vision debug
-image of every detection next to it (<record>_<n>_<label>_<raw|debug>.png).
+image of every detection next to it (<record>_<n>_<label>_<raw|debug>.png). The record also
+holds the settings of the run (config) and the time marks (timeline_s); every mark is published
+as JSON on run_record.events_topic for the GUI timer.
 """
 import argparse
+import json
 import logging
 import threading
 import time
@@ -19,8 +22,10 @@ from datetime import datetime
 import rclpy
 import yaml
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
 
-from sa_tasks import config, sequences, serial_gripper
+from sa_tasks import config, run_record, sequences, serial_gripper
 from sa_tasks.interfaces import MockGripper, MockRobot
 from sa_tasks.ros_interfaces import FrankaRobot, RosVision
 
@@ -43,7 +48,22 @@ def run(step: str) -> None:
     spinner = threading.Thread(target=executor.spin, daemon=True)
     spinner.start()
     started = time.monotonic()
-    record = {"step": step, "started": datetime.now().isoformat()}
+    settings = cfg["run_record"]
+    record = {"step": step, "started": datetime.now().isoformat(), "round": settings["round"]}
+    repo = config.PACKAGE_DIR.parents[2]
+    # transient local: a GUI that connects late still gets the marks of the current run
+    events = node.create_publisher(String, settings["events_topic"], QoSProfile(
+        depth=settings["events_history"], reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL))
+
+    def publish(event: str, t_s: float, **extra) -> None:
+        events.publish(String(data=json.dumps({"event": event, "t_s": t_s, "step": step,
+                                               "run": record["started"], **extra})))
+    record["config"] = {**run_record.git_state(repo),
+                        "observe_mm": {name: poses.poses.get(name, {}).get("position_mm")
+                                       for name in ("observe_nut", "observe_stud")},
+                        **run_record.config_values(cfg, settings["config_keys"])}
+    timeline = None
     robot = gripper = vision = None
     try:
         if args.robot == "mock":  # the robot "is" at the observation pose
@@ -53,15 +73,19 @@ def run(step: str) -> None:
             robot = FrankaRobot(node, cfg)
         gripper = MockGripper() if args.approach_only else serial_gripper.connect(cfg["gripper"])
         vision = RosVision(node, cfg)
+        # t = 0 once robot, gripper and vision are up: the times of the sequence alone
+        record["setup_s"] = round(time.monotonic() - started, 2)
+        timeline = run_record.Timeline(listener=publish)
+        timeline.mark("start")
         if step in ("pick", "full"):
             record["pick"] = {}
             # full: straight from the table to observe_stud, no stop at observe_nut
             sequences.pick(robot, gripper, vision, cfg, poses, record["pick"],
-                           back_up=step == "pick")
+                           back_up=step == "pick", mark=timeline.mark)
         if step in ("place_and_screw", "full"):
             record["place"] = {}
             sequences.place_and_screw(robot, gripper, vision, cfg, poses, record["place"],
-                                      args.approach_only)
+                                      args.approach_only, mark=timeline.mark)
         record["result"] = "ok"
         log.info("done in %.1f s", time.monotonic() - started)
     except KeyboardInterrupt:
@@ -74,9 +98,13 @@ def run(step: str) -> None:
         if gripper is not None:
             gripper.shutdown()
         record["arrival_errors_mm"] = getattr(robot, "arrivals", [])
-        directory = config.PACKAGE_DIR.parents[2] / cfg["log_dir"]
+        directory = repo / cfg["log_dir"]
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{datetime.now():%Y%m%d-%H%M%S}_{step}.yaml"
+        if timeline is not None:
+            record["timeline_s"] = timeline.marks
+            publish("finished", timeline.elapsed(), result=record.get("result"),
+                    record=path.name)
         path.write_text(yaml.safe_dump(record, sort_keys=False))
         log.info("record: %s", path)
         if vision is not None:  # camera + vision images of each detection, next to the record

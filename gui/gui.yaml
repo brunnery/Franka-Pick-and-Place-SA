@@ -42,6 +42,31 @@ viewers:                       # embedded image panes (need a sourced ROS 2)
 viewer_rate_hz: 10.0           # redraw rate of the panes
 viewer_stale_s: 2.0            # no image for this long -> "no image"
 
+timer:                         # run timer (needs a sourced ROS 2)
+  # Time marks of sa_tasks; topic and history as run_record in sa_tasks/config/tasks.yaml
+  topic: /sa_tasks/events
+  history: 50
+  end_event: finished
+  stop_event: iris_opening     # the clock stops here (cycle time: until the iris lets go)
+  splits:                      # own lines, seconds since start (+ since the line above)
+    - {event: iris_closed, label: Iris closed (pick)}
+    - {event: m4_stopped, label: M4 rotation stopped}
+  refresh_ms: 100
+  font_pt: 22
+  split_font_pt: 13
+
+outcome:                       # "Rate the last run": appended to the newest record as outcome
+  records: data/runs/*_full.yaml
+  screwed: {"yes": Screwed on, "partly": Partly, "no": Failed}  # record value: button text
+  turns_max: 10.0
+  turns_step: 0.5
+  phases: ["-", nut detection, pick, stud detection, place, screw, release]
+
+counter:                       # run counter of the current test round (top of the rating box)
+  tasks_file: software/src/sa_tasks/config/tasks.yaml   # round = run_record.round there
+  target_runs: 20
+  font_pt: 14
+
 variables:
   # Same board as gripper.port in sa_tasks/config/tasks.yaml
   arduino_port: /dev/serial/by-id/usb-Arduino_UNO_R4_Minima_380B321437323335E07233324B572D3A-if00
@@ -97,6 +122,10 @@ groups:
         command: ros2 run sa_tasks goto_poses
         confirm: true
         tip: observe_nut, then observe_stud, each after Enter in its terminal
+      - label: Mark the areas on the table
+        command: ros2 run sa_tasks goto_poses --mark
+        confirm: true
+        tip: "table clear! Per area: observation pose, then the bottom plate 10 mm above the table at the centre and the 4 corners (each after Enter), mark below the plate centre"
       - label: Jitter test (motion_test)
         command: ros2 run sa_tasks motion_test
         confirm: true
@@ -154,10 +183,17 @@ groups:
           | grep -v "^    - - \|^      - "
       - label: Pick landing of the last run
         command: grep -A3 landed_tcp $(ls -t data/runs/*_full.yaml | head -1)
+      - label: Time per step (last 5 runs)
+        command: ros2 run sa_tasks run_map --times 5
+        tip: "seconds per step (since the mark before), one column per run; other count: --times 10"
+      - label: Run map + summary (run_map)
+        command: ros2 run sa_tasks run_map && xdg-open data/runs/run_map.png
+        tip: "all full runs since run_map.since (tasks.yaml): CSV + map of nut/stud positions with the outcome. Other start: ros2 run sa_tasks run_map --since 20261027-1400"
       - label: Lost control cycles (live)
         command: >-
           ros2 topic echo /franka_robot_state_broadcaster/robot_state
-          --field control_command_success_rate | grep -v -e '^---' -e '^1.0$'
+          --field control_command_success_rate | python3 -u gui/success_rate.py
+        tip: "once per second: robot state messages, how many below 1.0 (cycles lost), lowest value. Start it, then run the robot"
       - label: Unit tests
         command: >-
           for p in sa_tasks sa_vision; do

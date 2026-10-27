@@ -1,4 +1,5 @@
 """Tests of the launcher logic: cd gui && python3 -m pytest test_launcher.py"""
+import os
 from pathlib import Path
 
 import pytest
@@ -111,3 +112,57 @@ def test_stud_side_is_where_observe_stud_lies():
                        launcher.STUD_POSE: {"position_mm": [410.0, -233.0, 473.0]}}}
     assert launcher.stud_side(poses) == "right"
     assert launcher.area_xy(poses)[launcher.STUD_POSE] == [410.0, -233.0]
+
+
+def test_run_timer_follows_one_run_and_starts_over_with_the_next():
+    timer = launcher.RunTimer("finished")
+    assert timer.elapsed(5.0) is None
+    timer.feed({"event": "start", "t_s": 0.0, "run": "a", "step": "full"}, now=10.0)
+    timer.feed({"event": "iris_closed", "t_s": 21.5, "run": "a"}, now=31.6)
+    assert timer.elapsed(40.0) == pytest.approx(30.0)
+    timer.feed({"event": "finished", "t_s": 70.0, "run": "a", "result": "ok"}, now=80.0)
+    assert timer.elapsed(99.0) == 70.0 and timer.marks["iris_closed"] == 21.5
+    timer.feed({"event": "start", "t_s": 0.0, "run": "b"}, now=100.0)
+    assert timer.marks == {"start": 0.0} and timer.finished is None
+
+
+def test_run_timer_stops_at_the_stop_event():
+    timer = launcher.RunTimer("finished", "iris_opening")
+    timer.feed({"event": "start", "t_s": 0.0, "run": "a"}, now=10.0)
+    timer.feed({"event": "iris_opening", "t_s": 50.0, "run": "a"}, now=60.0)
+    assert timer.elapsed(70.0) == 50.0
+
+
+def test_set_outcome_appends_and_replaces_only_the_rating():
+    record = "step: full\nplace:\n  stud: &id001\n  - 1.0\nresult: ok\n"
+    rated = launcher.set_outcome(record, {"screwed": "partly", "turns": 1.5})
+    assert rated.startswith(record) and yaml.safe_load(rated)["outcome"]["turns"] == 1.5
+    again = launcher.set_outcome(rated, {"screwed": "yes", "turns": None})
+    assert again.startswith(record) and yaml.safe_load(again)["outcome"]["screwed"] == "yes"
+    assert again.count("outcome:") == 1
+
+
+def test_latest_record_by_time_stamp(tmp_path):
+    assert launcher.latest_record(tmp_path, "*_full.yaml") is None
+    for name in ("20261027-091500_full.yaml", "20261027-101500_full.yaml",
+                 "20261027-111500_pick.yaml"):
+        (tmp_path / name).write_text("")
+    assert launcher.latest_record(tmp_path, "*_full.yaml").name == "20261027-101500_full.yaml"
+
+
+def test_round_counter_counts_one_round_by_status(tmp_path):
+    records = {"a": {"round": "round 2", "result": "ok", "outcome": {"screwed": "yes"}},
+               "b": {"round": "round 2", "result": "ok"},
+               "c": {"round": "round 2", "result": "failed: no stud"},
+               "d": {"round": "speed tuning", "result": "ok", "outcome": {"screwed": "no"}}}
+    paths = []
+    for name, record in records.items():
+        path = tmp_path / f"{name}_full.yaml"
+        path.write_text(yaml.safe_dump(record))
+        paths.append(path)
+    counter = launcher.RoundCounter()
+    assert counter.count(paths, "round 2") == {"yes": 1, "partly": 0, "no": 0, "aborted": 1,
+                                               "unrated": 1}
+    paths[1].write_text(launcher.set_outcome(paths[1].read_text(), {"screwed": "partly"}))
+    os.utime(paths[1], (1e9, 1e9))  # a changed file is read again
+    assert counter.count(paths, "round 2")["partly"] == 1

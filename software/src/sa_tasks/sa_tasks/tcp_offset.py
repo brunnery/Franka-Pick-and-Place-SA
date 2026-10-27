@@ -46,6 +46,9 @@ def main():
     cfg = config.load_tasks()
     directory = config.PACKAGE_DIR.parents[2] / cfg["log_dir"]
     record_name, stud = newest_stud(directory)
+    table_z = config.Poses().table_z()
+    tip_z = table_z + cfg["objects"]["stud"]["top_height_mm"]
+    min_depth = cfg["tcp_offset"]["min_depth_mm"]
     rclpy.init()
     node = rclpy.create_node("tcp_offset")
     state = RobotState(node, cfg["robot"]["state_topic"], config.link8_to_flange(cfg),
@@ -63,6 +66,7 @@ def main():
                   "stud_close_mm": sequences.rounded(close), "tcp_mm": sequences.rounded(tcp),
                   "tilt_deg": round(frames.tilt_deg(flange[:3, :3]), 2),
                   "correction_mm": sequences.rounded(correction),
+                  "thread_in_iris_mm": round(float(tip_z - tcp[2]), 1),
                   "camera_tilt_in_flange_deg": cfg["frames"]["camera_tilt_in_flange_deg"],
                   "camera_rotation_about_z_deg": cfg["frames"]["camera_rotation_about_z_deg"],
                   # what target_correction added in that run (target - close-up stud)
@@ -77,6 +81,14 @@ def main():
               f"{result['tilt_deg']} deg")
         print(f"correction = TCP - stud: x {correction[0]:+.2f} y {correction[1]:+.2f} mm "
               f"(at y {close[1]:.0f}); appended to {log_path}")
+        # 27.10.: two hand-centred measurements with the iris 3-10 mm above the tip differed by
+        # 8 mm; centred by eye from above the tip is not repeatable
+        depth = tip_z - tcp[2]
+        print(f"thread in the iris: {depth:.1f} mm (TCP {tcp[2] - table_z:.1f} mm above the "
+              f"table, tip at {tip_z - table_z:.0f} mm)")
+        if depth < min_depth:
+            print(f"WARNING: the thread is not {min_depth:.0f} mm inside the iris: guide the "
+                  "gripper lower and measure again (by eye from above it is not repeatable)")
         print("all so far:")
         for entry in history:
             print(f"  {entry['time']}  y {entry['stud_close_mm'][1]:7.1f}  correction "

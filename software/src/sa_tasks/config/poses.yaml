@@ -7,7 +7,7 @@ poses:
   observe_nut:
     position_mm:
     - 340.25
-    - 222.25
+    - 160.0
     - 463.55
     quaternion_xyzw:
     - 0.999394
@@ -17,7 +17,7 @@ poses:
   observe_stud:
     position_mm:
     - 410.45
-    - -233.16
+    - -160.0
     - 473.38
     quaternion_xyzw:
     - -0.999133

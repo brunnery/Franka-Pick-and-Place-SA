@@ -4,7 +4,7 @@ The real robot and vision live in ros_interfaces.py; the sequences only see thes
 """
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Protocol
+from typing import Callable, List, Optional, Protocol
 
 import numpy as np
 
@@ -42,9 +42,15 @@ class Robot(Protocol):
     def flange_pose(self) -> np.ndarray: ...                       # T_B_F, mm
     def force_z(self) -> float: ...                                # external force along z_B, N
     def set_mode(self, mode: int) -> None: ...
-    def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None) -> bool: ...
+    # stop_on_contact_n: stop at contact, checked from waypoint time contact_from_s on;
+    # stop_when(): stop streaming once it returns True, the last reference stays
+    def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None,
+               contact_from_s: float = 0.0,
+               stop_when: Optional[Callable[[], bool]] = None) -> bool: ...
+    # rough: an own speed limit and settle time (creeping counts as arrived)
     def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float,
-                           hold: Optional[np.ndarray] = None) -> None: ...
+                           settle_s: Optional[float] = None, hold: Optional[np.ndarray] = None,
+                           speed_mm_s: Optional[float] = None) -> None: ...
 
 
 class Gripper(Protocol):
@@ -56,10 +62,14 @@ class Gripper(Protocol):
 
 class Vision(Protocol):
     def prepare(self, target: str) -> None: ...                   # select the target early
-    def observe(self, target: str, plane_distance_mm: float) -> Observation: ...
+    # rough: no settle_s before the request (the arm may still creep)
+    def observe(self, target: str, plane_distance_mm: float,
+                rough: bool = False) -> Observation: ...
     # lock: choose among objects confirmed over several images (vision_node locks on them);
     # else the median over the last images (measuring a centred object)
-    def view(self, target: str, plane_distance_mm: float, lock: bool) -> View: ...
+    def view(self, target: str, plane_distance_mm: float, lock: bool,
+             rough: bool = False) -> View: ...
+    def snapshot(self, label: str) -> None: ...                   # keep the current images
 
 
 class MockRobot:
@@ -85,17 +95,23 @@ class MockRobot:
     def set_mode(self, mode: int) -> None:
         self.mode = mode
 
-    def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None) -> bool:
+    def follow(self, path: List[Waypoint], stop_on_contact_n: Optional[float] = None,
+               contact_from_s: float = 0.0,
+               stop_when: Optional[Callable[[], bool]] = None) -> bool:
         baseline = self.force_z()
         for waypoint in path:
             self.pose = waypoint.t_base_flange.copy()
             self.history.append(self.pose)
-            if stop_on_contact_n is not None and abs(self.force_z() - baseline) > stop_on_contact_n:
+            if (stop_on_contact_n is not None and waypoint.time_s >= contact_from_s
+                    and abs(self.force_z() - baseline) > stop_on_contact_n):
+                return True
+            if stop_when is not None and stop_when():
                 return True
         return False
 
     def wait_until_arrived(self, goal: np.ndarray, tolerance_mm: float,
-                           hold: Optional[np.ndarray] = None) -> None:
+                           settle_s: Optional[float] = None, hold: Optional[np.ndarray] = None,
+                           speed_mm_s: Optional[float] = None) -> None:
         error = float(np.linalg.norm(self.pose[:3, 3] - goal[:3, 3]))
         if error > tolerance_mm:
             raise RuntimeError(f"[mock robot] not at goal ({error:.1f} mm)")

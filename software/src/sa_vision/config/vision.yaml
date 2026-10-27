@@ -15,7 +15,9 @@ vision_node:
       # stud's centre, its track kept breaking and it never counted
       match_radius_px: 40.0
       max_misses: 3                 # images in a row without the object before its track ends
-      lock_after_frames: 10
+      # 10 until 27.10. (the stud's first look took 0.7-1.5 s); must stay >= frames, else nothing
+      # has been seen often enough to count when the lock is taken
+      lock_after_frames: 6
     detection:
       blur_kernel_px: 5             # Gaussian kernel against sensor noise, odd
       # Background = the image blurred with this sigma: much larger than the object

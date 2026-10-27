@@ -60,8 +60,10 @@
       # (base frame). Change a value -> restart the launch (no rebuild needed).
       stiffness: [1000.0, 1000.0, 1000.0, 300.0, 300.0, 45.0]  # [N/m, N/m, N/m, Nm/rad x3], start-up K (rx, ry 130 -> 300, 19.10.)
       damping:
-        ratio_translational: 0.5   # D_ii = 2 * ratio * sqrt(K_ii * Lambda_ii); 1.0 = critically damped (was 1.0: 30 Hz arm-yaw vibration after arrival, bag 165638;
+        ratio_translational: 0.4   # D_ii = 2 * ratio * sqrt(K_ii * Lambda_ii); 1.0 = critically damped (was 1.0: 30 Hz arm-yaw vibration after arrival, bag 165638;
                                    # 19.10.: 0.7 -> 0.5, prefactor 2 * ratio 1.4 -> 1.0, shaking at arrival)
+                                   # 27.10. test 0.5 -> 0.4: less damping force on the long lift after the pick
+                                   # (jitter in its second half, spring + damping above the 18 N clamp)
         ratio_rotational: 0.5      # (was 1.3: 23 Hz wrist limit cycle at the end pose, bag 2026-10-13_1634;
                                    # 19.10. with rx, ry stiffness 300: 1.0 shook more, 0.7 -> 0.5)
         rot_z_min_factor: 0.0      # D_rz >= factor * sqrt(K_rz) (was 2.0: D_rz 8-11x critical, wrist chatter, bag 2026-10-13_1625)
@@ -75,7 +77,10 @@
         max_force: 18.0            # clamp on the Cartesian command [N]
         max_torque: 9.0            # [Nm]
         max_torque_z: 2.0          # [Nm]
-        clamp_spring_only: false   # true: clamp only K*e + I; damping D*v clamped separately (below)
+        # true: clamp only K*e + I; damping D*v clamped separately (below). 27.10. tried true against
+        # the jitter on the long lift after the pick: only somewhat better, and the move became
+        # step-like instead of one flowing motion -> back to false
+        clamp_spring_only: false
         max_damping_force: 36.0    # only used if clamp_spring_only [N]
         max_damping_torque: 18.0   # only used if clamp_spring_only [Nm]
       filter_params: 0.002         # reference low-pass per 1 ms cycle (0.002 -> tau ~ 0.5 s); smaller = slower
@@ -112,8 +117,10 @@
         # goes where the reference is and the loose bottom part of the gripper gives way
         screw_stiffness: [2000.0, 2000.0, 150.0, 4.0, 4.0, 20.0]
         # control_mode 5, tightening after the catch (23.10.): as screw, but soft in xy so the
-        # nut can swing on the thread while it turns (not perfectly concentric)
-        tighten_stiffness: [400.0, 400.0, 150.0, 4.0, 4.0, 20.0]
+        # nut can swing on the thread while it turns (not perfectly concentric). z 150 -> 600
+        # (27.10.): with the reference running down 10 mm the arm followed only 0.7-2.8 mm while
+        # the nut ran ~5 mm down the thread (joint friction holds ~1 N, at 150 N/m ~7 mm of lag)
+        tighten_stiffness: [400.0, 400.0, 600.0, 4.0, 4.0, 20.0]
       debug:
         publish_rate: 0.0          # [Hz] 25.10.: 1000 -> 0, load in the control loop; 1000 = every cycle for bags (~1 MB/s) /cartesian_impedance_controller/debug (Float64MultiArray, names in layout); 0.0 = off
 

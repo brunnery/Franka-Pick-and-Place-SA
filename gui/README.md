@@ -20,6 +20,14 @@ One window instead of copy-pasting commands:
   first. Starting something that opens the robot, camera or Arduino while another running
   button already has it asks first (the run launches start robot + vision + gripper
   themselves). Hover over a button to see its command.
+- **Run timer** (top left, needs ROS): live time of the current run, plus when the iris closed
+  (pick) and when the M4 rotation stopped (end of tightening). t = 0 when robot, gripper and
+  vision are up; the clock stops when the iris starts to open at the stud (cycle time). Comes from the time marks sa_tasks publishes on `/sa_tasks/events`.
+- **Rate the last run**: screwed on / partly / failed, turns, failed phase, note → "Save
+  rating" appends `outcome:` to the newest `data/runs/*_full.yaml` (rating again replaces
+  it). `run_map` (button "Run map + summary") uses it for the map of the runs. On top: the
+  run counter of the current test round (`run_record.round` in `sa_tasks/config/tasks.yaml`),
+  e.g. "round 2: run 7 / 20" and how many were screwed on, partly, failed, aborted, not rated.
 - **Images**: the two halves of `/vision/debug` on the right, binary mask and result with the
   fitted polygon (buttons use `view:=false`, so no extra rqt windows). The raw camera image
   only via the rqt button.

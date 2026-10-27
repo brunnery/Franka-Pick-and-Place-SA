@@ -5,8 +5,8 @@ from sa_tasks import config, frames, sequences
 from sa_tasks.interfaces import Candidate, MockGripper, MockRobot, Observation, View
 
 CFG = config.load_tasks()
-CFG["frames"]["target_correction"] = {"y_mm": [0.0, 1.0],  # the tests check the geometry
-                                     "correction_mm": [[0.0, 0.0], [0.0, 0.0]]}
+CFG["frames"]["target_correction"] = {"x": [0.0, 0.0, 0.0],  # the tests check the geometry
+                                     "y": [0.0, 0.0, 0.0]}
 R_DOWN = config.rotation_down(CFG)
 T_FT = CFG["frames"]["flange_to_tcp_mm"]
 K = np.array([[2077.16, 0.0, 695.44], [0.0, 2083.73, 405.57], [0.0, 0.0, 1.0]])
@@ -37,17 +37,17 @@ class SceneVision:
     nut is seen from the nut observation pose."""
 
     def __init__(self, robot, objects=()):
-        self.robot, self.objects, self.requests = robot, objects, []
+        self.robot, self.objects, self.requests, self.snapshots = robot, objects, [], []
 
     def prepare(self, target):
         pass
 
-    def observe(self, target, plane_distance_mm):
+    def observe(self, target, plane_distance_mm, rough=False):
         self.requests.append((target, plane_distance_mm))
         return Observation(*pixel_of(NUT, CFG["objects"]["nut"]["centre_height_mm"],
                                      self.robot.flange_pose()), K)
 
-    def view(self, target, plane_distance_mm, lock):
+    def view(self, target, plane_distance_mm, lock, rough=False):
         self.requests.append((target, plane_distance_mm))
         height = CFG["objects"]["stud"]["centre_height_mm"]
         candidates = []
@@ -57,13 +57,20 @@ class SceneVision:
                 candidates.append(Candidate(u, v, 10.0, 0.71, shape_ok))
         return View(candidates, K)
 
+    def snapshot(self, label):
+        self.snapshots.append(label)
+
 
 def test_pick_goes_straight_down_onto_the_table_over_the_nut_and_closes():
     robot = MockRobot(frames.pose(R_DOWN, [300.0, 0.0, 500.0]), T_FT[2])
     gripper = MockGripper()
-    record = {}
-    sequences.pick(robot, gripper, SceneVision(robot), CFG, FakePoses(), record)
+    record, marks = {}, []
+    sequences.pick(robot, gripper, SceneVision(robot), CFG, FakePoses(), record,
+                   mark=marks.append)
+    assert marks == ["observe_nut", "nut_observed", "nut_close_arrived", "nut_located", "landed",
+                     "iris_closed"]
     assert record["nut_mm"][:2] == pytest.approx(NUT, abs=0.01)
+    assert record["landed_minus_target_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
     lowest = frames.tcp_position(min(robot.history, key=lambda t: t[2, 3]), T_FT)
     # no surface in the mock: down to the end of the descent, no contact
     assert lowest[2] == pytest.approx(TABLE_Z - CFG["pick"]["descent"]["below_table_mm"])
@@ -77,30 +84,48 @@ def test_stud_search_skips_an_object_that_is_no_stud_from_above():
     robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
     vision = SceneVision(robot, [(STUD + [-30.0, 25.0], False), (STUD, True)])
     record = {}
-    found = sequences.find_stud(robot, vision, CFG, TABLE_Z, OBSERVE_STUD, record)
+    found = sequences.find_stud(robot, vision, CFG, TABLE_Z, record)
     assert found["candidate"] == 2 and record["attempts"][0]["candidate"] == 1
     assert found["position_mm"][:2] == pytest.approx(STUD, abs=0.01)
+
+
+def test_stud_search_goes_straight_to_the_close_up_pose():
+    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
+    record = {}
+    found = sequences.find_stud(robot, SceneVision(robot, [(STUD, True)]), CFG, TABLE_Z, record)
+    assert found["moves"] == 1 and len(record["attempts"]) == 1
+    close = sequences.close_up_pose(CFG, STUD, TABLE_Z + CFG["objects"]["stud"]["base_height_mm"])
+    assert robot.pose == pytest.approx(close)
 
 
 def test_stud_search_without_a_stud_aborts():
     robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
     with pytest.raises(sequences.SequenceError, match="none of the 1"):
-        sequences.find_stud(robot, SceneVision(robot, [(STUD, False)]), CFG, TABLE_Z,
-                            OBSERVE_STUD, {})
+        sequences.find_stud(robot, SceneVision(robot, [(STUD, False)]), CFG, TABLE_Z, {})
 
 
-def run_place(contact_tcp_z=None, approach_only=False):
+def run_place(contact_tcp_z=None, approach_only=False, marks=None):
     robot = MockRobot(OBSERVE_NUT.copy(), T_FT[2], contact_tcp_z_mm=contact_tcp_z)
     gripper = MockGripper()
     record = {}
-    sequences.place_and_screw(robot, gripper, SceneVision(robot, [(STUD, True)]), CFG,
-                              FakePoses(), record, approach_only)
+    vision = SceneVision(robot, [(STUD, True)])
+    sequences.place_and_screw(robot, gripper, vision, CFG, FakePoses(), record, approach_only,
+                              mark=sequences.no_mark if marks is None else marks.append)
+    record["_snapshots"] = vision.snapshots
     return robot, gripper, record
 
 
 def test_place_finds_contact_on_the_thread_and_screws():
     tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
-    robot, gripper, record = run_place(contact_tcp_z=tip - 1.0)
+    marks = []
+    robot, gripper, record = run_place(contact_tcp_z=tip - 1.0, marks=marks)
+    assert marks == ["observe_stud", "stud_observed", "stud_close_arrived", "stud_located",
+                     "approached", "contact", "seated",
+                     "thread_found", "catch_done", "m4_stopped", "iris_opening", "iris_opened",
+                     "back_up"]
+    assert record["_snapshots"] == ["final"]
+    for key in ("approach", "contact", "thread", "end"):
+        assert record[f"{key}_minus_target_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
     assert record["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
     assert tip - 5.0 <= record["contact_tcp_mm"][2] <= tip
     # the mock jumps to the reference: the whole seat depth is travel
@@ -111,7 +136,9 @@ def test_place_finds_contact_on_the_thread_and_screws():
     # the mock never sinks: all catch steps, then the tightening turn
     assert gripper.commands == ["ROT"] * (catch["max_steps"] + 1) + ["OPEN"]  # + tighten
     assert record["screw"]["caught"] is False
-    assert robot.pose == pytest.approx(OBSERVE_STUD)
+    # ends at the close-up pose over the stud (photo of the result)
+    assert robot.pose == pytest.approx(sequences.close_up_pose(
+        CFG, STUD, TABLE_Z + CFG["objects"]["stud"]["base_height_mm"]))
 
 
 class ThreadGripper(MockGripper):
@@ -131,6 +158,7 @@ class ThreadGripper(MockGripper):
 def test_screw_on_tightens_once_the_thread_has_caught(monkeypatch):
     monkeypatch.setattr(sequences.time, "sleep", lambda s: None)
     catch = CFG["place"]["screw"]["catch"]
+    monkeypatch.setitem(catch, "max_steps", 12)  # the catch is off in tasks.yaml since 27.10.
     robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
     gripper = ThreadGripper(robot, 0.4 * catch["caught_drop_mm"])
     record = {}
@@ -182,9 +210,7 @@ def test_precise_move_removes_the_steady_state_error(y):
     assert reference[1, 3] - y == pytest.approx(4.0 * np.sign(y), abs=0.5)
 
 
-def test_target_correction_is_linear_in_y_and_constant_beyond():
-    cfg = {"frames": {"target_correction": {"y_mm": [-100.0, -300.0],
-                                            "correction_mm": [[0.0, -1.0], [1.0, -3.0]]}}}
-    assert sequences.target_correction(cfg, -200.0) == pytest.approx([0.5, -2.0])
-    assert sequences.target_correction(cfg, -400.0) == pytest.approx([1.0, -3.0])
-    assert sequences.target_correction(cfg, 200.0) == pytest.approx([0.0, -1.0])
+def test_target_correction_is_a_plane_per_component():
+    cfg = {"frames": {"target_correction": {"x": [-1.0, 0.001, -0.002], "y": [-4.0, 0.0, 0.0]}}}
+    assert sequences.target_correction(cfg, [400.0, -250.0]) == pytest.approx([-0.1, -4.0])
+    assert sequences.target_correction(cfg, [400.0, 250.0]) == pytest.approx([-1.1, -4.0])

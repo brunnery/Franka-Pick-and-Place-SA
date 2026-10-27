@@ -1,13 +1,14 @@
 """SA launcher: stud side switch, one button per command (each opens its own terminal),
-and the camera and vision debug images.
+the run timer, the rating of the last run, and the camera and vision debug images.
 
   gui/sa_gui            (sources ROS, then runs this file; start from a normal terminal)
 
 Buttons come from gui/gui.yaml. Temporary add-on, not part of the thesis code
-(gui/README.md). Without a sourced ROS 2 the buttons work, the image panes stay off.
+(gui/README.md). Without a sourced ROS 2 the buttons work, image panes and timer stay off.
 """
 import argparse
 import getpass
+import json
 import shutil
 import signal
 import subprocess
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 try:  # ROS ships python_qt_binding (rqt); plain PyQt5 elsewhere
@@ -35,14 +37,17 @@ STUD_COLOUR, NUT_COLOUR = QtGui.QColor("#e08a2c"), QtGui.QColor("#5b8bd0")
 
 
 class RosImages:
-    """Latest sensor_msgs/Image per topic, received in a background thread."""
+    """Latest sensor_msgs/Image per topic and the run events of sa_tasks (JSON in
+    std_msgs/String), received in a background thread."""
 
-    def __init__(self, topics):
+    def __init__(self, topics, event_topic, event_history):
         import rclpy
         from rclpy.executors import SingleThreadedExecutor
-        from rclpy.qos import qos_profile_sensor_data
+        from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
+                               qos_profile_sensor_data)
         from rclpy.signals import SignalHandlerOptions
         from sensor_msgs.msg import Image
+        from std_msgs.msg import String
 
         self._rclpy = rclpy
         # No rclpy signal handlers: they would stop only ROS and leave the window hanging;
@@ -54,6 +59,11 @@ class RosImages:
         for topic in topics:
             self.node.create_subscription(Image, topic, lambda msg, t=topic: self._store(t, msg),
                                           qos_profile_sensor_data)
+        self._events = []  # (event dict, local time received)
+        # as the publisher (tasks.yaml run_record): marks sent before the GUI connected arrive too
+        self.node.create_subscription(String, event_topic, self._store_event, QoSProfile(
+            depth=event_history, reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.executor = SingleThreadedExecutor()
         self.executor.add_node(self.node)
         threading.Thread(target=self.executor.spin, daemon=True).start()
@@ -65,6 +75,19 @@ class RosImages:
     def latest(self, topic):
         with self._lock:
             return self._latest[topic]
+
+    def _store_event(self, msg):
+        try:
+            event = json.loads(msg.data)
+        except ValueError:
+            return
+        with self._lock:
+            self._events.append((event, time.monotonic()))
+
+    def pop_events(self):
+        with self._lock:
+            events, self._events = self._events, []
+        return events
 
     def shutdown(self):
         self.executor.shutdown()
@@ -191,6 +214,10 @@ class Launcher(QtWidgets.QMainWindow):
         self.setWindowTitle("SA launcher - FR3 pick, place and screw")
         self.resize(1500, 950)
 
+        self.run_timer = launcher.RunTimer(self.cfg["timer"]["end_event"],
+                                           self.cfg["timer"]["stop_event"])
+        self.rated = None       # (record path, mtime) shown in the rating box
+
         splitter = QtWidgets.QSplitter()
         splitter.addWidget(self._controls())
         splitter.addWidget(self._viewers())
@@ -200,14 +227,25 @@ class Launcher(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"Commands run from {REPO}, buttons from {config_path}")
 
         self._refresh_side()
+        self._refresh_rating()
+        self._refresh_counter()
         timer = QtCore.QTimer(self)
         timer.timeout.connect(self._poll)
         timer.start(STATUS_POLL_MS)
+        if self.ros is not None:
+            clock = QtCore.QTimer(self)
+            clock.timeout.connect(self._update_timer)
+            clock.start(self.cfg["timer"]["refresh_ms"])
+        else:
+            self.timer_total.setText("off")
+            self.timer_info.setText("Timer off: ROS 2 not available")
 
     # --- left side: stud side and buttons -------------------------------------------
     def _controls(self):
         panel = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(panel)
+        layout.addWidget(self._timer_box())
+        layout.addWidget(self._rating_box())
 
         side_box = QtWidgets.QGroupBox("Stud side (seen from the robot base)")
         side_layout = QtWidgets.QVBoxLayout(side_box)
@@ -261,6 +299,179 @@ class Launcher(QtWidgets.QMainWindow):
         self._show_state(entry.key, "idle")
         return row
 
+    # --- run timer ---------------------------------------------------------------------
+    def _timer_box(self):
+        t = self.cfg["timer"]
+        box = QtWidgets.QGroupBox("Run timer (from robot, gripper, vision up to the iris opening)")
+        grid = QtWidgets.QGridLayout(box)
+        self.timer_total = QtWidgets.QLabel("--")
+        font = self.timer_total.font()
+        font.setPointSize(t["font_pt"])
+        font.setBold(True)
+        self.timer_total.setFont(font)
+        grid.addWidget(self.timer_total, 0, 0, 1, 2)
+        font.setPointSize(t["split_font_pt"])
+        self.timer_splits = {}
+        for row, split in enumerate(t["splits"], 1):
+            name = QtWidgets.QLabel(split["label"])
+            value = QtWidgets.QLabel("--")
+            name.setFont(font)
+            value.setFont(font)
+            grid.addWidget(name, row, 0)
+            grid.addWidget(value, row, 1)
+            self.timer_splits[split["event"]] = value
+        self.timer_info = QtWidgets.QLabel("no run yet")
+        self.timer_info.setWordWrap(True)
+        self.timer_info.setStyleSheet("color: #606060;")
+        grid.addWidget(self.timer_info, len(t["splits"]) + 1, 0, 1, 2)
+        grid.setColumnStretch(1, 1)
+        return box
+
+    def _update_timer(self):
+        for event, received in self.ros.pop_events():
+            try:
+                self.run_timer.feed(event, received)
+            except (KeyError, TypeError, ValueError):
+                continue
+        timer = self.run_timer
+        elapsed = timer.elapsed(time.monotonic())
+        if elapsed is None:
+            return
+        self.timer_total.setText(f"{elapsed:6.1f} s")
+        previous = None
+        for split in self.cfg["timer"]["splits"]:
+            t = timer.marks.get(split["event"])
+            text = "--" if t is None else f"{t:.1f} s"
+            if t is not None and previous is not None:
+                text += f"   (+{t - previous:.1f} s)"
+            self.timer_splits[split["event"]].setText(text)
+            previous = t if t is not None else previous
+        steps, previous = [], 0.0  # time per step (since the mark before)
+        for name, t in timer.marks.items():
+            steps.append(f"{name} {t - previous:.1f}")
+            previous = t
+        marks = "  ·  ".join(steps)
+        if timer.finished:
+            state = (f"finished: {timer.finished.get('result')}, "
+                     f"record {timer.finished.get('record')}")
+        else:
+            state = "running"
+        self.timer_info.setText(f"{timer.step or ''} {timer.run or ''}: {state}\n{marks}")
+
+    # --- rating of the last run --------------------------------------------------------
+    def _rating_box(self):
+        o = self.cfg["outcome"]
+        box = QtWidgets.QGroupBox("Rate the last run (written into its record)")
+        grid = QtWidgets.QGridLayout(box)
+        self.round_counter = launcher.RoundCounter()
+        self.round_label = QtWidgets.QLabel("")
+        font = self.round_label.font()
+        font.setPointSize(self.cfg["counter"]["font_pt"])
+        font.setBold(True)
+        self.round_label.setFont(font)
+        grid.addWidget(self.round_label, 0, 0, 1, 4)
+        self.round_details = QtWidgets.QLabel("")
+        grid.addWidget(self.round_details, 1, 0, 1, 4)
+        self.rating_record = QtWidgets.QLabel("no record yet")
+        self.rating_record.setWordWrap(True)
+        grid.addWidget(self.rating_record, 2, 0, 1, 4)
+        top = 3  # rows above the form
+        self.rating_buttons = QtWidgets.QButtonGroup(box)
+        for column, (value, label) in enumerate(o["screwed"].items()):
+            button = QtWidgets.QRadioButton(label)
+            button.setProperty("value", value)
+            self.rating_buttons.addButton(button)
+            grid.addWidget(button, top, column)
+        grid.addWidget(QtWidgets.QLabel("Turns"), top + 1, 0)
+        self.rating_turns = QtWidgets.QDoubleSpinBox()
+        self.rating_turns.setRange(-o["turns_step"], o["turns_max"])
+        self.rating_turns.setSingleStep(o["turns_step"])
+        self.rating_turns.setDecimals(1)
+        self.rating_turns.setSpecialValueText("not counted")  # shown at the minimum
+        grid.addWidget(self.rating_turns, top + 1, 1)
+        grid.addWidget(QtWidgets.QLabel("Failed at"), top + 1, 2)
+        self.rating_phase = QtWidgets.QComboBox()
+        self.rating_phase.addItems(o["phases"])
+        grid.addWidget(self.rating_phase, top + 1, 3)
+        self.rating_note = QtWidgets.QLineEdit()
+        self.rating_note.setPlaceholderText("note (optional)")
+        grid.addWidget(self.rating_note, top + 2, 0, 1, 3)
+        save = QtWidgets.QPushButton("Save rating")
+        save.clicked.connect(self._save_rating)
+        grid.addWidget(save, top + 2, 3)
+        return box
+
+    def _refresh_counter(self):
+        """Run counter of the current test round (run_record.round in tasks.yaml)."""
+        c = self.cfg["counter"]
+        try:
+            tasks = yaml.safe_load((REPO / c["tasks_file"]).read_text(encoding="utf-8"))
+            round_ = tasks["run_record"]["round"]
+        except (OSError, KeyError, TypeError, yaml.YAMLError) as error:
+            self.round_label.setText(f"run counter off: {error}")
+            return
+        counts = self.round_counter.count(sorted(REPO.glob(self.cfg["outcome"]["records"])),
+                                          round_)
+        total = sum(counts.values())
+        self.round_label.setText(f"{round_}: run {total} / {c['target_runs']}")
+        rated = counts["yes"] + counts["partly"] + counts["no"]
+        rate = f", {100.0 * counts['yes'] / rated:.0f} % of the rated" if rated else ""
+        self.round_details.setText(
+            f"screwed on {counts['yes']} · partly {counts['partly']} · failed {counts['no']} · "
+            f"aborted {counts['aborted']} · not rated {counts['unrated']}{rate}")
+
+    def _reset_rating(self):
+        self.rating_buttons.setExclusive(False)
+        for button in self.rating_buttons.buttons():
+            button.setChecked(False)
+        self.rating_buttons.setExclusive(True)
+        self.rating_turns.setValue(self.rating_turns.minimum())
+        self.rating_phase.setCurrentIndex(0)
+        self.rating_note.clear()
+
+    def _refresh_rating(self):
+        path = launcher.latest_record(REPO, self.cfg["outcome"]["records"])
+        if path is None:
+            return
+        try:
+            stamp = (path, path.stat().st_mtime)
+            if stamp == self.rated:
+                return
+            record = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as error:
+            self.rating_record.setText(f"cannot read {path.name}: {error}")
+            return
+        if self.rated is None or self.rated[0] != path:
+            self._reset_rating()  # a new run: empty form
+        self.rated = stamp
+        outcome = record.get(launcher.OUTCOME_KEY)
+        rating = "not rated yet" if not outcome else (
+            f"rated: {outcome.get('screwed')}, turns {outcome.get('turns')}, "
+            f"failed at {outcome.get('failed_phase')}")
+        self.rating_record.setText(f"<b>{path.name}</b>: {record.get('result')}, "
+                                   f"{record.get('duration_s')} s. {rating}")
+
+    def _save_rating(self):
+        button = self.rating_buttons.checkedButton()
+        path = self.rated[0] if self.rated else None
+        if button is None or path is None:
+            self.statusBar().showMessage("choose screwed on / partly / failed first")
+            return
+        turns = self.rating_turns.value()
+        outcome = {"screwed": button.property("value"),
+                   "turns": None if turns == self.rating_turns.minimum() else turns,
+                   "failed_phase": self.rating_phase.currentText(),
+                   "note": self.rating_note.text().strip(),
+                   "rated": datetime.now().isoformat(timespec="seconds")}
+        try:
+            path.write_text(launcher.set_outcome(path.read_text(encoding="utf-8"), outcome),
+                            encoding="utf-8")
+        except OSError as error:
+            QtWidgets.QMessageBox.critical(self, "Rating", f"not saved: {error}")
+            return
+        self.statusBar().showMessage(f"rating saved in {path.name}")
+        self._refresh_rating()
+
     # --- right side: images ----------------------------------------------------------
     def _viewers(self):
         panel = QtWidgets.QWidget()
@@ -270,7 +481,8 @@ class Launcher(QtWidgets.QMainWindow):
         for pane in self.panes:
             layout.addWidget(pane, 1)
         try:
-            self.ros = RosImages(sorted({pane.topic for pane in self.panes}))
+            self.ros = RosImages(sorted({pane.topic for pane in self.panes}),
+                                 self.cfg["timer"]["topic"], self.cfg["timer"]["history"])
         except Exception as error:  # noqa: BLE001 - no ROS sourced, buttons still useful
             self.ros = None
             for pane in self.panes:
@@ -394,6 +606,8 @@ class Launcher(QtWidgets.QMainWindow):
             else:
                 self._show_state(key, "starting" if self._starting(key) else "idle")
         self._refresh_side()
+        self._refresh_rating()
+        self._refresh_counter()
 
     def closeEvent(self, event):
         if self.ros is not None:
