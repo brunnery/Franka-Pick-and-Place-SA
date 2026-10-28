@@ -72,6 +72,7 @@ def test_shell_script_sources_env_and_writes_the_pid(tmp_path):
     assert f"source {REPO / 'software' / 'install' / 'setup.bash'}" in script.replace("'", "")
     assert script.index("echo $$") < script.index("pick.launch.py view:=false\n")
     assert "trap ':' INT" in script
+    assert script.index("gui/clean_dds_shm.sh") < script.index("pick.launch.py view:=false\n")
 
 
 def test_terminal_falls_back_to_the_first_installed():

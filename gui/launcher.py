@@ -65,8 +65,8 @@ def setup_files(cfg: dict, repo: Path) -> List[Path]:
 
 
 def shell_script(entry: Entry, cfg: dict, repo: Path, pid_file: Path) -> str:
-    """bash script run in the terminal: environment, pid file while the command runs,
-    exit code at the end, window stays open until Enter."""
+    """bash script run in the terminal: environment, the `before` commands, pid file while
+    the command runs, exit code at the end, window stays open until Enter."""
     q = shlex.quote
     lines = ["#!/usr/bin/env bash"]
     for name, value in (cfg["environment"].get("exports") or {}).items():
@@ -75,6 +75,7 @@ def shell_script(entry: Entry, cfg: dict, repo: Path, pid_file: Path) -> str:
         lines.append(f"if [ -f {q(str(path))} ]; then source {q(str(path))}; "
                      f"else echo 'not found (skipped): {path}'; fi")
     lines += [f"cd {q(str(repo))} || exit 1",
+              *(cfg["environment"].get("before") or []),
               f"echo $$ > {q(str(pid_file))}",
               f"trap {q('rm -f ' + q(str(pid_file)))} EXIT",
               # A handler (not ignore, which the children would inherit): Ctrl-C / Stop

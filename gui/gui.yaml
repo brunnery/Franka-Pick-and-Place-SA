@@ -22,6 +22,9 @@ environment:
   exports:
     PYTHONNOUSERSITE: "1"      # NumPy 2 in ~/.local breaks the ROS OpenCV (CLAUDE.md)
     PYTHONUNBUFFERED: "1"
+  # Run after sourcing, before the command (relative paths from the repository root)
+  before:
+    - bash gui/clean_dds_shm.sh  # broken DDS shared memory made every launch hang (28.10.)
 
 # First program found is used; {title} = button label. "--" ends the terminal's options.
 terminals:
@@ -64,7 +67,7 @@ outcome:                       # "Rate the last run": appended to the newest rec
 
 counter:                       # run counter of the current test round (top of the rating box)
   tasks_file: software/src/sa_tasks/config/tasks.yaml   # round = run_record.round there
-  target_runs: 20
+  target_runs: 10              # round 7 (28.10.): 10 runs, 5 stud left, 5 stud right
   font_pt: 14
 
 variables:
