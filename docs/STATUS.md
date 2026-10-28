@@ -1,72 +1,71 @@
 # Stand der Dinge
 
-> Wird von der Abend-Sequenz (`/abend`) jeden Abend überschrieben. Details und Begründungen: Entscheidungslog in `docs/PLAN.md`.
+> Wird von der Abend-Sequenz (`/abend`) jeden Abend überschrieben. Details und Begründungen: Entscheidungslog in `docs/PLAN.md`, Ergebnisse in `docs/PLAN.md` Abschnitt 9.1.
 
-## Stand vom 26.10.2026
+## Stand vom 28.10.2026
 
-**Der ganze Ablauf funktioniert: 5.5 von 6 Full-Runs am Schluss perfekt, auf beiden Tischseiten.** Zwei Ursachen waren gelöst worden. Erstens das Schrauben: Das starke Anpressen hat die Mutter verklemmt, jetzt wird nur noch mit ≈ 0.3 N gedreht. Zweitens die Präzision: Zwischen Kamera und Iris fehlten konstant ≈ 5 mm (gemessen [−1.8, −4.9] mm). Die ChArUco-Kalibrierung kann das prinzipiell nicht sehen, weil bei fester Orientierung die Kameraposition nicht bestimmbar ist. Dazu kommt eine zweite Messung aus der Nähe (170 mm statt ≈ 450 mm), damit Winkelfehler nur noch ≈ 0.4-fach wirken. Der Pick fährt ohne Spirale senkrecht mit Kontakterkennung runter.
+**Hauptergebnis für den Bericht steht: 29 von 30 Läufen aufgeschraubt, 1 teilweise, 0 Abbrüche** (Runden 5–7, je 5 Läufe pro Tischseite, gleicher Stand). Links 15/15, rechts 14/15, 3–5 Umdrehungen, Zykluszeit Ø 34.5 s (bis die Iris öffnet). Die Schraube links, die am 27.10. noch in jedem Lauf klemmte, geht jetzt zuverlässig: Die Ursache war die Neigung der Bodenplatte gegen die Schraube. Behoben ist sie mit einem festen Korrekturwinkel pro Seite (Drehung um den TCP, ab dem Anfahren bis zum Loslassen). Die Gewindesuche ist aus, und nach jedem Lauf fährt der Arm selbst in die Startpose. Yannick muss vermutlich nicht mehr an den Roboter: Als Nächstes kommt ein grösseres Aufräumen, dann der Bericht.
 
 ## Heute erledigt
 
-- **Launcher-GUI vom Laptop getestet:** läuft. Behoben: Ctrl-C/SIGTERM schloss das Fenster nicht (rclpy-Signalhandler). Bildfenster zeigen jetzt nur noch Binärbild und Resultat (die zwei Hälften von `/vision/debug`). Neuer Knopf „Camera -> iris offset“.
-- **Schrauben:**
-  - Neu: **Hochdrücken** (`place.seat`). Nach dem Kontakt 6 mm unter den Kontakt (≈ 9 N), damit die Mutter oben in der Iris anliegt. Weg der Mutter 0.16–0.42 mm.
-  - **Fangen und Festziehen mit nur 2 mm statt 8/60 mm** (≈ 0.3 N). Das war der Durchbruch (Yannick): Das Anpressen verklemmte die Mutter.
-  - Neu: **Spiralsuche auf der Gewindespitze** (`place.thread_search`, 0 → 4 mm, 3 Umdrehungen, 9 s, tiefste Stelle = Gewindeanfang). Reichweite in Wirklichkeit 2.8 mm, gefundene Senkung 0.06–1.17 mm.
-- **Pick:** Spirale entfernt. Ohne Spirale blieb der Arm ≈ 5 mm über dem Tisch stehen (Reibung, Stillstand galt als gelandet). Jetzt **senkrechter Abstieg mit 10 mm/s bis Kontakt** (> 4 N), dann 2 mm nachdrücken (`pick.descent`). Landung 12.9–15.2 mm.
-- **Nah-Messung** (`vision.close_up_distance_mm` 170) für Mutter und Schraube: Kameraachse über das erste Ergebnis, nochmals messen. Mutter links: erste Messung lag ≈ 6 mm daneben in x, die Nah-Messung korrigiert das. Schraube: 0.1–1.4 mm Korrektur.
-- **Kalibrierung (ChArUco) wieder aktiv:** Neigung [1.54, 0.79], 1.3° um z. Die Handkorrektur ist ersetzt.
-- **Ausprobiert und verworfen:** gemessene Neigung des Arms ignorieren. Das wurde schlechter, die Neigung von 1.0–1.7° ist also echt (Schalter wieder entfernt).
-- **Neues Werkzeug `ros2 run sa_tasks tcp_offset`:** misst Kamera → Iris direkt. Ablauf: Approach, PROG, Gewinde von Hand mittig in die Iris, Execution, `robot_state`, Tool. Ergebnis y −274: [−1.91, −4.19], y −237: [−1.71, −5.70]. **Eingetragen als konstante `target_correction` [−1.8, −4.9]**. Probe ohne Handführung: mittig.
-- **Seitliche Anfahrt aus −y abgeschaltet** (`approach_from_mm` [0, 0]). Mit der gemessenen Korrektur nicht nötig.
+- **Neigung links gefunden und korrigiert:** Messwerkzeug `tilt_level` (gestern auf dem Laptop gebaut). Links sah die Platte bei +1…+1.5° gerade aus. Die Idee „Unterteil mit M4 um 180° drehen“ wurde getestet und verworfen: Die Platte blieb schief, die Neigung sitzt also nicht im drehenden Teil.
+- **Fester Korrekturwinkel pro Seite** (`place.tilt_correction`): links +1.5°, rechts −1.0°. `tilt_level` sagte rechts +1°, −1° sah im Lauf aber besser aus. Das ist die einzige Ausnahme von „nur eine Orientierung“ und steht so im PLAN.
+- **Festziehen pro Seite** (`tighten.depth_mm`): links 1 mm, rechts 3 mm unter der gemessenen Pose. Rechts verloren die Iris-Finger die Mutter.
+- **Iris vor dem Festziehen 10 ms öffnen** (`screw.loosen_iris`). Danach hält die Iris nicht mehr aktiv, die Mutter kann sich ausrichten.
+- **Gewindesuche aus** (`thread_search.enabled: false`), ≈ 2–4 s schneller, kein Nachteil.
+- **Schraube links +0.5 mm in y** (`place.approach_shift_xy_mm`, nach Gefühl).
+- **Nach jedem erfolgreichen `full`-Lauf zurück in die Startpose von `sa_robot`** (`robot.home_after_full_run`). Der Timer stoppt weiter bei `iris_opening`.
+- **`run_map` über mehrere Runden** (`--round "round 5" "round 6" "round 7"`, Default in `tasks.yaml`): Karte der 30 Läufe in `data/runs/run_map.png`.
+- **Pick-Landefehler erklärt** (THEORY 5): Der TCP landet konstant 4–5 mm hinter der Mutter (−x), weil der Arm der schnellen Ein-Zug-Bewegung nachläuft und die Reibung am Tisch den Rest festhält. Die Iris fängt das (30/30 gegriffen), deshalb bleibt es so.
+- **Zwei PC-Probleme behoben:**
+  - Der Ubuntu-Updater fraß nach dem Neustart ≈ 37 % CPU → Reflex `communication_constraints_violation`.
+  - Ein kaputter DDS-Shared-Memory-Port (`/dev/shm/fastrtps_port7413`, 0 Byte) liess jeden Start stumm hängen. Die GUI räumt das jetzt vor jedem Befehl auf (`gui/clean_dds_shm.sh`).
+- Tests: `test_precise_move…` (seit gestern rot) und `test_approach_only…` an den aktuellen Stand angepasst. Alle grün.
 
-## Messergebnisse 26.10.
+## Messergebnisse 28.10.
 
-| Zeit | Stand | Läufe | Ergebnis |
+72 `full`-Läufe, 66 durchgelaufen, 6 Abbrüche in der Bilderkennung (keine Mutter / kein Objekt / kein Quadrat, vor allem in den Probeläufen).
+
+| Runde | Stand | Läufe | Ergebnis |
 |---|---|---|---|
-| 11:30–11:37 | alt (Anpressen 8/60 mm) | 3 full, 1 approach | z-Weg 1.8–2.2 mm, Kraft −6…−7 N, nie `caught` |
-| 12:42–12:48 | + Hochdrücken, Anpressen 2 mm | 4 full ok | „funktioniert“ (Yannick), einmal `caught` |
-| 12:51–12:57 | + Spiralsuche Gewinde | 4 full | 2× Vision (keine Schraube im Bild / kein Quadrat), 1 abgebrochen, 1 ok |
-| 13:00–13:09 | + Kalibrierung, Pick ohne Spirale | 6 full abgebrochen | Pick hörte bei TCP 19.2–19.8 mm auf (≈ 5 mm über dem Tisch) |
-| 13:17–13:41 | + Pick mit Kontakt, Nah-Messung | 2 full, 8 place | Iris ≈ 5 mm daneben, `tcp_offset`-Messungen |
-| **13:45–13:54** | **+ gemessene Korrektur** | **6 full ok** | **5.5/6 perfekt (Yannick)**, Landung 12.9–15.2 mm, ≈ 77–80 s pro Lauf |
-
-`tcp_offset` (data/runs/tcp_offset.yaml): [−1.91, −4.19] / [−1.71, −5.70] / Probe [−1.82, −4.94].
+| half turn | Halbdrehung links | 6 | Platte weiter schief, verworfen |
+| tilt 1.5 | Neigung links +1.5° | 2 | funktioniert |
+| round 4 | Neigung links, Gewindesuche an | 10 (+2 unbewertet) | 9/10, 1 teilweise, Ø 39.9 s |
+| trial right 1.0 / no thread search / loosen iris | Probeläufe einzelner Änderungen | 15 | gut (Yannick), nicht bewertet |
+| **round 5** | Endstand | 10 | **10/10**, Ø 34.2 s |
+| **round 6** | + Rückfahrt Startpose | 10 | **9/10**, 1 teilweise, Ø 34.3 s |
+| **round 7** | gleich | 10 (+4 Filmaufnahmen, nicht gezählt) | **10/10**, Ø 35.0 s |
+| **round 5–7** | | **30** | **29/30, Wilson-95 %-Intervall 83–99 %** |
 
 ## Vorläufige Werte (zurückstellen oder bestätigen!)
 
 | Wo | Jetzt | Ziel | Warum |
 |---|---|---|---|
-| `software/src/sa_tasks/config/tasks.yaml:49` `frames.target_correction` | konstant [−1.8, −4.9] | bestätigen | aus 2 Messungen rechts; links nur über die Full-Runs bestätigt, nicht gemessen |
-| `tasks.yaml:27,30` Kamera-Neigung / z-Drehung | [1.54, 0.79] / 1.3 | so lassen | Korrektur gilt nur zusammen mit diesem Modell. Wer es ändert, muss `tcp_offset` neu messen |
-| `tasks.yaml:145` `place.approach_from_mm` | [0, 0] | [0, 0] bestätigen | Test von heute, lief gut |
-| `tasks.yaml:200` `place.screw.catch.wobble.radius_mm` | 2.0 | 0 testen | kann die Mutter von der gefundenen Stelle wegziehen |
-| `tasks.yaml:168` `place.thread_search` | 9 s Spirale | evtl. kürzer/weg | mit der Korrektur trifft es auch so; kostet ≈ 12 s |
-| `software/src/sa_vision/config/vision.yaml:61` `targets.stud.size_tolerance` | 0.8 | 0.4 | war für die provisorische Halterung |
-| `arduino/iris_gripper/iris_gripper.ino:49` `WATCHDOG_OPENS_IRIS` | true | false | Bequemlichkeit beim Testen |
+| `software/src/sa_tasks/config/tasks.yaml:227` `tilt_correction` | links +1.5 / rechts −1.0° | so lassen | von Auge, rechts gegen `tilt_level` (+1°); funktioniert (29/30) |
+| `tasks.yaml:230` `approach_shift_xy_mm` | links [0, 0.5] | so lassen | nach Gefühl, nicht gemessen |
+| `tasks.yaml:325` `loosen_iris` | 10 ms | so lassen | Wirkung nicht von „Iris hält nicht mehr“ getrennt |
+| `tasks.yaml:213` `half_turn` | `sides: []` | beim Aufräumen entfernen | verworfen |
+| `tasks.yaml:252` `thread_search.enabled` | false | beim Aufräumen: Code behalten oder entfernen | aus seit Runde 5 |
+| `tasks.yaml:287` `catch.max_steps` | 0 (Fang-Phase aus) | beim Aufräumen entfernen | seit 27.10. aus |
+| `tasks.yaml:184` `approach_from_mm` | [0, 0] | beim Aufräumen entfernen | seit 26.10. aus |
+| `software/src/sa_vision/config/vision.yaml:63` `targets.stud.size_tolerance` | 0.8 (TEMPORARY) | 0.4 | war für die provisorische Halterung |
 
 ## Offene Probleme
 
-1. **Erfolg beim Schrauben ist im Record nicht messbar.** `drop_end_mm` bleibt in den guten Läufen bei etwa 0 (−0.05…0.42). Vermutung: Die Mutter läuft am Gewinde runter und aus der Iris heraus, statt den Arm mitzuziehen (sie wurde ja nach oben gedrückt). Beurteilung bisher nur von Auge.
-2. **Ein halber Fehlversuch** von 6. Nicht im Record erkennbar, welcher.
-3. **Lauf dauert 77–80 s** (gestern 55–65 s): Nah-Messung 2× ≈ 4 s, Spiralsuche ≈ 12 s, Hochdrücken 1.5 s.
-4. **Vision-Aussetzer:** 2× „no object“ / „not a stud“ (12:51, 12:53, 13:27), vermutlich Schraube am Bildrand oder `size_tolerance`.
-5. Board resettet, wenn M4 blockiert (VIN-Jumper), noch offen.
+1. **Ein teilweiser Lauf** (round 6, 11:30:55, rechts, 1.5 Umdrehungen). Positionierung gut (0.28 mm), der Arm kam 3.6 mm runter. Vermutlich ist die Iris über die Mutter gerutscht. Bei einem Lauf von 30 nicht weiter verfolgt.
+2. **Pick 4–5 mm hinter der Mutter** (systematisch, erklärt, bleibt so).
+3. **Vision-Aussetzer** in den Probeläufen (6×), in den gezählten Runden keiner.
+4. **Der rechte Korrekturwinkel widerspricht dem Modell** (THEORY 5: rechts sollten sich die Beiträge aufheben). Im Bericht als Einschränkung erwähnen.
 
 ## Morgen als Erstes
 
-1. **Erfolgsquote messen:** 10× `sa_full_all`, Stud- und Mutterposition jedes Mal ändern (beide Seiten). Pro Lauf notieren: Mutter aufgeschraubt ja/nein, wie viele Umdrehungen.
-2. **Erfolgskriterium messbar machen:** z. B. nach dem Schrauben die Iris öffnen und prüfen, ob die Mutter auf dem Gewinde bleibt (Bild der Kamera beim Hochfahren), oder den z-Weg relativ zur Mutter statt zum Arm.
-3. **Zeit sparen, je einzeln testen:** Spiralsuche aus (`thread_search` überspringen, falls es ohne genauso trifft), Wackeln aus (`catch.wobble.radius_mm: 0.0`).
-4. **Links einmal `tcp_offset` messen** (Approach, PROG, Gewinde mittig, `sa_robot_state`, `sa_env && ros2 run sa_tasks tcp_offset`) und mit [−1.8, −4.9] vergleichen.
-5. Nebenbei: `size_tolerance` 0.4, VIN-Jumper, `WATCHDOG_OPENS_IRIS` false.
+1. **Grosses Aufräumen** (Roboter wird vermutlich nicht mehr gebraucht): verworfene Funktionen samt YAML und Tests raus (`half_turn`, Fang-Phase/Wobble, `approach_from_mm`, evtl. `thread_search`), Kommentar-Historie in `tasks.yaml` kürzen, `size_tolerance` klären, Code und Doku auf den Endstand bringen.
+2. **Bericht:** Ergebnisse aus PLAN 9.1 (Tabelle, Wilson-Intervall), `data/runs/run_map.png`, THEORY-Abschnitte mit Status „used“ übernehmen. Pick-Landefehler und Neigungskorrektur als eigene Punkte.
+3. **Präsentation:** Videos von heute (round 7 extra) und die Karte.
 
 ## Nützliche Befehle
 
-- `sa_full_all`: ganzer Ablauf. Erst Ctrl+C, wenn `record: …` steht.
-- `sa_place_approach`: Schraube suchen, nah messen, 5 mm über der Spitze halten.
-- `sa_robot_state` + `sa_env && ros2 run sa_tasks tcp_offset`: Kamera → Iris messen (nach Approach + Handführung in PROG).
-- `sa_gui`: Launcher-Fenster (aus einem normalen Terminal).
-- Schrauben/Suche im letzten Lauf: `grep -A8 "thread_search:\|  seat:" $(ls -t data/runs/*_full.yaml | head -1)`
-- Pick-Landung: `grep -A3 landed_tcp $(ls -t data/runs/*_full.yaml | head -1)`
-- Unit-Tests: `cd software/src/<pkg> && PYTHONNOUSERSITE=1 python3 -m pytest test`
+- Karte und CSV der 30 Läufe: `sa_env && ros2 run sa_tasks run_map` (Default: round 5–7), andere Runden mit `--round "round 4"`.
+- Unit-Tests: `cd software/src/<pkg> && PYTHONNOUSERSITE=1 python3 -m pytest test -q` (sa_tasks, sa_vision), GUI: `cd gui && python3 -m pytest test_launcher.py`.
+- Build: `sa_robot_build` (mit Franka-Workspace, sonst verliert `install/setup.bash` die Kette).
+- Hängt ein Start stumm: `bash gui/clean_dds_shm.sh` (macht die GUI automatisch).
