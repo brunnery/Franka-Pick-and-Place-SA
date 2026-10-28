@@ -7,6 +7,10 @@ from sa_tasks.interfaces import Candidate, MockGripper, MockRobot, Observation, 
 CFG = config.load_tasks()
 CFG["frames"]["target_correction"] = {"x": [0.0, 0.0, 0.0],  # the tests check the geometry
                                      "y": [0.0, 0.0, 0.0]}
+CFG["place"]["approach_shift_xy_mm"] = {"left": [0.0, 0.0], "right": [0.0, 0.0]}
+CFG["place"]["thread_search"]["enabled"] = True  # the tests cover the search
+CFG["place"]["half_turn"]["sides"] = ["left"]
+CFG["place"]["screw"]["loosen_iris"]["enabled"] = False
 R_DOWN = config.rotation_down(CFG)
 T_FT = CFG["frames"]["flange_to_tcp_mm"]
 K = np.array([[2077.16, 0.0, 695.44], [0.0, 2083.73, 405.57], [0.0, 0.0, 1.0]])
@@ -133,12 +137,59 @@ def test_place_finds_contact_on_the_thread_and_screws():
     # the mock sinks nowhere deeper, so the search ends where it started (lowest = first sample)
     assert record["thread_search"]["shift_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
     catch = CFG["place"]["screw"]["catch"]
-    # the mock never sinks: all catch steps, then the tightening turn
-    assert gripper.commands == ["ROT"] * (catch["max_steps"] + 1) + ["OPEN"]  # + tighten
+    # stud on the left: the half turn on the way up; the mock never sinks: all catch steps,
+    # then the tightening turn
+    assert record["half_turn"] is True
+    assert gripper.commands == ["ROT"] + ["ROT"] * (catch["max_steps"] + 1) + ["OPEN"]
     assert record["screw"]["caught"] is False
     # ends at the close-up pose over the stud (photo of the result)
     assert robot.pose == pytest.approx(sequences.close_up_pose(
         CFG, STUD, TABLE_Z + CFG["objects"]["stud"]["base_height_mm"]))
+
+
+def test_half_turn_only_on_the_configured_side(monkeypatch):
+    monkeypatch.setitem(CFG["place"]["half_turn"], "sides", ["right"])
+    tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
+    _, gripper, record = run_place(contact_tcp_z=tip - 1.0)
+    assert record["half_turn"] is False
+    catch = CFG["place"]["screw"]["catch"]
+    assert gripper.commands == ["ROT"] * (catch["max_steps"] + 1) + ["OPEN"]  # screwing only
+
+
+def test_tilt_correction_turns_the_plate_about_the_tcp_from_the_approach(monkeypatch):
+    angle = 1.5
+    monkeypatch.setitem(CFG["place"]["tilt_correction"], "minus_y_edge_up_deg",
+                        {"left": angle, "right": 0.0})  # the test stud is on the left
+    tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
+    robot, _, record = run_place(approach_only=True)
+    assert record["tilt_correction_deg"] == angle
+    assert robot.pose[:3, :3] == pytest.approx(frames.raise_minus_y_edge(R_DOWN, angle))
+    tcp = frames.tcp_position(robot.pose, T_FT)  # the TCP stays over the stud
+    assert tcp == pytest.approx([*STUD, tip + CFG["place"]["approach_clearance_mm"]], abs=0.01)
+
+
+def test_place_without_thread_search_screws_where_the_nut_was_seated(monkeypatch):
+    monkeypatch.setitem(CFG["place"]["thread_search"], "enabled", False)
+    tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
+    _, gripper, record = run_place(contact_tcp_z=tip - 1.0)
+    assert record["thread_search"]["skipped"] is True
+    assert record["thread_minus_target_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
+    assert gripper.commands[-1] == "OPEN"
+
+
+def test_loosen_iris_just_before_the_tightening_turn(monkeypatch):
+    monkeypatch.setitem(CFG["place"]["screw"]["loosen_iris"], "enabled", True)
+    monkeypatch.setitem(CFG["place"]["half_turn"], "sides", [])
+    tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
+    _, gripper, record = run_place(contact_tcp_z=tip - 1.0)
+    assert record["screw"]["iris_loosened"] is True
+    assert gripper.commands[-3:] == ["LOOSEN", "ROT", "OPEN"]
+
+
+def test_go_home_ends_at_the_start_pose_of_sa_robot():
+    robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
+    sequences.go_home(robot, CFG)
+    assert robot.pose == pytest.approx(frames.pose(R_DOWN, CFG["robot"]["home_flange_mm"]))
 
 
 class ThreadGripper(MockGripper):
@@ -162,7 +213,7 @@ def test_screw_on_tightens_once_the_thread_has_caught(monkeypatch):
     robot = MockRobot(OBSERVE_STUD.copy(), T_FT[2])
     gripper = ThreadGripper(robot, 0.4 * catch["caught_drop_mm"])
     record = {}
-    sequences.screw_on(robot, gripper, CFG, OBSERVE_STUD.copy(), 0.0, record)
+    sequences.screw_on(robot, gripper, CFG, OBSERVE_STUD.copy(), 0.0, record, "left")
     assert record["caught"] is True and len(record["catch_drops_mm"]) == 3
     assert gripper.commands == ["ROT"] * 4  # 3 catch steps, tighten
     wobble = CFG["place"]["screw"]["catch"]["wobble"]
@@ -186,7 +237,7 @@ def test_approach_only_stops_above_the_thread_tip():
     tip = TABLE_Z + CFG["objects"]["stud"]["top_height_mm"]
     assert record["approach_reached_tcp_mm"] == pytest.approx(
         [*STUD, tip + CFG["place"]["approach_clearance_mm"]], abs=0.01)
-    assert gripper.commands == []
+    assert gripper.commands == ["ROT"]  # only the half turn on the way up (left, set above)
 
 
 class LaggingRobot(MockRobot):
@@ -205,9 +256,10 @@ def test_precise_move_removes_the_steady_state_error(y):
     sequences.move_to(robot, goal, CFG)
     assert abs(robot.pose[1, 3] - y) == pytest.approx(4.0)
     reference = sequences.move_to(robot, goal, CFG, precise=True)
-    assert robot.pose[:3, 3] == pytest.approx(goal[:3, 3], abs=CFG["robot"]["fine_positioning"]
-                                              ["tolerance_mm"])
-    assert reference[1, 3] - y == pytest.approx(4.0 * np.sign(y), abs=0.5)
+    tolerance = CFG["robot"]["fine_positioning"]["tolerance_mm"]
+    assert robot.pose[:3, 3] == pytest.approx(goal[:3, 3], abs=tolerance)
+    # the steps stop once within the tolerance, so the shift may fall short of 4 mm by as much
+    assert reference[1, 3] - y == pytest.approx(4.0 * np.sign(y), abs=tolerance)
 
 
 def test_target_correction_is_a_plane_per_component():

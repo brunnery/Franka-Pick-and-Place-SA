@@ -453,7 +453,7 @@ def find_thread(robot: Robot, cfg: dict, contact: np.ndarray, record: dict,
 
 
 def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
-             free_fz: float, record: dict, mark: Callable[[str], object] = no_mark,
+             free_fz: float, record: dict, side: str, mark: Callable[[str], object] = no_mark,
              ceiling_z: float = np.inf) -> None:
     """Screw the nut on from the contact pose in the screw mode (soft tilt, no integral
     action: the thread can align the nut). Turn slowly in short steps, the reference moving one
@@ -464,7 +464,8 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
     the controller does not compensate; the record holds the measured Fz - free_fz.
     The catch reference never goes above ceiling_z (the reference of the thread search; 27.10.,
     Yannick: the arm rose when the pressure dropped). The tightening starts depth_mm below the
-    measured pose instead (27.10. round 2: at the search depth it pressed with 6-7 N)."""
+    measured pose instead (27.10. round 2: at the search depth it pressed with 6-7 N), per
+    side of the table (tighten.depth_mm[side], 28.10.)."""
     screw = cfg["place"]["screw"]
     catch, tighten = screw["catch"], screw["tighten"]
     tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
@@ -514,9 +515,16 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
     # depth_mm below the measured pose, not the deeper reference of the search: 27.10. round 2
     # pressed with 6-7 N at the start (search reference ~6 mm below, tighten z 600 N/m) and the
     # nut jammed on the left. The nut rests on the stud, so the arm cannot rise from this
-    below[2, 3] = robot.flange_pose()[2, 3] - tighten["depth_mm"]
+    depth = record["tighten_depth_mm"] = tighten["depth_mm"][side]
+    below[2, 3] = robot.flange_pose()[2, 3] - depth
     robot.follow([Waypoint(0.0, below)])
     robot.set_mode(cfg["robot"]["modes"]["tighten"])  # soft xy: the nut may swing while turning
+    # 28.10. test (Yannick): open the iris a tiny bit before the turn, so the nut can align on
+    # the thread. The board switches the iris off after any OPEN, i.e. it stops holding too
+    loosen = screw["loosen_iris"]
+    record["iris_loosened"] = loosen["enabled"]
+    if loosen["enabled"]:
+        gripper.loosen(loosen["duration_ms"], loosen["speed"])
     # While M4 turns, the reference is kept depth_mm below the measured pose (every
     # follow_period_s): the gripper follows the nut down the thread with a constant light
     # preload (k_z * depth_mm). 27.10.: a reference running down at a fixed speed raised the
@@ -526,7 +534,7 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
     def follow_nut():
         while not turning.wait(tighten["follow_period_s"]):
             reference = below.copy()
-            reference[2, 3] = robot.flange_pose()[2, 3] - tighten["depth_mm"]
+            reference[2, 3] = robot.flange_pose()[2, 3] - depth
             robot.follow([Waypoint(0.0, reference)])
 
     def turn():
@@ -542,6 +550,13 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
     record.update(drop_end_mm=round(start_z - z, 2), tilt_end_deg=round(tilt, 2),
                   force_end_n=force,
                   end_tcp_mm=rounded(frames.tcp_position(robot.flange_pose(), tcp_offset)))
+
+
+def go_home(robot: Robot, cfg: dict) -> None:
+    """Up to the start pose of sa_robot (robot.home_flange_mm), z first: the next run can start
+    at once (28.10., Yannick: was moved there by hand after every run)."""
+    move_to(robot, frames.pose(config.rotation_down(cfg), cfg["robot"]["home_flange_mm"]), cfg,
+            lead=LEAD_Z)
 
 
 def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
@@ -566,8 +581,32 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     vision.prepare(TARGET_STUD)
     # first look while creeping, as at the nut. Full run: this lifts the nut off the table,
     # with z leading less than usual (27.10.: nothing around the held nut needs a vertical exit)
-    move_to(robot, observe, cfg, rough=True, lead_fraction=place["lift_lead_fraction"],
-            max_speed_z_mm_s=place["lift_max_speed_z_mm_s"])
+    lifted = threading.Event()
+
+    def lift():
+        try:
+            move_to(robot, observe, cfg, rough=True, lead_fraction=place["lift_lead_fraction"],
+                    max_speed_z_mm_s=place["lift_max_speed_z_mm_s"])
+        finally:
+            lifted.set()
+
+    # On the way there: turn the lower part (iris with the nut) by about half a turn, so its
+    # own tilt flips sign against the arm's tilt on that side (28.10. test, THEORY 5). Only once
+    # the TCP is clear of the table (the nut must not turn on it); at the latest on arrival
+    half_turn = place["half_turn"]
+    side = "left" if observe[1, 3] > 0 else "right"
+    record["half_turn"] = side in half_turn["sides"]
+
+    def turn_when_clear():
+        clear_z = table_z + half_turn["start_above_table_mm"]
+        while (frames.tcp_position(robot.flange_pose(), tcp_offset)[2] < clear_z
+               and not lifted.wait(half_turn["poll_period_s"])):
+            pass
+        gripper.rotate(half_turn["direction"], half_turn["duration_ms"], half_turn["speed"])
+    if record["half_turn"]:
+        alongside(turn_when_clear, lift)
+    else:
+        lift()
     mark("observe_stud")
     found = record["stud"] = find_stud(robot, vision, cfg, table_z, record, mark)
     mark("stud_located")
@@ -578,9 +617,18 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
 
     # The nut sits in the iris with its bottom face at the TCP plane
     tip_z = table_z + stud["top_height_mm"]
-    approach = frames.flange_for_tcp([*found["position_mm"][:2],
+    # 28.10.: per side the plate's -y_B edge goes up by a fixed angle (from tilt_level),
+    # turned about the TCP. Every reference after contact comes from the measured
+    # pose, so it holds until the release; back up at the close-up pose it is level again
+    tilt = place["tilt_correction"]
+    record["tilt_correction_deg"] = tilt["minus_y_edge_up_deg"][side]
+    r_place = frames.raise_minus_y_edge(config.rotation_down(cfg),
+                                        record["tilt_correction_deg"])
+    # 28.10.: an extra xy shift of the stud target per side, on top of target_correction
+    shift = record["approach_shift_xy_mm"] = list(place["approach_shift_xy_mm"][side])
+    approach = frames.flange_for_tcp([*(target_xy + shift),
                                       tip_z + place["approach_clearance_mm"]],
-                                     config.rotation_down(cfg), tcp_offset)
+                                     r_place, tcp_offset)
     # First beside the target, then the last short move always in the same direction: the
     # play of the gripper's turning disk then always ends up on the same side (25.10.)
     if np.any(place["approach_from_mm"]):  # [0, 0]: straight to the approach pose
@@ -595,7 +643,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     # Record only: how far the flange tilt moves a rigid TCP here (25.10.: 0-2 mm, varied from
     # run to run at the same place; a swinging-plate model built on it was dropped)
     record["approach_tilt_shift_mm"] = rounded(frames.tilt_shift_mm(
-        robot.flange_pose(), config.rotation_down(cfg), tcp_offset))
+        robot.flange_pose(), r_place, tcp_offset))
     if approach_only:
         log.info("approach only: TCP %.1f mm above the thread tip; holding here",
                  reached[2] - tip_z)
@@ -622,13 +670,18 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     contact, reference_z = seat_nut(robot, cfg, contact, free_fz, record["seat"])
     mark("seated")
     record["thread_search"] = {}
-    contact, reference_z = find_thread(robot, cfg, contact, record["thread_search"],
-                                       reference_z)
+    if place["thread_search"]["enabled"]:
+        contact, reference_z = find_thread(robot, cfg, contact, record["thread_search"],
+                                           reference_z)
+    else:  # 28.10. test: screw right where the nut was seated
+        record["thread_search"] = {"skipped": True,
+                                   "lowest_tcp_mm": rounded(frames.tcp_position(contact,
+                                                                                tcp_offset))}
     mark("thread_found")
     # where the nut dropped onto the thread start: the stud as the iris felt it
     record["thread_minus_target_xy_mm"] = from_target(record["thread_search"]["lowest_tcp_mm"])
     record["screw"] = {}
-    screw_on(robot, gripper, cfg, contact, free_fz, record["screw"], mark, reference_z)
+    screw_on(robot, gripper, cfg, contact, free_fz, record["screw"], side, mark, reference_z)
     record["end_minus_target_xy_mm"] = from_target(record["screw"]["end_tcp_mm"])
     if place["open_while_settling"]:
         # 27.10. (Yannick): the iris opens during the release wait, ~1.5 s faster. The wait

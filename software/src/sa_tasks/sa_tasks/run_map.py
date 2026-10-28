@@ -1,6 +1,6 @@
 """Evaluation of all run records: one CSV row per run and a map of where nut and stud were.
 
-  ros2 run sa_tasks run_map [--since 20261027] [--round "round 2"] [--steps full ...]
+  ros2 run sa_tasks run_map [--since 20261027] [--round "round 5" "round 6"] [--steps full ...]
   ros2 run sa_tasks run_map --times 5     # only print the time per step of the last 5 runs
 
 Reads <log_dir>/<YYYYMMDD-HHMMSS>_<step>.yaml (tasks.yaml run_map: since, steps) and writes
@@ -109,9 +109,9 @@ def summarise(name: str, record: dict) -> dict:
     return row
 
 
-def load(directory: Path, since: str, steps: List[str], round_: str = "") -> List[dict]:
+def load(directory: Path, since: str, steps: List[str], rounds: List[str] = ()) -> List[dict]:
     """Rows of the records <timestamp>_<step>.yaml from since on (file name order), only those
-    of round_ unless it is empty."""
+    of the given rounds unless there are none."""
     rows = []
     for path in sorted(Path(directory).glob("*-*_*.yaml")):
         if path.name < since:
@@ -121,7 +121,7 @@ def load(directory: Path, since: str, steps: List[str], round_: str = "") -> Lis
         except yaml.YAMLError:
             continue
         if (isinstance(record, dict) and record.get("step") in steps
-                and (not round_ or record.get("round") == round_)):
+                and (not rounds or record.get("round") in rounds)):
             rows.append({"run": len(rows) + 1, **summarise(path.stem, record),
                          "timeline": record.get("timeline_s") or {}})
     return rows
@@ -218,8 +218,11 @@ def main():
     parser.add_argument("--since", default=settings["since"],
                         help="first record, file name prefix (e.g. 20261027-1400); '' = all")
     parser.add_argument("--steps", nargs="+", default=settings["steps"])
-    parser.add_argument("--round", default=settings["round"],
-                        help="only records of this run_record.round; '' = all")
+    default_rounds = settings["round"]  # one round (str) or several (list); "" / [] = all
+    if isinstance(default_rounds, str):
+        default_rounds = [default_rounds] if default_rounds else []
+    parser.add_argument("--round", nargs="*", default=default_rounds,
+                        help="only records of these run_record.round values; none = all")
     parser.add_argument("--times", type=int, metavar="N",
                         help="only print the time per step of the last N runs (any date)")
     args = parser.parse_args()
@@ -231,7 +234,7 @@ def main():
     rows = load(directory, args.since, args.steps, args.round)
     if not rows:
         print(f"no {'/'.join(args.steps)} records from {args.since or 'the start'} on "
-              f"{'of ' + repr(args.round) + ' ' if args.round else ''}in {directory}")
+              f"{'of ' + ', '.join(args.round) + ' ' if args.round else ''}in {directory}")
         return
     write_csv(rows, directory / settings["csv"])
     plot(rows, settings["colours"], directory / settings["png"],

@@ -86,6 +86,11 @@ def run(step: str) -> None:
             record["place"] = {}
             sequences.place_and_screw(robot, gripper, vision, cfg, poses, record["place"],
                                       args.approach_only, mark=timeline.mark)
+        if step == "full" and cfg["robot"]["home_after_full_run"]:
+            # after the cycle time (the GUI timer stopped at iris_opening); only after a run
+            # that went through, a failed step leaves the arm where it is
+            sequences.go_home(robot, cfg)
+            timeline.mark("home")
         record["result"] = "ok"
         log.info("done in %.1f s", time.monotonic() - started)
     except KeyboardInterrupt:

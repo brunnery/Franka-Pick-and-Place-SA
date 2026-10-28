@@ -56,6 +56,7 @@ class Robot(Protocol):
 class Gripper(Protocol):
     def open(self) -> None: ...
     def close(self) -> None: ...
+    def loosen(self, duration_ms: int, speed: int) -> None: ...  # short opening, then off
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None: ...
     def shutdown(self) -> None: ...
 
@@ -128,6 +129,9 @@ class MockGripper:
 
     def close(self) -> None:
         self._log("CLOSE")
+
+    def loosen(self, duration_ms: int, speed: int) -> None:
+        self._log("LOOSEN")
 
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None:
         self._log("ROT")

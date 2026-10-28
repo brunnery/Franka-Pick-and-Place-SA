@@ -90,6 +90,10 @@ class SerialGripper:
         self._timed(lambda i: protocol.close_iris(i, c["duration_ms"], c["speed"],
                                                   c["hold_speed"]), c["duration_ms"])
 
+    def loosen(self, duration_ms: int, speed: int) -> None:
+        """Open the iris for a moment; the board then switches the iris off (no more holding)."""
+        self._timed(lambda i: protocol.open_iris(i, duration_ms, speed), duration_ms)
+
     def rotate(self, direction: int, duration_ms: int, speed: int) -> None:
         self._timed(lambda i: protocol.rotate(i, direction, duration_ms, speed), duration_ms)
 

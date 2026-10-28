@@ -42,6 +42,15 @@ def test_load_filters_by_date_and_step(tmp_path):
     assert (tmp_path / "m.png").stat().st_size > 0
 
 
+def test_load_keeps_only_the_given_rounds(tmp_path):
+    for name, round_ in (("20261028-100000_full", "round 4"), ("20261028-110000_full", "round 5"),
+                         ("20261028-120000_full", "round 6")):
+        (tmp_path / f"{name}.yaml").write_text(yaml.safe_dump({**RECORD, "round": round_}))
+    rows = run_map.load(tmp_path, "", ["full"], ["round 5", "round 6"])
+    assert [row["round"] for row in rows] == ["round 5", "round 6"]
+    assert len(run_map.load(tmp_path, "", ["full"])) == 3  # no rounds given: all
+
+
 def test_step_times_and_table():
     assert run_map.step_times({"start": 0.0, "a": 2.5, "b": 4.0}) == {"start": 0.0, "a": 2.5,
                                                                      "b": 1.5}

@@ -137,6 +137,11 @@ robot:
   arrival_timeout_s: 15.0
   arrival_settle_s: 0.15       # 0.3 until 21.10.
   start_settle_s: 0.5          # before the first move: arm still this long (1.0 until 21.10.)
+  # 28.10.: a full run that went through ends at the start pose of sa_robot (controllers.yaml
+  # start_pose: EE (0.5, 0, 0.5) m, EE = 103.4 mm below the flange along the tool axis), so the
+  # next run can start at once. After the cycle time (GUI timer stops at iris_opening)
+  home_after_full_run: true
+  home_flange_mm: [500.0, 0.0, 603.4]
   observation_height_from: observe_stud  # both observation poses use this z ("" = own z); 22.10. poses swapped, same height as before
   state_timeout_s: 5.0
 
@@ -199,6 +204,30 @@ place:
   # strongest jitter of a run was on this move at 220 (long, upwards, diagonal); 150 changed
   # nothing (jitter in the second half, braking) -> back to 220
   lift_max_speed_z_mm_s: 220.0
+  # 28.10. test (stud on the left jams): during the lift to observe_stud, M4 turns the lower
+  # part (iris with the nut) by about 180 deg, so the plate's own tilt (-y_B edge lower, THEORY 5)
+  # flips sign and cancels the arm's outward tilt as on the right. Timed, no encoder: duration_ms
+  # for 180 deg from gripper_test ("r <ms> <speed>").
+  # Record: half_turn (true = turned). Measure first: tilt_level left, turn, tilt_level again
+  half_turn:
+    sides: []                  # side of observe_stud (left = +y_B, right); [] = never. 28.10.: [left] did not help
+    direction: 1               # either way, nothing is threaded yet
+    duration_ms: 900           # 28.10. gripper_test "r 1000 220": about 180 deg; full run: 900
+    speed: 220
+    # starts once the TCP (nut bottom) is this far above the table (on arrival at the latest);
+    # Yannick 28.10.: not while the nut is still on the table
+    start_above_table_mm: 30.0
+    poll_period_s: 0.01
+  # 28.10. test, the alternative to half_turn: from the approach until the release the plate's
+  # -y_B edge goes up by this angle (R_x(-angle) R_down, turned about the TCP; the only orientation
+  # other than R_down ever commanded). tilt_level on the left: +1 ... +1.5 looked level; round 4
+  # (28.10.): left 4/5 screwed on with 1.5. Right: 5/5 without, tilt_level 28.10.: +1 looked level.
+  # Record: tilt_correction_deg
+  tilt_correction:
+    minus_y_edge_up_deg: {left: 1.5, right: -1.0}  # per side of observe_stud
+  # Extra xy shift (base frame, mm) of the stud target per side of observe_stud, on top of
+  # frames.target_correction (which also moves the nut). 28.10. (Yannick): left +0.5 in y
+  approach_shift_xy_mm: {left: [0.0, 0.5], right: [0.0, 0.0]}
   # true: the iris opens during release_settle_s instead of after it (27.10., test, ~1.5 s);
   # false: wait, stiff mode, then open (since 23.10.)
   open_while_settling: true
@@ -218,6 +247,9 @@ place:
   # place.thread_search: drop_mm (should be clearly > 0 when found), shift_xy_mm,
   # reached_radius_mm (what the arm really covered)
   thread_search:
+    # 28.10. test (Yannick): false = no spiral, screw where the nut was seated (record
+    # thread_search.skipped). Next round: back on, smaller/shorter
+    enabled: false
     press_mm: 3.0              # reference below the seated contact: ~4.5 N (below the seat force)
     # Commanded radius > the 1-3 mm error: the reference low-pass (tau ~0.5 s) shrinks a turn of
     # 3 s to about 70 %. 1 mm between turns, the nut catches within about +-0.5 mm
@@ -281,7 +313,18 @@ place:
     # stuck on the left (Yannick: finds the thread, too weak to turn), 1.5-2.8 N at the end.
     # Since then the reference follows the measured pose: depth_mm below it every
     # follow_period_s, a constant ~0.6 N (k_z 600 N/m), never more, also when the nut stalls
-    tighten: {duration_ms: 7000, speed: 255, depth_mm: 1.0, follow_period_s: 0.05}
+    # 28.10. round 4: the nut ran 3.5-4.5 turns (~5 mm), the arm followed only 0.2-0.8 mm (once
+    # 2.1): 0.6 N is below the joint friction (~1 N) -> depth 1 -> 2 mm (~1.2 N), follows faster
+    # Per side of the stud since 28.10.: on the right the iris fingers lost the nut and turned on
+    # top of it (Yannick) -> right 3 mm (~1.8 N); left back to 1 mm (round 4: 4/5). Record:
+    # screw.tighten_depth_mm
+    # 28.10. test (Yannick): right before the tightening turn, open the iris for duration_ms
+    # (full opening: gripper.open 1500 ms at 100, so 10 ms is ~0.7 % of the stroke, if the motors
+    # move at all from standstill). CAUTION: after any OPEN the board switches the iris off,
+    # so it no longer holds (hold_speed) while M4 turns. Record: screw.iris_loosened
+    loosen_iris: {enabled: true, duration_ms: 10, speed: 100}
+    tighten: {duration_ms: 7000, speed: 255, depth_mm: {left: 1.0, right: 3.0},
+              follow_period_s: 0.05}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
   # Stable path: /dev/ttyACMn changes when the board is replugged (was ACM0, 21.10. ACM1)
@@ -370,7 +413,7 @@ run_record:
   events_history: 50
   # Label written into every record (record.round); run_map counts only one round. Set it
   # before a test round, e.g. "round 2" (the GUI's run counter counts this round too)
-  round: round 3
+  round: round 7
   # Copied into record.config with the git commit: which settings a run used
   config_keys:
     - frames.target_correction
@@ -381,6 +424,9 @@ run_record:
     - pick
     - place.stud_search
     - place.approach_from_mm
+    - place.half_turn
+    - place.tilt_correction
+    - place.approach_shift_xy_mm
     - place.seat
     - place.thread_search
     - place.screw
@@ -393,7 +439,9 @@ run_record:
 # positions (outcome per marker) plus the computed target vs. where the TCP ended up
 run_map:
   since: "20261027"            # first record (file name prefix) included; "" = all
-  round: round 3               # only records with this run_record.round; "" = all
+  # only records of these run_record.round values ([] = all); one round as a plain string works
+  # too. 28.10.: the set of 30 runs with one configuration (docs/PLAN.md 9.1)
+  round: [round 5, round 6, round 7]
   steps: [full]                # record kinds included (full, pick, place_and_screw)
   csv: run_summary.csv         # written to log_dir
   png: run_map.png
