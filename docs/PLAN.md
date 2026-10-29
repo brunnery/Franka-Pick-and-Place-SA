@@ -232,6 +232,20 @@ Erfolgsquote round 5–7: 29/30, 95 %-Vertrauensintervall nach Wilson 83–99 %.
 
 Hinweise: In `round 4` sind zwei weitere, unbewertete Läufe (10:25, 10:26, schon mit Mitfahren 2 mm) nicht mitgezählt. Aus `round 5` wurden zwei Läufe vor dem Neustart (falsche Seite) ausgenommen (`round: round 5 discarded …`). Aus `round 7` zählen die ersten 10 Läufe; 4 weitere (Filmaufnahmen für die Präsentation, 11:49–11:53, einer davon abgebrochen „none of the 1 object(s) tried is a stud“) sind umbenannt (`round 7 extra (filming, not counted)`). Bisherige Messungen vor diesen Runden: STATUS-Archiv / Entscheidungslog.
 
+### 9.2 Ohne Korrekturen (29.10., Vorversuch, Screening)
+
+Alle Handkorrekturen auf 0: Kamera-Neigung, Kamera-Drehung um z (ab „no z rot“), `target_correction`, `tilt_correction`, `approach_shift_xy_mm`. Aktiv bleiben Feinpositionierung (Regelung) und Nahmessung. Variiert nur `tighten_stiffness` (Modus beim Festziehen), je 2 Läufe pro Seite. Stand als Commit `ad05ddd` auf Branch `test-uncorrected`. 4 Läufe pro Einstellung = nur grobe Effekte erkennbar.
+
+| Runde | K_xy / K_z / K_rot (tighten) | Aufgeschraubt | Umdrehungen |
+|---|---|---|---|
+| test uncorrected… (09:49–10:15, 9 Läufe) | 400 bzw. 1500 xy, rot 4/100/50 gemischt | 1× bewertet (ja, 4) | „eigentlich ganz okay“ (Yannick), sonst unbewertet |
+| **T0 base** | 400 / 600 / 4 (= funktionierender Stand) | **2/4**, 1 teilweise, 1 nein | 4.5, 2.5, 1 |
+| T1 xy 1500 | 1500 / 600 / 4 | 3/4, 1 teilweise | 3, 4.5, 4, 1.5 |
+| T2 xy 100 | 100 / 600 / 4 | **0/5**, 4 teilweise, 1 nein | 1.5–2 |
+| T3 z 300 | 400 / 300 / 4 | 0/2 bewertet (1 nein, 1 teilweise 2.5), 2 unbewertet | – |
+
+Lesart: T0 gegen round 5–7 (gleicher Controller) zeigt, dass die Korrekturen etwas bringen (2/4 gegen 29/30). xy 100 ist klar zu weich (Endfehler bis 2.2 mm, Arm sinkt 3–5 mm ohne aufzuschrauben). T1/T3 liegen im Rauschen. Reihe abgebrochen: die neuen Druckteile (Nachmittag 29.10.) ändern die Plattenneigung und damit genau das, wogegen die Steifigkeit wirkt.
+
 ---
 
 ## 10. Offene Fragen (Runde 2)
@@ -279,6 +293,8 @@ Antwort:
 ## 11. Entscheidungslog
 | Datum | Entscheidung | Begründung |
 |---|---|---|
+| 29.10. | **Steifigkeitsreihe ohne Korrekturen abgebrochen, `main` bleibt der funktionierende Stand** (Tag `working-29of30` = `88faac8`; Teststand auf Branch `test-uncorrected`, `ad05ddd`). Nach dem Einbau der neuen Druckteile: `tilt_level` je Seite, dann unkorrigiert mit dem Controller des funktionierenden Stands (wie T0), nur die noch nötigen Korrekturen wieder an | Yannick: einzelne Faktoren bei ausgeschalteten Korrekturen tauschen sagt wenig, zumal die neuen Teile den Tilt im Gripper beheben sollen. 4 Läufe pro Einstellung trennen nur grobe Effekte |
+| 29.10. | **Vorversuch ohne Korrekturen + `tighten_stiffness`-Reihe T0–T3** (Abschnitt 9.2). Ergebnis: T0 (Controller wie round 5–7) 2/4 statt 29/30; xy 100 N/m 0/5; xy 1500 3/4, z 300 unklar. Der kleine Seitenversatz vor dem Absenken ist die Feinpositionierung (Regelung, keine Korrektur) | Wunsch Yannick: sehen, wie schlecht es ohne die von Hand gesetzten Korrekturen läuft, und was die Steifigkeit beim Schrauben ausmacht |
 | 28.10. | **Pick-Landefehler erklärt, bleibt so:** TCP landet in allen Läufen 4–5 mm hinter der Mutter (−x). Ursache: Arm hängt der schnellen Ein-Zug-Bewegung nach, setzt auf, bevor x angekommen ist, Anpressdruck (Referenz 8 mm unter dem Tisch) hält den Rest per Reibung fest. Mit dem senkrechten Abstieg (bis 27.10. 08:30) waren es 0.2–0.8 mm. THEORY 5 | Pick ist schneller als Place, muss aber nicht so genau sein: die Iris fängt 4–5 mm (30/30 gegriffen). Fehler fast konstant → systematisch, kein Streuen (Yannick) |
 | 28.10. | **Testrunde 7: 10/10. Gesamtset round 5–7: 29/30 aufgeschraubt, 1 teilweise** (links 15/15, rechts 14/15, Zyklus Ø 34.5 s), Abschnitt 9.1. 4 Zusatzläufe zum Filmen nicht gezählt | Hauptergebnis für den Bericht |
 | 28.10. | **Testrunde 6: 9/10** (links 5/5, rechts 4/5, 1× teilweise mit 1.5 Umdrehungen bei guter Position, Kontakt 0.28 mm neben dem Ziel), Abschnitt 9.1. Rückfahrt in die Startpose klappt. **Testrunde 7 gestartet** (`round 7`, gleicher Stand, 10 Läufe) | Mehr Läufe mit demselben Stand für die Erfolgsquote |
