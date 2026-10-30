@@ -7,8 +7,9 @@ outwards (away from the base), the other way round on each side of the table. Wi
 on the left (+y) both add up, on the right (-y) they cancel (THEORY 5, tilt about the TCP).
 This tool measures the correction per side by eye: the TCP goes to tilt_level.start_gap_mm
 above the table at the centre of each area (where the camera axis of the observation pose
-meets the table), then the plate is turned about the TCP in steps until it looks level
-(feeler gauge or paper strip under both edges, or light through the gap).
+meets the table, or a TCP point [x, y] given in tilt_level.points), then the plate is turned
+about the TCP in steps until it looks level (feeler gauge or paper strip under both edges, or
+light through the gap).
 
 THE TABLE MUST BE CLEAR (no stud, no nut) under the plate. Commands, each after Enter:
   Enter          show the commanded correction, the measured tilt and the TCP height
@@ -89,10 +90,14 @@ def main():
     try:
         robot = FrankaRobot(node, cfg)
         robot.set_mode(cfg["robot"]["modes"][mode_name])
-        for name in t["points"]:
+        for point in t["points"]:
+            name = point if isinstance(point, str) else "x {:.0f} y {:.0f}".format(*point)
             input(f"Enter: to the centre of the {name} area (TABLE CLEAR?) ")
-            centre = area_centre(robot, cfg, poses, name, table_z)
-            side = "+y (left)" if centre[1] > 0 else "-y (right)"
+            # a pose name: where its camera axis meets the table; [x, y]: that TCP point
+            centre = (area_centre(robot, cfg, poses, point, table_z) if isinstance(point, str)
+                      else np.asarray(point, float))
+            side = ("+y (left)" if centre[1] > 0 else "-y (right)" if centre[1] < 0
+                    else "y = 0 (centre)")
             gap, correction, step = t["start_gap_mm"], 0.0, t["step_deg"]
 
             def goal() -> np.ndarray:
