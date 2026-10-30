@@ -24,10 +24,10 @@ frames:
   # only, THEORY 1.5), two runs [1.53, 0.76] / [1.54, 0.81], residual RMS 1.0 / 1.1 mm -> mean.
   # Adopted 25.10., reverted the same day (one pick landed on the nut), 26.10. tried again with
   # the thread search (before: [1.25, 0.0], set by eye)
-  camera_tilt_in_flange_deg: [1.54, 0.79]
+  camera_tilt_in_flange_deg: [0.0, 0.0]  # GRID 30.10. no correction; working: [1.54, 0.79]
   # Rotation of the camera about its optical axis against the CAD, applied after the tilt
   # (R_FC = R_x R_y R_z R_CAD). 25.10. hand_eye: 1.19 / 1.40 deg -> mean (before: not modelled)
-  camera_rotation_about_z_deg: 1.3
+  camera_rotation_about_z_deg: 0.0  # GRID 30.10. no correction; working: 1.3
   # Projection centre above the lowest point of the housing (bench 16.10.: about 9 mm)
   projection_centre_above_housing_mm: 9.0
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
@@ -51,8 +51,8 @@ frames:
   # mean. Before: constant [-1.8, -4.9] (2 points on the right, 26.10.)
   # correction = c0 + cx * x + cy * y per component [c0 mm, cx, cy]; x, y of the target in mm
   target_correction:
-    x: [-1.420, -0.00320, -0.00455]
-    y: [-4.33, 0.0, 0.0]
+    x: [0.0, 0.0, 0.0]  # GRID 30.10. target config; working: [-1.420, -0.00320, -0.00455]
+    y: [0.0, 0.0, 0.0]  # GRID 30.10. target config; working: [-4.33, 0.0, 0.0]
 
 objects:
   nut:
@@ -224,10 +224,10 @@ place:
   # (28.10.): left 4/5 screwed on with 1.5. Right: 5/5 without, tilt_level 28.10.: +1 looked level.
   # Record: tilt_correction_deg
   tilt_correction:
-    minus_y_edge_up_deg: {left: 1.5, right: -1.0}  # per side of observe_stud
+    minus_y_edge_up_deg: {left: 0.0, right: 0.0}  # GRID 30.10. target config; working: {left: 1.5, right: -1.0}
   # Extra xy shift (base frame, mm) of the stud target per side of observe_stud, on top of
   # frames.target_correction (which also moves the nut). 28.10. (Yannick): left +0.5 in y
-  approach_shift_xy_mm: {left: [0.0, 0.5], right: [0.0, 0.0]}
+  approach_shift_xy_mm: {left: [0.0, 0.0], right: [0.0, 0.0]}  # GRID 30.10. target config; working: left [0.0, 0.5]
   # true: the iris opens during release_settle_s instead of after it (27.10., test, ~1.5 s);
   # false: wait, stiff mode, then open (since 23.10.)
   open_while_settling: true
@@ -323,7 +323,8 @@ place:
     # move at all from standstill). CAUTION: after any OPEN the board switches the iris off,
     # so it no longer holds (hold_speed) while M4 turns. Record: screw.iris_loosened
     loosen_iris: {enabled: true, duration_ms: 10, speed: 100}
-    tighten: {duration_ms: 7000, speed: 255, depth_mm: {left: 1.0, right: 3.0},
+    # GRID 30.10. target config: one depth for both sides; working: {left: 1.0, right: 3.0}
+    tighten: {duration_ms: 7000, speed: 255, depth_mm: {left: 2.0, right: 2.0},
               follow_period_s: 0.05}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
@@ -415,7 +416,7 @@ run_record:
   events_history: 50
   # Label written into every record (record.round); run_map counts only one round. Set it
   # before a test round, e.g. "round 2" (the GUI's run counter counts this round too)
-  round: round 7
+  round: grid0 xy400 rot4  # grid0 = no correction at all; working: round 7
   # Copied into record.config with the git commit: which settings a run used
   config_keys:
     - frames.target_correction
