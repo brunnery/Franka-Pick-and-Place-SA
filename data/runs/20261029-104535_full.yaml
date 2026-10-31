@@ -281,3 +281,9 @@ timeline_s:
   iris_opened: 33.53
   back_up: 36.18
   home: 42.61
+outcome:
+  screwed: 'no'
+  turns: 1.0
+  failed_phase: '-'
+  note: ''
+  rated: '2026-10-30T16:16:32'

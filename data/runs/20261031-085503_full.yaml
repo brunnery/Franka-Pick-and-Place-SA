@@ -1,0 +1,552 @@
+step: full
+started: '2026-10-31T08:54:09.613358'
+round: camera model + spiral r3 tighten 31.10 xy1500 rot4
+config:
+  commit: 5ef9711
+  changed_files:
+  - LAUDE.md
+  - data/runs/20261029-104535_full.yaml
+  - docs/PLAN.md
+  - docs/THEORY.md
+  - software/src/cartesian_impedance_control/launch/controllers.yaml
+  - software/src/sa_tasks/config/poses.yaml
+  - software/src/sa_tasks/config/tasks.yaml
+  - software/src/sa_tasks/sa_tasks/config.py
+  - software/src/sa_tasks/sa_tasks/hand_eye.py
+  - software/src/sa_tasks/sa_tasks/run_map.py
+  - software/src/sa_tasks/sa_tasks/sequences.py
+  - software/src/sa_tasks/test/test_frames.py
+  - software/src/sa_tasks/test/test_sequences.py
+  observe_mm:
+    observe_nut:
+    - 410.45
+    - -160.0
+    - 463.55
+    observe_stud:
+    - 340.25
+    - 160.0
+    - 473.38
+  frames.target_correction:
+    x:
+    - 0.0
+    - 0.0
+    - 0.0
+    y:
+    - 0.0
+    - 0.0
+    - 0.0
+  frames.camera_tilt_in_flange_deg:
+    left:
+    - 1.14
+    - -0.87
+    right:
+    - 0.98
+    - 0.06
+  frames.camera_rotation_about_z_deg: 1.5
+  frames.flange_to_camera_housing_mm:
+  - 44.4
+  - 3.0
+  - 57.223
+  vision.close_up_distance_mm: 170.0
+  vision.settle_s: 0.2
+  pick:
+    press_depth_mm: 2.0
+    flush_settle_s: 0.5
+    descent:
+      below_table_mm: 8.0
+      contact_force_n: 4.0
+      contact_height_mm: 10.0
+  place.stud_search:
+    max_candidates: 3
+    max_centring_moves: 2
+    centred_tolerance_mm: 7.0
+    lost_radius_mm: 20.0
+  place.approach_from_mm:
+  - 0.0
+  - 0.0
+  place.half_turn:
+    sides: []
+    direction: 1
+    duration_ms: 900
+    speed: 220
+    start_above_table_mm: 30.0
+    poll_period_s: 0.01
+  place.tilt_correction:
+    minus_y_edge_up_deg:
+      left: 0.0
+      right: 0.0
+  place.approach_shift_xy_mm:
+    left:
+    - 0.0
+    - 0.0
+    right:
+    - 0.0
+    - 0.0
+  place.seat:
+    depth_mm: 6.0
+    settle_s: 1.0
+  place.thread_search:
+    enabled: true
+    mode: tighten
+    press_mm: 3.0
+    radius_mm: 3.0
+    turns: 2.0
+    duration_s: 4.0
+    found_drop_mm: 0.4
+    settle_s: 0.5
+    sample_period_s: 0.01
+    trace_every: 5
+  place.screw:
+    direction: 1
+    catch:
+      step_ms: 250
+      speed: 100
+      max_steps: 0
+      depth_mm: 2.0
+      settle_s: 0.3
+      caught_drop_mm: 0.6
+      wobble:
+        radius_mm: 2.0
+        points_per_circle: 4
+    loosen_iris:
+      enabled: true
+      duration_ms: 10
+      speed: 100
+    tighten:
+      duration_ms: 7000
+      speed: 255
+      depth_mm:
+        left: 2.0
+        right: 2.0
+      follow_period_s: 0.05
+  place.release_settle_s: 1.5
+  place.open_while_settling: true
+  gripper.open:
+    duration_ms: 1500
+    speed: 100
+  gripper.close:
+    duration_ms: 1500
+    speed: 100
+    hold_speed: 60
+setup_s: 1.73
+pick:
+  nut_coarse_mm:
+  - 453.36
+  - -61.11
+  - 15.96
+  nut_mm:
+  - 452.06
+  - -62.12
+  - 15.96
+  nut_close_minus_coarse_mm:
+  - -1.3
+  - -1.01
+  contact: false
+  landed_tcp_mm:
+  - 447.04
+  - -61.17
+  - 26.61
+  landed_minus_target_xy_mm:
+  - -5.02
+  - 0.95
+place:
+  half_turn: false
+  candidates:
+  - rank: 1
+    position_mm: &id003
+    - 384.5
+    - 117.74
+    - 31.96
+    offset_from_axis_mm: 37.62
+    size_mm: 11.41
+    width_ratio: 0.834
+    shape_ok: false
+  attempts:
+  - candidate: 1
+    move: 1
+    nearest: &id001
+      rank: 1
+      position_mm: &id002
+      - 387.7
+      - 117.72
+      - 31.96
+      offset_from_axis_mm: 3.95
+      size_mm: 10.25
+      width_ratio: 0.753
+      shape_ok: true
+    seen:
+    - *id001
+  stud:
+    position_mm:
+    - 387.7
+    - 117.72
+    - 31.96
+    close_mm: *id002
+    observed_mm: *id003
+    candidate: 1
+    moves: 1
+    close_minus_observed_mm:
+    - 3.2
+    - -0.02
+  tilt_correction_deg: 0.0
+  approach_shift_xy_mm:
+  - 0.0
+  - 0.0
+  approach_reached_tcp_mm:
+  - 387.39
+  - 117.6
+  - 56.88
+  approach_minus_target_xy_mm:
+  - -0.31
+  - -0.12
+  approach_tilt_shift_mm:
+  - -1.18
+  - 1.99
+  - 0.02
+  contact: true
+  contact_tcp_mm:
+  - 387.9
+  - 117.6
+  - 51.38
+  contact_minus_target_xy_mm:
+  - 0.2
+  - -0.12
+  seat:
+    seated_tcp_mm:
+    - 387.64
+    - 117.55
+    - 51.14
+    travel_mm: 0.24
+    force_n: -5.12
+  thread_search:
+    trace:
+      t_s:
+      - 0.0
+      - 0.05
+      - 0.1
+      - 0.16
+      - 0.22
+      - 0.28
+      - 0.35
+      - 0.42
+      - 0.48
+      - 0.55
+      - 0.6
+      - 0.67
+      - 0.72
+      - 0.78
+      - 0.84
+      - 0.9
+      - 0.96
+      - 1.01
+      - 1.07
+      - 1.13
+      - 1.18
+      - 1.24
+      - 1.3
+      - 1.35
+      - 1.41
+      - 1.47
+      - 1.52
+      - 1.58
+      - 1.63
+      - 1.68
+      - 1.74
+      - 1.8
+      - 1.86
+      - 1.91
+      - 1.97
+      - 2.03
+      - 2.08
+      - 2.14
+      - 2.19
+      - 2.25
+      - 2.31
+      - 2.36
+      - 2.42
+      - 2.48
+      - 2.53
+      - 2.59
+      - 2.64
+      - 2.7
+      - 2.76
+      - 2.82
+      - 2.87
+      - 2.93
+      - 2.99
+      - 3.04
+      - 3.1
+      - 3.15
+      - 3.21
+      - 3.26
+      - 3.32
+      - 3.37
+      - 3.43
+      - 3.48
+      - 3.54
+      - 3.6
+      - 3.66
+      - 3.71
+      - 3.77
+      - 3.83
+      - 3.88
+      - 3.94
+      - 4.0
+      - 4.06
+      - 4.11
+      - 4.17
+      - 4.23
+      - 4.29
+      - 4.35
+      - 4.41
+      - 4.47
+      - 4.52
+      drop_mm:
+      - 0.0
+      - 0.0
+      - 0.003
+      - 0.002
+      - 0.002
+      - 0.004
+      - 0.005
+      - 0.005
+      - 0.005
+      - 0.005
+      - 0.005
+      - 0.005
+      - 0.006
+      - 0.006
+      - 0.006
+      - 0.007
+      - 0.006
+      - 0.005
+      - 0.006
+      - 0.005
+      - 0.006
+      - 0.006
+      - 0.004
+      - 0.007
+      - 0.007
+      - 0.01
+      - 0.01
+      - 0.013
+      - 0.015
+      - 0.018
+      - 0.02
+      - 0.023
+      - 0.023
+      - 0.02
+      - 0.02
+      - 0.018
+      - 0.014
+      - 0.014
+      - 0.01
+      - 0.009
+      - 0.006
+      - 0.006
+      - 0.006
+      - 0.005
+      - 0.008
+      - 0.012
+      - 0.014
+      - 0.025
+      - 0.04
+      - 0.049
+      - 0.058
+      - 0.066
+      - 0.067
+      - 0.067
+      - 0.063
+      - 0.041
+      - 0.035
+      - 0.026
+      - 0.021
+      - 0.013
+      - 0.006
+      - -0.001
+      - -0.019
+      - -0.028
+      - -0.035
+      - -0.048
+      - -0.055
+      - -0.068
+      - -0.077
+      - -0.088
+      - -0.094
+      - -0.099
+      - -0.106
+      - -0.115
+      - -0.123
+      - -0.087
+      - 0.041
+      - 0.103
+      - 0.137
+      - 0.153
+      fz_n:
+      - 0.0
+      - 0.05
+      - 0.06
+      - 0.02
+      - 0.0
+      - 0.04
+      - 0.02
+      - 0.01
+      - -0.04
+      - 0.06
+      - 0.02
+      - 0.08
+      - -0.04
+      - 0.02
+      - -0.03
+      - -0.03
+      - 0.01
+      - 0.02
+      - 0.0
+      - 0.04
+      - 0.06
+      - -0.05
+      - -0.01
+      - 0.01
+      - 0.04
+      - 0.04
+      - -0.03
+      - 0.05
+      - -0.04
+      - -0.02
+      - -0.02
+      - -0.13
+      - -0.07
+      - -0.07
+      - -0.12
+      - -0.04
+      - 0.07
+      - 0.11
+      - 0.22
+      - 0.27
+      - 0.35
+      - 0.28
+      - 0.32
+      - 0.29
+      - 0.23
+      - 0.21
+      - 0.17
+      - 0.12
+      - 0.2
+      - 0.11
+      - -0.09
+      - -0.38
+      - -0.53
+      - -0.55
+      - -0.62
+      - -0.41
+      - -0.14
+      - -0.17
+      - -0.08
+      - 0.11
+      - 0.22
+      - 0.29
+      - 0.54
+      - 0.65
+      - 1.14
+      - 1.42
+      - 1.79
+      - 2.06
+      - 2.26
+      - 2.51
+      - 2.95
+      - 3.31
+      - 3.45
+      - 3.59
+      - 3.77
+      - 4.28
+      - 3.54
+      - 3.62
+      - 3.63
+      - 3.59
+    found: false
+    lowest_tcp_mm:
+    - 388.25
+    - 116.79
+    - 51.01
+    drop_mm: 0.15
+    shift_xy_mm:
+    - 0.66
+    - -0.75
+    reached_radius_mm: 0.97
+    samples: 396
+  thread_minus_target_xy_mm:
+  - 0.55
+  - -0.93
+  screw:
+    tilt_start_deg: 1.21
+    force_start_n: 0.4
+    catch_drops_mm: []
+    catch_tcp_xy_from_contact_mm: []
+    caught: false
+    tilt_after_catch_deg: 1.21
+    force_after_catch_n: 0.4
+    tighten_depth_mm: 2.0
+    iris_loosened: true
+    drop_end_mm: 0.16
+    tilt_end_deg: 1.22
+    force_end_n: 1.74
+    end_tcp_mm:
+    - 387.77
+    - 116.67
+    - 50.4
+  end_minus_target_xy_mm:
+  - 0.07
+  - -1.05
+  released_tcp_mm:
+  - 387.78
+  - 116.67
+  - 50.41
+result: ok
+duration_s: 53.38
+arrival_errors_mm:
+- - 8.67
+  - 7.03
+  - 20.4
+- - 2.21
+  - -0.36
+  - 3.64
+- - 9.16
+  - -16.25
+  - -15.69
+- - 1.79
+  - 1.31
+  - 3.68
+- - -0.14
+  - -2.15
+  - 4.09
+- - -0.18
+  - -2.27
+  - 2.9
+- - 3.64
+  - 0.3
+  - -6.56
+- - -3.53
+  - 1.21
+  - -4.03
+timeline_s:
+  start: 0.0
+  observe_nut: 2.4
+  nut_observed: 3.42
+  nut_close_arrived: 7.28
+  nut_located: 8.47
+  landed: 10.23
+  iris_closed: 11.73
+  observe_stud: 15.25
+  stud_observed: 16.8
+  stud_close_arrived: 20.69
+  stud_located: 22.33
+  approached: 25.91
+  contact: 27.46
+  seated: 28.47
+  thread_found: 34.04
+  catch_done: 34.04
+  m4_stopped: 41.07
+  iris_opening: 41.07
+  iris_opened: 42.58
+  back_up: 45.23
+  home: 51.64

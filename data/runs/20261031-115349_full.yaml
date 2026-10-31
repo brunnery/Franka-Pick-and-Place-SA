@@ -1,0 +1,14 @@
+step: full
+started: '2026-10-31T11:52:49'
+round: G31 xy1500 rot40
+result: ok
+note: 'no run data: stopped by hand just before the end, so the task node wrote no
+  record. Rating by Yannick, run completed successfully.'
+config:
+  commit: 5ef9711
+outcome:
+  screwed: 'yes'
+  turns: 4.0
+  failed_phase: '-'
+  note: stopped early by hand, entered afterwards
+  rated: '2026-10-31T12:05:00'
