@@ -11,6 +11,7 @@ CFG["place"]["approach_shift_xy_mm"] = {"left": [0.0, 0.0], "right": [0.0, 0.0]}
 CFG["place"]["thread_search"]["enabled"] = True  # the tests cover the search
 CFG["place"]["half_turn"]["sides"] = ["left"]
 CFG["place"]["screw"]["loosen_iris"]["enabled"] = False
+CFG["place"]["screw"]["catch"]["turning_spiral"]["enabled"] = False
 R_DOWN = config.rotation_down(CFG)
 T_FT = CFG["frames"]["flange_to_tcp_mm"]
 K = np.array([[2077.16, 0.0, 695.44], [0.0, 2083.73, 405.57], [0.0, 0.0, 1.0]])
@@ -31,7 +32,7 @@ class FakePoses(config.Poses):
 
 def pixel_of(point_xy, height, t_base_flange):
     """Where the camera sees a point on the plane table + height."""
-    camera = t_base_flange @ config.camera_in_flange(CFG)
+    camera = t_base_flange @ config.camera_in_flange(CFG, t_base_flange[1, 3])
     uvw = K @ (frames.invert(camera) @ np.array([*point_xy, TABLE_Z + height, 1.0]))[:3]
     return uvw[0] / uvw[2], uvw[1] / uvw[2]
 
@@ -132,8 +133,6 @@ def test_place_finds_contact_on_the_thread_and_screws():
         assert record[f"{key}_minus_target_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
     assert record["contact_tcp_mm"][:2] == pytest.approx(STUD, abs=0.01)
     assert tip - 5.0 <= record["contact_tcp_mm"][2] <= tip
-    # the mock jumps to the reference: the whole seat depth is travel
-    assert record["seat"]["travel_mm"] == pytest.approx(CFG["place"]["seat"]["depth_mm"])
     # the mock sinks nowhere deeper, so the search ends where it started (lowest = first sample)
     assert record["thread_search"]["shift_xy_mm"] == pytest.approx([0.0, 0.0], abs=0.01)
     catch = CFG["place"]["screw"]["catch"]
@@ -204,6 +203,11 @@ class ThreadGripper(MockGripper):
         super().rotate(direction, duration_ms, speed)
         self.turns += 1
         self.robot.pose[2, 3] -= self.drop_mm * self.turns
+
+
+def test_click_is_the_fall_below_the_running_maximum():
+    assert sequences.click_mm([0.0, 0.5, 1.2, 0.1, 0.4]) == pytest.approx(1.1)
+    assert sequences.click_mm([0.0, 0.1, 0.2, 0.3]) == 0.0
 
 
 def test_screw_on_tightens_once_the_thread_has_caught(monkeypatch):

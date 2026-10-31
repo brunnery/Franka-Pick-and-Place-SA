@@ -127,7 +127,8 @@ def target_correction(cfg: dict, xy_mm) -> np.ndarray:
 
 
 def camera_and_distance(robot: Robot, cfg: dict, plane_z_mm: float) -> tuple:
-    t_base_camera = robot.flange_pose() @ config.camera_in_flange(cfg)
+    flange = robot.flange_pose()
+    t_base_camera = flange @ config.camera_in_flange(cfg, flange[1, 3])
     return t_base_camera, frames.distance_along_axis(t_base_camera, plane_z_mm)
 
 
@@ -137,7 +138,7 @@ def camera_during(robot: Robot, cfg: dict, before: np.ndarray) -> np.ndarray:
     taken (27.10.)."""
     flange = robot.flange_pose()
     flange[:3, 3] = (flange[:3, 3] + before[:3, 3]) / 2.0
-    camera = flange @ config.camera_in_flange(cfg)
+    camera = flange @ config.camera_in_flange(cfg, flange[1, 3])
     log.info("view while creeping: arm moved %.1f mm during the images",
              float(np.linalg.norm(robot.flange_pose()[:3, 3] - before[:3, 3])))
     return camera
@@ -149,7 +150,7 @@ def close_up_pose(cfg: dict, point_xy, plane_z_mm: float) -> np.ndarray:
     angle error of the camera model or of the arm moves the result by distance * angle, so
     the second measurement is taken from close by; THEORY 3.1)."""
     rotation = config.rotation_down(cfg)
-    t_flange_camera = config.camera_in_flange(cfg)
+    t_flange_camera = config.camera_in_flange(cfg, point_xy[1])
     axis = rotation @ t_flange_camera[:3, 2]  # z_C in the base frame (points down)
     point = np.array([point_xy[0], point_xy[1], plane_z_mm])
     centre = point - cfg["vision"]["close_up_distance_mm"] * axis
@@ -358,29 +359,6 @@ def stiffen_where_it_is(robot: Robot, cfg: dict) -> np.ndarray:
     return hold
 
 
-def seat_nut(robot: Robot, cfg: dict, contact: np.ndarray, free_fz: float,
-             record: dict) -> tuple:
-    """Before screwing: press down on the stud in the stiff mode, so the nut slides up in the
-    iris against its top stop (26.10., Yannick: the thread usually catches, the fast turn
-    never ran on). Reference depth_mm below contact, wait settle_s (reference low-pass), then
-    the measured pose is the new contact. The record holds how far the TCP went down (the nut
-    moving up in the iris, the stud being rigid) and the force. Returns (measured pose,
-    z of the reference)."""
-    seat = cfg["place"]["seat"]
-    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
-    pressed = contact.copy()
-    pressed[2, 3] -= seat["depth_mm"]
-    robot.follow([Waypoint(0.0, pressed)])
-    time.sleep(seat["settle_s"])
-    seated = robot.flange_pose()
-    seated_tcp = frames.tcp_position(seated, tcp_offset)
-    travel = float(frames.tcp_position(contact, tcp_offset)[2] - seated_tcp[2])
-    record.update(seated_tcp_mm=rounded(seated_tcp), travel_mm=round(travel, 2),
-                  force_n=round(float(robot.force_z() - free_fz), 2))
-    log.info("seat: TCP %.2f mm down, force %.1f N", travel, record["force_n"])
-    return seated, float(pressed[2, 3])
-
-
 def find_thread(robot: Robot, cfg: dict, contact: np.ndarray, record: dict,
                 ceiling_z: float = np.inf) -> tuple:
     """Spiral search on the thread tip (26.10.): the stud target is off by 1-3 mm, so the nut
@@ -396,6 +374,7 @@ def find_thread(robot: Robot, cfg: dict, contact: np.ndarray, record: dict,
     tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
     start = contact.copy()
     start[2, 3] = min(contact[2, 3] - search["press_mm"], ceiling_z)
+    robot.set_mode(cfg["robot"]["modes"][search["mode"]])  # before the settle: start_z after it
     robot.follow([Waypoint(0.0, start)])
     time.sleep(search["settle_s"])
     samples = [robot.flange_pose()]
@@ -452,6 +431,78 @@ def find_thread(robot: Robot, cfg: dict, contact: np.ndarray, record: dict,
     return robot.flange_pose(), float(best[2, 3])
 
 
+def click_mm(z_mm) -> float:
+    """Largest fall of a height series below its running maximum: a nut turned backwards on a
+    thread climbs the pitch, then drops off the thread start (31.10., THEORY 5)."""
+    z = np.asarray(z_mm, float)
+    return float(np.max(np.maximum.accumulate(z) - z))
+
+
+def turning_spiral(robot: Robot, gripper: Gripper, cfg: dict, below: np.ndarray,
+                   record: dict) -> bool:
+    """The nut circles around below on a flat spiral, with turn on while M4 turns slowly in one
+    go (31.10.). The spiral stops where the TCP has sunk found_drop_mm (True: the thread has the
+    nut). A turn runs on, time based. Backwards (direction -1) a click_mm would show a nut on
+    the thread, also one that was aligned from the start."""
+    screw = cfg["place"]["screw"]
+    spiral = screw["catch"]["turning_spiral"]
+    tcp_offset = cfg["frames"]["flange_to_tcp_mm"]
+    z, xy, force, times, began = [], [], [], [], time.monotonic()
+    turn_s = spiral["duration_ms"] / 1000.0
+    start_z = []
+    path = spiral_down(below, 0.0, spiral["radius_mm"], spiral["turns"], turn_s,
+                       cfg["robot"]["stream_rate_hz"])
+    found, left_the_tip, done = [], [], threading.Event()
+
+    def sample():
+        while not done.is_set():
+            tcp = frames.tcp_position(robot.flange_pose(), tcp_offset)
+            z.append(float(tcp[2]))
+            xy.append(tcp[:2])
+            force.append(float(robot.force_z()))
+            times.append(time.monotonic() - began)
+            time.sleep(spiral["sample_period_s"])
+
+    def stop() -> bool:
+        # 31.10.: no wait before the spiral, so the height only counts once the arm has settled
+        # (the spiral starts slowly, minimum jerk)
+        if time.monotonic() - began < spiral["stops_after_s"]:
+            return False
+        tcp_z = float(frames.tcp_position(robot.flange_pose(), tcp_offset)[2])
+        start_z.append(tcp_z)
+        sunk = start_z[0] - tcp_z
+        if sunk >= spiral["found_drop_mm"]:
+            found.append(True)
+        elif -sunk >= spiral["rise_stop_mm"]:  # 31.10.: running up the stud at the outer turns
+            left_the_tip.append(True)
+        return bool(found or left_the_tip)
+
+    def circle():
+        try:
+            robot.follow(path, stop_when=stop)
+        finally:
+            done.set()
+
+    def turn():
+        if spiral["turn"]:
+            gripper.rotate(spiral["direction"] * screw["direction"], spiral["duration_ms"],
+                           spiral["speed"])
+    alongside(sample, lambda: alongside(turn, circle))
+    every = spiral["trace_every"]
+    reached = np.linalg.norm(np.asarray(xy) - xy[0], axis=1).max()
+    record.update(found=bool(found), left_the_tip=bool(left_the_tip),
+                  click_mm=round(click_mm(z), 2),
+                  rise_mm=round(max(z) - z[0], 2), drop_mm=round(z[0] - min(z), 2),
+                  reached_radius_mm=round(float(reached), 2),
+                  trace={"t_s": [round(t, 2) for t in times[::every]],
+                         "z_mm": [round(value - z[0], 3) for value in z[::every]],
+                         "fz_n": [round(value - force[0], 2) for value in force[::every]]})
+    log.info("turning spiral: %s, down %.2f mm, click %.2f mm, arm covered %.2f mm",
+             "found" if record["found"] else "not found", record["drop_mm"], record["click_mm"],
+             record["reached_radius_mm"])
+    return record["found"]
+
+
 def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
              free_fz: float, record: dict, side: str, mark: Callable[[str], object] = no_mark,
              ceiling_z: float = np.inf) -> None:
@@ -484,12 +535,16 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
     below = contact.copy()
     below[2, 3] = min(contact[2, 3] - catch["depth_mm"], ceiling_z)
     robot.follow([Waypoint(0.0, below)])
-    if catch["max_steps"]:  # 0: no catch phase, straight to tightening (27.10.)
+    found = False
+    if catch["max_steps"]:  # 0: no catch phase (27.10.)
         time.sleep(catch["settle_s"])
+    if catch["turning_spiral"]["enabled"]:
+        record["turning_spiral"] = {}
+        found = turning_spiral(robot, gripper, cfg, below, record["turning_spiral"])
     start_z, tilt, force = state()
     z = start_z
     record.update(tilt_start_deg=round(tilt, 2), force_start_n=force, catch_drops_mm=[],
-                  catch_tcp_xy_from_contact_mm=[], caught=False)
+                  catch_tcp_xy_from_contact_mm=[], caught=found)
     wobble = catch["wobble"]
     for step in range(catch["max_steps"]):
         angle = 2.0 * np.pi * step / wobble["points_per_circle"]
@@ -511,12 +566,13 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
     elif catch["max_steps"]:
         log.warning("thread not caught after %d steps (%.2f mm down, tilt %.1f deg): "
                     "tightening anyway", catch["max_steps"], start_z - z, tilt)
-    below[:2, 3] = contact[:2, 3]  # centred again
-    # depth_mm below the measured pose, not the deeper reference of the search: 27.10. round 2
-    # pressed with 6-7 N at the start (search reference ~6 mm below, tighten z 600 N/m) and the
-    # nut jammed on the left. The nut rests on the stud, so the arm cannot rise from this
+    # Centred again, unless the thread holds the nut where it caught (31.10.)
+    below[:2, 3] = robot.flange_pose()[:2, 3] if record["caught"] else contact[:2, 3]
+    # depth_mm below the measured pose, but the reference never rises (31.10., Yannick: going up
+    # to it from the seat reference, ~4 mm, let the arm spring up visibly; 27.10. the same).
+    # Price: starts deeper, ~3.6 N at tighten z 600 N/m (27.10. round 2 jammed on the left at 6-7 N)
     depth = record["tighten_depth_mm"] = tighten["depth_mm"][side]
-    below[2, 3] = robot.flange_pose()[2, 3] - depth
+    below[2, 3] = min(robot.flange_pose()[2, 3] - depth, below[2, 3])
     robot.follow([Waypoint(0.0, below)])
     robot.set_mode(cfg["robot"]["modes"]["tighten"])  # soft xy: the nut may swing while turning
     # 28.10. test (Yannick): open the iris a tiny bit before the turn, so the nut can align on
@@ -533,9 +589,8 @@ def screw_on(robot: Robot, gripper: Gripper, cfg: dict, contact: np.ndarray,
 
     def follow_nut():
         while not turning.wait(tighten["follow_period_s"]):
-            reference = below.copy()
-            reference[2, 3] = robot.flange_pose()[2, 3] - depth
-            robot.follow([Waypoint(0.0, reference)])
+            below[2, 3] = min(robot.flange_pose()[2, 3] - depth, below[2, 3])
+            robot.follow([Waypoint(0.0, below)])
 
     def turn():
         try:
@@ -565,7 +620,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     """Step 2: observation pose over the stud -> stud search, measured from close by
     (find_stud) -> to beside the approach pose,
     then the last bit always from the same side -> descend until contact -> press the nut up in
-    the iris (seat_nut) -> spiral search for the thread (find_thread) -> screw (screw_on) ->
+    the iris -> spiral search for the thread (find_thread) -> screw (screw_on) ->
     release -> up to the close-up pose over the stud, one camera image of the result
     (snapshot "final").
     approach_only: stop above the thread tip and hold (centring check, no gripper).
@@ -594,7 +649,7 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     # own tilt flips sign against the arm's tilt on that side (28.10. test, THEORY 5). Only once
     # the TCP is clear of the table (the nut must not turn on it); at the latest on arrival
     half_turn = place["half_turn"]
-    side = "left" if observe[1, 3] > 0 else "right"
+    side = config.table_side(observe[1, 3])
     record["half_turn"] = side in half_turn["sides"]
 
     def turn_when_clear():
@@ -667,7 +722,9 @@ def place_and_screw(robot: Robot, gripper: Gripper, vision: Vision, cfg: dict,
     record["contact_minus_target_xy_mm"] = from_target(record["contact_tcp_mm"])
     record["seat"] = {}
     # From here on the reference only goes down until the release (27.10.)
-    contact, reference_z = seat_nut(robot, cfg, contact, free_fz, record["seat"])
+    record["seat"].update(seated_tcp_mm=record["contact_tcp_mm"],
+                          force_n=round(float(robot.force_z() - free_fz), 2))
+    reference_z = float(contact[2, 3] - place["seat"]["hold_mm"])
     mark("seated")
     record["thread_search"] = {}
     if place["thread_search"]["enabled"]:

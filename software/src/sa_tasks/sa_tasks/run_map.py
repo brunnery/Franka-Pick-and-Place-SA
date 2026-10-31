@@ -133,7 +133,8 @@ def view_areas(cfg: dict, poses: config.Poses, half_size_mm) -> List[tuple]:
     table_z = poses.table_z()
     areas = []
     for name in ("observe_nut", "observe_stud"):
-        camera = sequences.observation_pose(poses, name, cfg) @ config.camera_in_flange(cfg)
+        flange = sequences.observation_pose(poses, name, cfg)
+        camera = flange @ config.camera_in_flange(cfg, flange[1, 3])
         axis = camera[:3, 2]  # z_C in the base frame, points down
         centre = camera[:3, 3] + (table_z - camera[2, 3]) / axis[2] * axis
         areas.append((centre[:2], np.asarray(half_size_mm, float)))

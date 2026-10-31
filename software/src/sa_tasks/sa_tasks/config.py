@@ -48,13 +48,19 @@ def link8_to_flange(cfg: dict) -> np.ndarray:
     return frames.rotation_z(cfg["frames"]["link8_to_flange_yaw_deg"])
 
 
-def camera_in_flange(cfg: dict) -> np.ndarray:
-    """T_F_C: the projection centre lies above the lowest point of the housing; the camera is
-    tilted against the CAD by camera_tilt_in_flange_deg and turned about its axis by
+def table_side(y_mm: float) -> str:
+    """Side of the table of a base y coordinate, as seen from the base."""
+    return "left" if y_mm > 0 else "right"
+
+
+def camera_in_flange(cfg: dict, y_mm: float) -> np.ndarray:
+    """T_F_C with the flange at base y = y_mm: the projection centre lies above the lowest point
+    of the housing; the camera is tilted against the CAD by camera_tilt_in_flange_deg[side]
+    (measured per table side, 31.10.) and turned about its axis by
     camera_rotation_about_z_deg (THEORY 1.5, 3.1)."""
     f = cfg["frames"]
-    tilt = frames.rotation_xy(*f["camera_tilt_in_flange_deg"]) @ frames.rotation_z(
-        f["camera_rotation_about_z_deg"])
+    tilt_xy = f["camera_tilt_in_flange_deg"][table_side(y_mm)]
+    tilt = frames.rotation_xy(*tilt_xy) @ frames.rotation_z(f["camera_rotation_about_z_deg"])
     return frames.pose(tilt @ np.asarray(f["camera_rotation_in_flange"], float), np.subtract(
         f["flange_to_camera_housing_mm"], [0.0, 0.0, f["projection_centre_above_housing_mm"]]))
 

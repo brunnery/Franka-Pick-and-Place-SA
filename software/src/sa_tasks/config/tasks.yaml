@@ -7,11 +7,14 @@ frames:
   link8_to_flange_yaw_deg: -45.0
   # CAD of the mount (16.10.), in {F}: flange -> lowest point of the camera housing, and ->
   # centre of the gripper bottom plate (TCP)
-  flange_to_camera_housing_mm: [44.4, 0.0, 57.223]
+  # 31.10.: y 0 (CAD) -> 3.0: the optical axis, not the housing. hand_eye cannot measure it
+  # (THEORY 1.5). 3 runs with the tilt alone landed about 3 mm off (+y_B), independent of the
+  # distance (close-up vs. first look); the same 3 mm in camera_housing_to_tcp_mm
+  flange_to_camera_housing_mm: [44.4, 3.0, 57.223]
   flange_to_tcp_mm: [0.0, 0.0, 118.823]
   # CAD 19.10. (cad/export/Configuration_1.*), camera housing -> TCP in {F}: only a check
   # that both CAD measurements close (load_tasks refuses the config otherwise)
-  camera_housing_to_tcp_mm: [-44.505, 0.105, 61.6]
+  camera_housing_to_tcp_mm: [-44.505, -2.895, 61.6]  # CAD y 0.105, see above
   offset_chain_tolerance_mm: 0.2   # per axis (CLAUDE.md)
   # Camera axes in {F} (rows of R_F_C): x_C = +y_F, y_C = -x_F, z_C = +z_F
   camera_rotation_in_flange: [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
@@ -23,11 +26,13 @@ frames:
   # -1 in y, back to the values of 22.10.) 25.10.: measured with hand_eye (ChArUco, translations
   # only, THEORY 1.5), two runs [1.53, 0.76] / [1.54, 0.81], residual RMS 1.0 / 1.1 mm -> mean.
   # Adopted 25.10., reverted the same day (one pick landed on the nut), 26.10. tried again with
-  # the thread search (before: [1.25, 0.0], set by eye)
-  camera_tilt_in_flange_deg: [0.0, 0.0]  # GRID 30.10. no correction; working: [1.54, 0.79]
+  # the thread search (before: [1.25, 0.0], set by eye). 31.10. (new gripper parts) hand_eye
+  # per side of the table (the tilt about y_F differs by 0.9 deg), residual RMS 1.0 / 1.1 mm
+  camera_tilt_in_flange_deg: {left: [1.14, -0.87], right: [0.98, 0.06]}
   # Rotation of the camera about its optical axis against the CAD, applied after the tilt
   # (R_FC = R_x R_y R_z R_CAD). 25.10. hand_eye: 1.19 / 1.40 deg -> mean (before: not modelled)
-  camera_rotation_about_z_deg: 0.0  # GRID 30.10. no correction; working: 1.3
+  # 31.10. hand_eye: right 1.55 / left 1.44 deg -> mean
+  camera_rotation_about_z_deg: 1.5
   # Projection centre above the lowest point of the housing (bench 16.10.: about 9 mm)
   projection_centre_above_housing_mm: 9.0
   # The only orientation ever commanded (= controller start pose, q7 = 0.80): tool down,
@@ -51,8 +56,8 @@ frames:
   # mean. Before: constant [-1.8, -4.9] (2 points on the right, 26.10.)
   # correction = c0 + cx * x + cy * y per component [c0 mm, cx, cy]; x, y of the target in mm
   target_correction:
-    x: [0.0, 0.0, 0.0]  # GRID 30.10. target config; working: [-1.420, -0.00320, -0.00455]
-    y: [0.0, 0.0, 0.0]  # GRID 30.10. target config; working: [-4.33, 0.0, 0.0]
+    x: [0.0, 0.0, 0.0]  # 31.10. final: off; round 7: [-1.420, -0.00320, -0.00455]
+    y: [0.0, 0.0, 0.0]  # 31.10. final: off; round 7: [-4.33, 0.0, 0.0]
 
 objects:
   nut:
@@ -187,7 +192,9 @@ place:
   # No contact by then: true = screw at the lowest point anyway (21.10.: the nut slid onto the
   # thread without reaching contact_force_n), false = back up and abort
   screw_without_contact: true
-  contact_force_n: 4.0         # |Fz - Fz before the descent| that counts as contact
+  # |Fz - Fz before the descent| that ends it. 31.10. 4 -> 6: also seats the nut (the old seat
+  # step read 5.2-6.1 N)
+  contact_force_n: 6.0
   # Before the iris lets go at the end: reference this far above the measured pose, stiff
   # mode, then the iris opens (else the soft arm fell onto the reference below the thread;
   # ~3.5 mm sag at 1500 N/m)
@@ -224,10 +231,10 @@ place:
   # (28.10.): left 4/5 screwed on with 1.5. Right: 5/5 without, tilt_level 28.10.: +1 looked level.
   # Record: tilt_correction_deg
   tilt_correction:
-    minus_y_edge_up_deg: {left: 0.0, right: 0.0}  # GRID 30.10. target config; working: {left: 1.5, right: -1.0}
+    minus_y_edge_up_deg: {left: 0.0, right: 0.0}  # 31.10. final: off; round 7: {left: 1.5, right: -1.0}
   # Extra xy shift (base frame, mm) of the stud target per side of observe_stud, on top of
   # frames.target_correction (which also moves the nut). 28.10. (Yannick): left +0.5 in y
-  approach_shift_xy_mm: {left: [0.0, 0.0], right: [0.0, 0.0]}  # GRID 30.10. target config; working: left [0.0, 0.5]
+  approach_shift_xy_mm: {left: [0.0, 0.0], right: [0.0, 0.0]}  # 31.10. final: off; round 7: left [0.0, 0.5]
   # true: the iris opens during release_settle_s instead of after it (27.10., test, ~1.5 s);
   # false: wait, stiff mode, then open (since 23.10.)
   open_while_settling: true
@@ -235,12 +242,11 @@ place:
   # rose at the start of the thread search and at the switch to screwing). The depths below
   # (seat, thread_search.press_mm, catch, tighten) are therefore "at least this deep":
   # the search then presses with the seat reference, the screwing with the search reference
-  # After contact, before screwing (26.10., Yannick): press down in the stiff mode so the nut
-  # slides up in the iris against its top stop. The thread usually caught, the fast turn never
-  # ran on. Record place.seat: travel_mm (nut moved in the iris), force_n (negative = pressing)
+  # Seating (26.10., Yannick): pressing down slides the nut up in the iris against its top stop.
+  # Since 31.10. part of the descent (contact_force_n), no separate step and no waits: then the
+  # reference goes hold_mm below the seated nut and stays there, ~1.2 N at z 600 N/m
   seat:
-    depth_mm: 6.0              # reference below contact; normal z 1500 N/m: ~9 N (clamp 18 N)
-    settle_s: 1.0              # reference low-pass (tau ~0.5 s): 86 % after 2 tau (1.5 until 27.10.)
+    hold_mm: 2.0
   # After seating (26.10., Yannick: the nut lands 1-3 mm off-centre): stiff mode, pressed
   # lightly on the tip, flat outward spiral around the contact, TCP height sampled; back to the
   # xy where the TCP was lowest (the nut dropped onto the thread start). Record
@@ -248,8 +254,14 @@ place:
   # reached_radius_mm (what the arm really covered)
   thread_search:
     # 28.10. test (Yannick): false = no spiral, screw where the nut was seated (record
-    # thread_search.skipped). Next round: back on, smaller/shorter
+    # thread_search.skipped)
+    # 31.10.: radius 2 and 3 tried: arm covered only 0.6-1.0 mm, rarely found -> off, catch
+    # phase with wobble instead (screw.catch)
     enabled: false
+    # 31.10. (Yannick): the preset of the tightening, stiff (normal) until then: placing the nut
+    # on the thread is the critical step. About 3.6 N at the search reference (k_z 600) instead
+    # of 9 N, soft tilt, so the nut can align
+    mode: tighten
     press_mm: 3.0              # reference below the seated contact: ~4.5 N (below the seat force)
     # Commanded radius > the 1-3 mm error: the reference low-pass (tau ~0.5 s) shrinks a turn of
     # 3 s to about 70 %. 1 mm between turns, the nut catches within about +-0.5 mm
@@ -284,6 +296,9 @@ place:
       # catch never triggered in any run, the tightening (7 s, arm following down) screws it on.
       # 27.10. (Yannick) 0 = no catch phase: the thread search stops once the nut sits on the
       # thread start, then straight to tightening
+      # 31.10.: back on instead of the spiral (radius 2: 0/6, 3: 1/7 found): M4 turns while the nut circles,
+      # so the thread takes the nut wherever it fits, no success signal needed. 12 steps = 3 s
+      # 31.10.: 12 (3 s) tried, the wobble is barely visible -> turning_spiral below
       max_steps: 0
       # ~1.2 N + weight. 25.10. 3 -> 8: with the 1:1 drive barely any pressure (record: 0.5-1.7 N),
       # the nut could not catch the thread (23.10.: 10 pressed too hard, with the 44->17 drive)
@@ -292,6 +307,29 @@ place:
       depth_mm: 2.0
       settle_s: 0.3            # after setting the reference, before the start height is taken
       caught_drop_mm: 0.6      # half a turn of M8
+      # 31.10.: M4 turns slowly in one go while the nut circles on a flat spiral. Why not the
+      # steps above: 250 ms jumps are half the reference low-pass, the arm moved only 0.2-0.65 mm
+      # (radius 2), this path 1.8 mm (radius 3, 4 s, once). Radius 5 ~ 3 mm at the arm, 1 mm per
+      # turn; 2.7 s per turn. Record screw.turning_spiral. direction: 1 tightens, -1 backwards
+      # (nut climbs the 1.25 mm pitch, click off the thread start)
+      # 31.10.: radius 5 covered 4.1 mm: at about 4 mm the TCP rose 1.4 mm (Fz +3 N), the nut
+      # rode up on the stud -> radius 3 (expected about 2.4 mm), screw z 150 -> 600
+      # (controllers.yaml). turn false (Yannick): only the spiral, then the screwing
+      turning_spiral:
+        enabled: true
+        turn: false
+        direction: 1
+        duration_ms: 8000
+        speed: 100
+        radius_mm: 3.0
+        turns: 3.0
+        found_drop_mm: 0.6       # half a turn of M8: spiral stops there, arm stays there
+        # 31.10. record transition: no lift between spiral and turn. The outer turns ran up the
+        # stud (+0.45-0.7 mm, Fz +2-3 N) and fell back on the return. Stop there, back to centre
+        rise_stop_mm: 0.25
+        stops_after_s: 1.0       # drop and rise count from here on, height then = reference
+        sample_period_s: 0.01
+        trace_every: 2
       # Each step the reference moves one point further on a circle around the contact (in
       # xy, through the controller's reference low-pass): the nut wobbles over the tip to find
       # the start of the thread. Lateral pull about screw stiffness xy * radius (23.10.)
@@ -322,9 +360,11 @@ place:
     # (full opening: gripper.open 1500 ms at 100, so 10 ms is ~0.7 % of the stroke, if the motors
     # move at all from standstill). CAUTION: after any OPEN the board switches the iris off,
     # so it no longer holds (hold_speed) while M4 turns. Record: screw.iris_loosened
+    # 31.10. test (Yannick) without it: the nut sank only 0.06 / -0.02 mm in 2 runs -> on again
     loosen_iris: {enabled: true, duration_ms: 10, speed: 100}
-    # GRID 30.10. target config: one depth for both sides; working: {left: 1.0, right: 3.0}
-    tighten: {duration_ms: 7000, speed: 255, depth_mm: {left: 2.0, right: 2.0},
+    # 31.10. 2 -> 3 (Yannick): the arm should follow the nut down more. One depth for both sides;
+    # working: {left: 1.0, right: 3.0}
+    tighten: {duration_ms: 7000, speed: 255, depth_mm: {left: 3.0, right: 3.0},
               follow_period_s: 0.05}
 
 gripper:                       # arduino/iris_gripper over USB, 115200 baud
@@ -416,12 +456,13 @@ run_record:
   events_history: 50
   # Label written into every record (record.round); run_map counts only one round. Set it
   # before a test round, e.g. "round 2" (the GUI's run counter counts this round too)
-  round: grid0 xy400 rot4  # grid0 = no correction at all; working: round 7
+  round: final 31.10 xy1500 rot4  # after grid G31 (xy 400/1000/1500 x rot 4/40); working: round 7
   # Copied into record.config with the git commit: which settings a run used
   config_keys:
     - frames.target_correction
     - frames.camera_tilt_in_flange_deg
     - frames.camera_rotation_about_z_deg
+    - frames.flange_to_camera_housing_mm
     - vision.close_up_distance_mm
     - vision.settle_s
     - pick

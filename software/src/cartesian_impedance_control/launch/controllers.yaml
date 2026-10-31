@@ -115,12 +115,13 @@
         # Tilts by itself if the gripper load is not entered in Desk. xy 30 -> 400 -> 2000: at
         # 400 the flange still moved only 0.2-0.5 mm on a 4 mm circle (friction); now the arm
         # goes where the reference is and the loose bottom part of the gripper gives way
-        screw_stiffness: [2000.0, 2000.0, 150.0, 4.0, 4.0, 20.0]
+        # 31.10.: z 150 -> 600, at 150 the arm rose 1.4 mm on the spiral and on the preset change
+        screw_stiffness: [2000.0, 2000.0, 600.0, 4.0, 4.0, 20.0]
         # control_mode 5, tightening after the catch (23.10.): as screw, but soft in xy so the
         # nut can swing on the thread while it turns (not perfectly concentric). z 150 -> 600
         # (27.10.): with the reference running down 10 mm the arm followed only 0.7-2.8 mm while
         # the nut ran ~5 mm down the thread (joint friction holds ~1 N, at 150 N/m ~7 mm of lag)
-        tighten_stiffness: [400.0, 400.0, 600.0, 4.0, 4.0, 20.0]  # GRID 30.10.: xy x rot varied; working: [400, 400, 600, 4, 4, 20]
+        tighten_stiffness: [1500.0, 1500.0, 600.0, 4.0, 4.0, 20.0]  # G31 31.10. (6 x 10 runs): best of the grid; before: [400, 400, 600, 4, 4, 20]
       debug:
         publish_rate: 0.0          # [Hz] 25.10.: 1000 -> 0, load in the control loop; 1000 = every cycle for bags (~1 MB/s) /cartesian_impedance_controller/debug (Float64MultiArray, names in layout); 0.0 = off
 

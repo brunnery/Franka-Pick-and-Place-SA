@@ -27,18 +27,27 @@ def test_flange_from_the_robot_state_puts_the_camera_in_front():
     assert flange[:3, :3] == pytest.approx(R_DOWN)
     assert flange[:3, 3] == pytest.approx([500.0, 0.0, 503.4])
     assert flange @ t_flange_ee == pytest.approx(t_base_ee)
-    camera = flange @ config.camera_in_flange(CFG)
-    assert camera[:3, 3] == pytest.approx([544.4, 0.0, 503.4 - 57.223 + 9.0])
+    camera = flange @ config.camera_in_flange(CFG, flange[1, 3])
+    x_mm, y_mm, _ = CFG["frames"]["flange_to_camera_housing_mm"]
+    assert camera[:3, 3] == pytest.approx([500.0 + x_mm, -y_mm, 503.4 - 57.223 + 9.0])
     # looks down; the tilt about x_F (= x_B here) moves the axis towards +y_B, the one about
     # y_F towards +x_B; the rotation about the optical axis leaves the axis alone
-    tilt_x, tilt_y = np.radians(CFG["frames"]["camera_tilt_in_flange_deg"])
+    tilt_x, tilt_y = np.radians(CFG["frames"]["camera_tilt_in_flange_deg"]["right"])
     assert camera[:3, 2] == pytest.approx([np.sin(tilt_y), np.sin(tilt_x) * np.cos(tilt_y),
                                            -np.cos(tilt_x) * np.cos(tilt_y)])
 
 
+def test_camera_tilt_follows_the_table_side():
+    tilts = CFG["frames"]["camera_tilt_in_flange_deg"]
+    for y_mm, side in ((160.0, "left"), (-160.0, "right")):
+        tilt_x, tilt_y = np.radians(tilts[side])
+        assert config.camera_in_flange(CFG, y_mm)[:3, 2] == pytest.approx(
+            [np.sin(tilt_y), -np.sin(tilt_x) * np.cos(tilt_y), np.cos(tilt_x) * np.cos(tilt_y)])
+
+
 def test_object_in_base_inverts_the_projection_also_for_a_tilted_camera():
     tilt = frames.pose(frames.quaternion_to_matrix([np.sin(0.02), 0, 0, np.cos(0.02)]), [0, 0, 0])
-    camera = frames.pose(R_DOWN, [450.0, 30.0, 420.0]) @ tilt @ config.camera_in_flange(CFG)
+    camera = frames.pose(R_DOWN, [450.0, 30.0, 420.0]) @ tilt @ config.camera_in_flange(CFG, 30.0)
     nut = np.array([520.0, -10.0, 4.0])
     uvw = K @ (frames.invert(camera) @ np.append(nut, 1.0))[:3]
     assert frames.object_in_base(uvw[0] / uvw[2], uvw[1] / uvw[2], K, camera, 4.0) == \

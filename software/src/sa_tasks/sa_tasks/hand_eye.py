@@ -78,7 +78,7 @@ def main():
     he = cfg["hand_eye"]
     poses = config.Poses()
     board = make_board(he["board"])
-    t_fc = config.camera_in_flange(cfg)
+    t_fc = config.camera_in_flange(cfg, poses.get(he["centre_pose"])[1, 3])
     r_cad = np.asarray(cfg["frames"]["camera_rotation_in_flange"], float)
     rclpy.init()
     node = rclpy.create_node("sa_tasks_hand_eye")
