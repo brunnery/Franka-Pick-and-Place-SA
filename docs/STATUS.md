@@ -2,11 +2,17 @@
 
 > Wird von der Abend-Sequenz (`/abend`) jeden Abend überschrieben. Details und Begründungen: Entscheidungslog in `docs/PLAN.md`, Theorie in `docs/THEORY.md`.
 
-## Stand vom 31.10.2026 (Abgabetag)
+## Stand vom 06.11.2026
 
-**Endrunde: 9/10 aufgeschraubt, 1 teilweise** (links 5/5, rechts 4/5), Zyklus bis Iris öffnet 41.3 s. Das ist das Zielbild des Betreuers: keine `target_correction`, keine `tilt_correction`, keine Verschiebung pro Seite, keine Festzieh-Werte pro Seite. Korrigiert wird nur das Kameramodell (Neigung pro Seite, Drehung um z, Position y +3 mm), den Rest macht die Regelung: `tighten_stiffness` [1500, 1500, 600, 4, 4, 20] plus Spirale. Der frühere Stand mit Handkorrekturen (29/30) bleibt unter dem Tag `working-29of30`.
+**Mit den finalen Werten 28/30 aufgeschraubt, 2 teilweise** (G31 xy1500 rot4 10/10, final 31.10. 9/10 + 1 teilweise, final 06.11. 9/10 + 1 teilweise). Zielbild des Betreuers erfüllt: keine `target_correction`, keine `tilt_correction`, keine Verschiebung pro Seite, keine Festzieh-Werte pro Seite. Korrigiert wird nur das Kameramodell (Neigung pro Seite, Drehung um z, Position y +3 mm), den Rest macht die Regelung: `tighten_stiffness` [1500, 1500, 600, 4, 4, 20] plus Spirale. Am Code hat sich seit dem 31.10. nichts geändert. Der frühere Stand mit Handkorrekturen (29/30) bleibt unter dem Tag `working-29of30`.
 
-## Heute erledigt
+## Heute erledigt (06.11.)
+
+- **Zweite Endrunde `final 06.11 xy1500 rot4`:** 9/10, 1 teilweise; links 4/5 + 1 teilweise, rechts 5/5; Zyklus bis Iris öffnet 42.3 s (39.2–45.9).
+- Startprobleme am Morgen geklärt: zuerst `Connection to FCI refused` (FCI noch nicht bereit), dann `'1 PING': no answer`, weil der Gripper-Test die serielle Schnittstelle belegte.
+- Nicht gezählt: 2 Läufe mit belegtem Greifer, 1 ohne platzierte Schraube, 2 unbewertete Läufe (08:29:12, 08:34:36).
+
+## Am 31.10. erledigt
 
 - **Hand-Eye nach dem Umbau neu**, auf beiden Tischseiten: rechts [0.98, 0.06]° / 1.55°, links [1.14, −0.87]° / 1.44°. Neigung pro Seite übernommen, Drehung um z 1.5°. Der alte Wert [1.54, 0.79] passte nicht mehr.
 - **Genauigkeit der ChArUco-Methode bewertet:** wiederholbar auf 0.1°, aber Teilmengen widersprechen sich um bis zu 1°, also eher ±0.5°. Die Kameraposition misst sie nicht.
@@ -16,7 +22,7 @@
 - **Abheben geklärt:** Die Höhenaufzeichnung zeigt keinen Hub im Übergang; die Mutter läuft in den äusseren Runden auf die Schraube auf. Dafür der Anstiegs-Stopp.
 - **Steifigkeitsreihe G31:** rot 4 27/30, rot 40 20/30.
 
-## Messergebnisse 31.10.
+## Messergebnisse 31.10. und 06.11.
 
 | Runde | tighten K_xy / K_rot | Aufgeschraubt | Links | Rechts |
 |---|---|---|---|---|
@@ -47,11 +53,12 @@ K_z 600, K_rz 20 fest. Rot 4 gegen rot 40: Fisher p ≈ 0.06. K_xy: Rauschen (18
 3. **Bericht ehrlich formulieren:** Die 3 mm wirken bei fester Orientierung wie ein konstanter `target_correction`; sie sind Teil des Kameramodells, keine Messung.
 4. **Pick zu hoch (31.10., ca. 10:10):** Der Arm fuhr nicht tief genug, um die Mutter zu greifen; kein Record, später nicht mehr gemeldet. Ursache unbekannt, Verdacht: Platte stand auf der Mutter.
 
-## Als Erstes, falls noch weitergearbeitet wird
+## Morgen als Erstes
 
-1. Bericht: Ergebnisse aus der Tabelle oben, Abschnitte in `docs/THEORY.md` 1.5 und 5.
-2. Optional `tcp_offset` je Seite (GUI: *Bolt approach only*, Handführen in PROG, *Robot state only*, *Camera -> iris offset*), Sollwert nahe (0, 0).
-3. Optional ein Vergleich ohne Spirale: `turning_spiral.enabled: false`, 10 Läufe (Runde umbenennen).
+1. Die 2 unbewerteten Läufe vom 06.11. (08:29:12, 08:34:36) nachtragen, falls das Ergebnis bekannt ist: `round` im Record zurück auf `final 06.11 xy1500 rot4` und in der GUI bewerten.
+2. Bericht: Ergebnisse aus der Tabelle oben (28/30), Abschnitte in `docs/THEORY.md` 1.5 und 5.
+3. Optional `tcp_offset` je Seite (GUI: *Bolt approach only*, Handführen in PROG, *Robot state only*, *Camera -> iris offset*), Sollwert nahe (0, 0).
+4. Optional ein Vergleich ohne Spirale: `turning_spiral.enabled: false`, 10 Läufe (Runde umbenennen).
 
 ## Nützliche Befehle
 
@@ -59,4 +66,4 @@ K_z 600, K_rz 20 fest. Rot 4 gegen rot 40: Fisher p ≈ 0.06. K_xy: Rauschen (18
 - Auswertung einer Runde: `sa_env && ros2 run sa_tasks run_map --round "final 31.10 xy1500 rot4"`.
 - Zurück zum alten Stand mit Handkorrekturen: `git checkout working-29of30 -- software/src`.
 - Unit-Tests: `cd software/src/sa_tasks && PYTHONNOUSERSITE=1 python3 -m pytest test -q`.
-- Hängt ein Start: zuerst `ls /dev/v4l/by-id` (Kamerakabel), dann `bash gui/clean_dds_shm.sh`.
+- Hängt ein Start: Desk FCI aktiv? kein Gripper-Test offen? `ls /dev/v4l/by-id` (Kamerakabel), dann `bash gui/clean_dds_shm.sh`.
