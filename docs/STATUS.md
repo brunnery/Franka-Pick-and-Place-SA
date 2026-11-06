@@ -10,7 +10,7 @@
 
 - **Zweite Endrunde `final 06.11 xy1500 rot4`:** 9/10, 1 teilweise; links 4/5 + 1 teilweise, rechts 5/5; Zyklus bis Iris öffnet 42.3 s (39.2–45.9).
 - Startprobleme am Morgen geklärt: zuerst `Connection to FCI refused` (FCI noch nicht bereit), dann `'1 PING': no answer`, weil der Gripper-Test die serielle Schnittstelle belegte.
-- Nicht gezählt: 2 Läufe mit belegtem Greifer, 1 ohne platzierte Schraube, 2 unbewertete Läufe (08:29:12, 08:34:36).
+- Nicht gezählt: 2 Läufe mit belegtem Greifer, 1 ohne platzierte Schraube, 2 Läufe für Videoaufnahmen (08:29:12, 08:34:36).
 
 ## Am 31.10. erledigt
 
@@ -55,10 +55,9 @@ K_z 600, K_rz 20 fest. Rot 4 gegen rot 40: Fisher p ≈ 0.06. K_xy: Rauschen (18
 
 ## Morgen als Erstes
 
-1. Die 2 unbewerteten Läufe vom 06.11. (08:29:12, 08:34:36) nachtragen, falls das Ergebnis bekannt ist: `round` im Record zurück auf `final 06.11 xy1500 rot4` und in der GUI bewerten.
-2. Bericht: Ergebnisse aus der Tabelle oben (28/30), Abschnitte in `docs/THEORY.md` 1.5 und 5.
-3. Optional `tcp_offset` je Seite (GUI: *Bolt approach only*, Handführen in PROG, *Robot state only*, *Camera -> iris offset*), Sollwert nahe (0, 0).
-4. Optional ein Vergleich ohne Spirale: `turning_spiral.enabled: false`, 10 Läufe (Runde umbenennen).
+1. Bericht: Ergebnisse aus der Tabelle oben (28/30), Abschnitte in `docs/THEORY.md` 1.5 und 5.
+2. Optional `tcp_offset` je Seite (GUI: *Bolt approach only*, Handführen in PROG, *Robot state only*, *Camera -> iris offset*), Sollwert nahe (0, 0).
+3. Optional ein Vergleich ohne Spirale: `turning_spiral.enabled: false`, 10 Läufe (Runde umbenennen).
 
 ## Nützliche Befehle
 
