@@ -456,7 +456,7 @@ run_record:
   events_history: 50
   # Label written into every record (record.round); run_map counts only one round. Set it
   # before a test round, e.g. "round 2" (the GUI's run counter counts this round too)
-  round: final 31.10 xy1500 rot4  # after grid G31 (xy 400/1000/1500 x rot 4/40); working: round 7
+  round: final 06.11 xy1500 rot4  # after grid G31 (xy 400/1000/1500 x rot 4/40); working: round 7
   # Copied into record.config with the git commit: which settings a run used
   config_keys:
     - frames.target_correction
