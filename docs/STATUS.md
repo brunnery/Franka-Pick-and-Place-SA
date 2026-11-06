@@ -26,9 +26,10 @@
 | G31 | 400 / 40 | 6/10, 2 teilweise | 1/5 | 5/5 |
 | G31 | 1000 / 40 | 6/10 | 3/5 | 3/5 |
 | G31 | 1500 / 40 | 8/10 | 5/5 | 3/5 |
-| **final** | **1500 / 4** | **9/10, 1 teilweise** | **5/5** | **4/5** |
+| **final 31.10.** | **1500 / 4** | **9/10, 1 teilweise** | **5/5** | **4/5** |
+| **final 06.11.** | **1500 / 4** | **9/10, 1 teilweise** | **4/5** | **5/5** |
 
-K_z 600, K_rz 20 fest. Rot 4 gegen rot 40: Fisher p ≈ 0.06. K_xy: Rauschen (18/20 gegen 15/20, p ≈ 0.4). Mit K_xy 1500 / rot 4 insgesamt 19/20. Nicht gezählt: 4 Abbrüche vor dem Schrauben (Erkennung, Entscheid Yannick) und der Kabel-Lauf. Der Lauf 11:52 hat nur einen Ersatz-Record (Bewertung ohne Messdaten).
+K_z 600, K_rz 20 fest. Rot 4 gegen rot 40: Fisher p ≈ 0.06. K_xy: Rauschen (18/20 gegen 15/20, p ≈ 0.4). Mit K_xy 1500 / rot 4 insgesamt **28/30 aufgeschraubt, 2 teilweise** (G31 + final 31.10. + final 06.11.); Zyklus 06.11. im Mittel 42.3 s (39.2–45.9). Nicht gezählt: 4 Abbrüche vor dem Schrauben (Erkennung, Entscheid Yannick) und der Kabel-Lauf. Der Lauf 11:52 hat nur einen Ersatz-Record (Bewertung ohne Messdaten).
 
 ## Vorläufige Werte
 
